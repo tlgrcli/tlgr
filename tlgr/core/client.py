@@ -748,4 +748,8 @@ class ClientWrapper:
             "bio": about,
             "is_bot": getattr(user, "bot", False),
             "status": status_str,
+            # no photo + status "empty" together is the classic signature of
+            # an account that blocked you (or an abandoned account)
+            "has_photo": getattr(user, "photo", None) is not None,
+            "deleted": getattr(user, "deleted", False),
         }

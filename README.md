@@ -138,7 +138,12 @@ tlgr account switch <alias>
 tlgr account remove <alias>
 tlgr account rename <old> <new>
 tlgr account info [alias]
+tlgr account sync [alias]             # refresh stored profile from live Telegram
 ```
+
+`info` and `sync` take the alias positionally, but also honor the global
+`-a/--account` flag; with neither, they fall back to the active account.
+Session files are stored `0600` — they are full account credentials.
 
 ### Daemon
 

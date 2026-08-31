@@ -16,6 +16,24 @@ def _get_mgr() -> AccountManager:
     return AccountManager(CONFIG_DIR)
 
 
+def _resolve_alias(ctx: click.Context, alias: str | None, mgr: AccountManager) -> str | None:
+    """Positional alias > global -a/--account > active account.
+
+    The global -a lands in ctx.obj["account"]; commands that only consulted
+    get_active() silently acted on the wrong account when it was passed.
+    """
+    return alias or ((ctx.obj or {}).get("account") or None) or mgr.get_active()
+
+
+def _secure_session_files(session_path) -> None:
+    """chmod 600 the session db and its sqlite siblings — it is a credential."""
+    for f in session_path.parent.glob(session_path.name + "*"):
+        try:
+            f.chmod(0o600)
+        except OSError:
+            pass
+
+
 @click.group("account")
 def account_group() -> None:
     """Manage Telegram accounts."""
@@ -57,6 +75,7 @@ def account_add(ctx: click.Context, phone: str, alias: str | None) -> None:
         return me
 
     me = asyncio.run(_login())
+    _secure_session_files(session_path)
     emit(
         ctx.obj,
         {"alias": alias, "user_id": me.id, "name": me.first_name, "username": me.username},
@@ -104,6 +123,7 @@ def account_import(
     dest = session_path.with_suffix(".session") if session_path.suffix != ".session" else session_path
     shutil.copy2(session_file, dest)
     dest.chmod(0o600)
+    _secure_session_files(session_path)
 
     client = ClientWrapper(session_path, api_id, api_hash)
 
@@ -202,8 +222,7 @@ def account_rename(ctx: click.Context, old: str, new: str) -> None:
 def account_info(ctx: click.Context, alias: str | None) -> None:
     """Show account details."""
     mgr = _get_mgr()
-    if alias is None:
-        alias = mgr.get_active()
+    alias = _resolve_alias(ctx, alias, mgr)
     if alias is None:
         click.echo("No active account", err=True)
         sys.exit(1)
@@ -222,8 +241,7 @@ def account_sync(ctx: click.Context, alias: str | None) -> None:
     from tlgr.ipc_client import ipc_request
 
     mgr = _get_mgr()
-    if alias is None:
-        alias = mgr.get_active()
+    alias = _resolve_alias(ctx, alias, mgr)
     if alias is None:
         click.echo("No active account", err=True)
         sys.exit(1)

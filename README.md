@@ -59,14 +59,32 @@ tlgr message delete <chat> <ids...>
 tlgr message search <chat> <query>     # --local for regex, --regex <pattern>
 tlgr message pin <chat> <msg_id>
 tlgr message react <chat> <id> <emoji>
+tlgr message edit <chat> <id> <text>   # --typing N
+tlgr message forward <from> <to> <ids...>
 ```
 
+`message send` supports `--typing N` / `--typing-auto` to show a realistic
+"typing…" indicator before the message lands.
+
 `msg` is an alias for `message` (e.g. `tlgr msg send @user "hello"`).
+
+### Drafts
+
+Prepare a reply without sending it — you send (or discard) it later from any
+Telegram client. The human-in-the-loop primitive for agents.
+
+```bash
+tlgr draft set <chat> <text>           # --reply-to
+tlgr draft clear <chat>
+tlgr draft list                        # all non-empty drafts across chats
+```
 
 ### Chats
 
 ```bash
-tlgr chat list                         # --type, --search, --limit
+tlgr chat list                         # --type, --search, --limit, --unread
+tlgr inbox                             # shortcut: chats with unread messages
+tlgr chat members <chat>               # --admins, --search, --limit
 tlgr chat get <chat>
 tlgr chat create <name>                # --type group|channel, --members
 tlgr chat archive <chat>
@@ -79,6 +97,7 @@ tlgr chat leave <chat>
 ```bash
 tlgr contact list
 tlgr contact add <phone> [name]
+tlgr contact rename <user>             # --first-name, --last-name (tags non-contacts too)
 tlgr contact remove <user>
 tlgr contact search <query>
 ```
@@ -101,6 +120,7 @@ tlgr profile update                    # --first-name, --last-name, --bio, --pho
 
 ```bash
 tlgr account add <phone>              # authenticate a new account
+tlgr account import <file.session>    # import an existing Telethon session (no re-auth); --alias
 tlgr account list                     # (* = default)
 tlgr account switch <alias>
 tlgr account remove <alias>
@@ -344,6 +364,14 @@ log_level = "info"
 tlgr account add +15551234567 --alias personal
 tlgr account add +15559876543 --alias work
 tlgr -a personal message send @friend "Hi"
+```
+
+To eliminate wrong-account mistakes in scripts and agents, enable strict
+account selection — every command must then carry an explicit `-a <alias>`
+(no default-account fallback; violations exit 2):
+
+```bash
+tlgr config set require_account true    # or per-invocation: TLGR_REQUIRE_ACCOUNT=1
 ```
 
 Jobs can reference different accounts:

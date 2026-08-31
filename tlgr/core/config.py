@@ -46,6 +46,7 @@ class Defaults:
     drop_author: bool = False
     delete_after: bool = False
     output: str = "human"
+    require_account: bool = False
 
 
 @dataclass
@@ -203,6 +204,7 @@ def load_app_config(base: Path | None = None) -> AppConfig:
         drop_author=defaults_raw.get("drop_author", False),
         delete_after=defaults_raw.get("delete_after", False),
         output=defaults_raw.get("output", "human"),
+        require_account=defaults_raw.get("require_account", False),
     )
 
     daemon_raw = raw.get("daemon", {})

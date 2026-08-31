@@ -128,6 +128,7 @@ class ClientWrapper:
         limit: int | None = None,
         chat_type: str | None = None,
         search: str | None = None,
+        unread_only: bool = False,
     ) -> AsyncIterator[dict[str, Any]]:
         count = 0
         async for dialog in self.client.iter_dialogs():
@@ -140,11 +141,29 @@ class ClientWrapper:
             if search:
                 if search.lower() not in info["name"].lower():
                     continue
+            if unread_only and not info.get("unread_count"):
+                continue
 
             yield info
             count += 1
             if limit and count >= limit:
                 break
+
+    @staticmethod
+    def _dialog_extras(dialog: Any) -> dict[str, Any]:
+        extras: dict[str, Any] = {
+            "unread_count": getattr(dialog, "unread_count", 0) or 0,
+        }
+        msg = getattr(dialog, "message", None)
+        if msg is not None:
+            text = (getattr(msg, "text", None) or "").replace("\n", " ")
+            extras["last_message"] = {
+                "id": msg.id,
+                "date": str(msg.date),
+                "out": bool(getattr(msg, "out", False)),
+                "text": text[:120],
+            }
+        return extras
 
     def _entity_to_dict(self, entity: Any, dialog: Any = None) -> dict[str, Any]:
         if isinstance(entity, User):
@@ -153,14 +172,14 @@ class ClientWrapper:
             else:
                 t = "bot" if entity.bot else "user"
                 name = f"{entity.first_name or ''} {entity.last_name or ''}".strip()
-            return {
+            info = {
                 "id": dialog.id if dialog else entity.id,
                 "name": name,
                 "type": t,
                 "username": entity.username,
             }
         elif isinstance(entity, Chat):
-            return {
+            info = {
                 "id": dialog.id if dialog else entity.id,
                 "name": entity.title,
                 "type": "group",
@@ -168,18 +187,22 @@ class ClientWrapper:
             }
         elif isinstance(entity, Channel):
             t = "channel" if not entity.megagroup else "supergroup"
-            return {
+            info = {
                 "id": dialog.id if dialog else entity.id,
                 "name": entity.title,
                 "type": t,
                 "username": entity.username,
             }
-        return {
-            "id": dialog.id if dialog else getattr(entity, "id", 0),
-            "name": str(dialog.name) if dialog else str(entity),
-            "type": "unknown",
-            "username": None,
-        }
+        else:
+            info = {
+                "id": dialog.id if dialog else getattr(entity, "id", 0),
+                "name": str(dialog.name) if dialog else str(entity),
+                "type": "unknown",
+                "username": None,
+            }
+        if dialog is not None:
+            info.update(self._dialog_extras(dialog))
+        return info
 
     async def get_chat_info(self, chat_id: int | str) -> dict[str, Any]:
         entity = await self.client.get_entity(chat_id)
@@ -194,7 +217,14 @@ class ClientWrapper:
         silent: bool = False,
         file: str | None = None,
         caption: str | None = None,
+        typing_s: float = 0.0,
     ) -> dict[str, Any]:
+        if typing_s > 0:
+            try:
+                async with self.client.action(chat_id, "typing"):
+                    await asyncio.sleep(min(typing_s, 60))
+            except Exception:
+                await asyncio.sleep(min(typing_s, 60))
         if file:
             msg = await self.client.send_file(
                 chat_id,
@@ -329,6 +359,101 @@ class ClientWrapper:
         ))
         return {"reacted": True, "msg_id": msg_id, "emoji": emoji}
 
+    async def edit_message(
+        self,
+        chat_id: int | str,
+        msg_id: int,
+        text: str,
+        typing_s: float = 0.0,
+    ) -> dict[str, Any]:
+        if typing_s > 0:
+            try:
+                async with self.client.action(chat_id, "typing"):
+                    await asyncio.sleep(min(typing_s, 60))
+            except Exception:
+                await asyncio.sleep(min(typing_s, 60))
+        msg = await self.client.edit_message(chat_id, msg_id, text)
+        return {"edited": True, "id": msg.id, "chat_id": chat_id, "date": str(msg.edit_date or msg.date)}
+
+    async def forward_messages(
+        self,
+        from_chat: int | str,
+        msg_ids: list[int],
+        to_chat: int | str,
+    ) -> dict[str, Any]:
+        msgs = await self.client.forward_messages(to_chat, msg_ids, from_chat)
+        if not isinstance(msgs, list):
+            msgs = [msgs]
+        return {"forwarded": len(msgs), "ids": [m.id for m in msgs if m is not None]}
+
+    async def set_draft(
+        self,
+        chat_id: int | str,
+        text: str,
+        reply_to: int | None = None,
+    ) -> dict[str, Any]:
+        from telethon.tl.functions.messages import SaveDraftRequest
+        from telethon.tl.types import InputReplyToMessage
+
+        entity = await self.client.get_input_entity(chat_id)
+        kwargs: dict[str, Any] = {"peer": entity, "message": text}
+        if reply_to:
+            kwargs["reply_to"] = InputReplyToMessage(reply_to_msg_id=reply_to)
+        await self.client(SaveDraftRequest(**kwargs))
+        return {"draft": bool(text), "chat_id": chat_id, "text": text}
+
+    async def list_drafts(self) -> list[dict[str, Any]]:
+        drafts: list[dict[str, Any]] = []
+        async for draft in self.client.iter_drafts():
+            if draft.is_empty:
+                continue
+            entity = None
+            try:
+                entity = await draft.get_entity()
+            except Exception:
+                pass
+            info = self._entity_to_dict(entity) if entity is not None else {"id": None, "name": "?"}
+            drafts.append({
+                "chat_id": info.get("id"),
+                "chat_name": info.get("name"),
+                "chat_username": info.get("username"),
+                "text": draft.text or "",
+                "date": str(draft.date) if draft.date else None,
+                "reply_to": getattr(draft, "reply_to_msg_id", None),
+            })
+        return drafts
+
+    async def list_participants(
+        self,
+        chat_id: int | str,
+        *,
+        limit: int | None = None,
+        admins_only: bool = False,
+        search: str | None = None,
+    ) -> list[dict[str, Any]]:
+        from telethon.tl.types import ChannelParticipantsAdmins
+
+        kwargs: dict[str, Any] = {}
+        if admins_only:
+            kwargs["filter"] = ChannelParticipantsAdmins
+        if search:
+            kwargs["search"] = search
+        users: list[dict[str, Any]] = []
+        async for u in self.client.iter_participants(chat_id, limit=limit, **kwargs):
+            if not isinstance(u, User):
+                continue
+            users.append({
+                "id": u.id,
+                "first_name": u.first_name or "",
+                "last_name": u.last_name or "",
+                "username": u.username,
+                "is_bot": bool(u.bot),
+                "is_deleted": bool(u.deleted),
+                "is_contact": bool(u.contact),
+                "is_self": bool(u.is_self),
+            })
+        return users
+
     async def create_chat(
         self,
         name: str,
@@ -409,6 +534,36 @@ class ClientWrapper:
         if imported:
             return {"added": True, "user_id": imported[0].user_id}
         return {"added": False, "error": "Could not import contact"}
+
+    async def rename_contact(
+        self,
+        user_ref: str,
+        *,
+        first_name: str | None = None,
+        last_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Save a user as a contact with the given name.
+
+        Works on any user (also non-contacts, e.g. to tag them). Omitted
+        name parts keep the user's current profile name.
+        """
+        from telethon.tl.functions.contacts import AddContactRequest
+
+        entity = await self.client.get_entity(user_ref)
+        if not isinstance(entity, User):
+            raise TlgrError(f"'{user_ref}' is not a user")
+        first = first_name if first_name is not None else (entity.first_name or "")
+        last = last_name if last_name is not None else (entity.last_name or "")
+        if not first:
+            first = "."
+        await self.client(AddContactRequest(
+            id=entity,
+            first_name=first,
+            last_name=last,
+            phone=getattr(entity, "phone", None) or "",
+            add_phone_privacy_exception=False,
+        ))
+        return {"saved": True, "user_id": entity.id, "first_name": first, "last_name": last}
 
     async def remove_contact(self, user_ref: str) -> dict[str, Any]:
         from telethon.tl.functions.contacts import DeleteContactsRequest

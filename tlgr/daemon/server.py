@@ -53,6 +53,19 @@ class DaemonServer:
             return None
         return self._clients.get(account)
 
+    async def ensure_client(self, account: str = "") -> ClientWrapper | None:
+        """Return a connected client, connecting a registered account on demand."""
+        client = self.get_client(account)
+        if client is not None:
+            return client
+        if not account:
+            return None
+        try:
+            return await self._connect_account(account)
+        except Exception:
+            log.exception("On-demand connect failed for account '%s'", account)
+            return None
+
     async def _connect_account(self, alias: str) -> ClientWrapper | None:
         acct_mgr = AccountManager(self.base)
         api_id, api_hash = acct_mgr.load_credentials(alias)

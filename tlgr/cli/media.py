@@ -5,6 +5,7 @@ from __future__ import annotations
 import click
 
 from tlgr.core.output import emit
+from tlgr.cli._common import resolve_account
 from tlgr.ipc_client import ipc_request
 
 
@@ -27,7 +28,7 @@ def media_download(
     account: str | None,
 ) -> None:
     """Download media from a message."""
-    acct = account or ctx.obj.get("account", "")
+    acct = resolve_account(ctx, account)
     body = {"chat": chat, "msg_id": msg_id, "account": acct}
     if out_dir:
         body["out_dir"] = out_dir
@@ -49,7 +50,7 @@ def media_upload(
     account: str | None,
 ) -> None:
     """Upload a file to a chat."""
-    acct = account or ctx.obj.get("account", "")
+    acct = resolve_account(ctx, account)
     result = ipc_request("POST", "/media/upload", body={
         "chat": chat, "path": path, "caption": caption, "account": acct,
     })

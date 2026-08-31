@@ -27,6 +27,7 @@ _KNOWN_KEYS: dict[str, tuple[str, str, str]] = {
     "drop_author": ("defaults", "drop_author", "Strip author on forwarded messages"),
     "delete_after": ("defaults", "delete_after", "Delete source after forwarding"),
     "default_account": ("accounts", "default", "Default account alias"),
+    "require_account": ("defaults", "require_account", "Require -a <alias> on every command (no default-account fallback)"),
     "auto_start": ("daemon", "auto_start", "Auto-start daemon on CLI use"),
     "log_level": ("daemon", "log_level", "Daemon log level: debug | info | warning | error"),
     "idle_timeout": ("daemon", "idle_timeout", "Seconds before idle daemon auto-stops (0 = never)"),

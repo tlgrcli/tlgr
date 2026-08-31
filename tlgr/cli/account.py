@@ -64,6 +64,77 @@ def account_add(ctx: click.Context, phone: str, alias: str | None) -> None:
     )
 
 
+@account_group.command("import")
+@click.argument("session_file", type=click.Path(exists=True, dir_okay=False))
+@click.option("--alias", required=True, help="Alias for the imported account.")
+@click.option("--api-id", type=int, default=None, help="Telegram API ID (falls back to TELEGRAM_API_ID).")
+@click.option("--api-hash", default=None, help="Telegram API Hash (falls back to TELEGRAM_API_HASH).")
+@click.pass_context
+def account_import(
+    ctx: click.Context,
+    session_file: str,
+    alias: str,
+    api_id: int | None,
+    api_hash: str | None,
+) -> None:
+    """Import an existing Telethon .session file — no re-authentication needed.
+
+    Copies the session into tlgr's account store, verifies it by connecting,
+    and records the account's profile info.
+    """
+    import asyncio
+    import os
+    import shutil
+    from tlgr.core.client import ClientWrapper
+
+    api_id = api_id or (int(os.environ["TELEGRAM_API_ID"]) if os.environ.get("TELEGRAM_API_ID") else None)
+    api_hash = api_hash or os.environ.get("TELEGRAM_API_HASH")
+    if not api_id or not api_hash:
+        click.echo(
+            "Error: --api-id/--api-hash required (or set TELEGRAM_API_ID / TELEGRAM_API_HASH)",
+            err=True,
+        )
+        sys.exit(2)
+
+    mgr = _get_mgr()
+    account = mgr.add_account(alias)
+    mgr.save_credentials(api_id, api_hash, alias)
+
+    session_path = mgr.get_session_path(alias)
+    dest = session_path.with_suffix(".session") if session_path.suffix != ".session" else session_path
+    shutil.copy2(session_file, dest)
+    dest.chmod(0o600)
+
+    client = ClientWrapper(session_path, api_id, api_hash)
+
+    async def _verify():
+        authorized = await client.connect()
+        if not authorized:
+            await client.disconnect()
+            return None
+        me = client.me
+        mgr.update_account(
+            alias,
+            phone=me.phone,
+            username=me.username,
+            first_name=me.first_name,
+            user_id=me.id,
+        )
+        await client.disconnect()
+        return me
+
+    me = asyncio.run(_verify())
+    if me is None:
+        mgr.remove_account(alias)
+        click.echo("Error: imported session is not authorized — aborted.", err=True)
+        sys.exit(4)
+    emit(
+        ctx.obj,
+        {"alias": alias, "user_id": me.id, "name": me.first_name, "username": me.username, "imported": True},
+        columns=["alias", "user_id", "name", "username", "imported"],
+    )
+
+
 @account_group.command("list")
 @click.pass_context
 def account_list(ctx: click.Context) -> None:
@@ -71,16 +142,19 @@ def account_list(ctx: click.Context) -> None:
     mgr = _get_mgr()
     active = mgr.get_active()
     accounts = mgr.list_accounts()
+    human = ctx.obj.get("fmt", "human") == "human"
     rows = []
     for a in accounts:
+        is_active = a.alias == active
         rows.append({
-            "alias": ("* " + a.alias) if a.alias == active else ("  " + a.alias),
+            "alias": (("* " if is_active else "  ") + a.alias) if human else a.alias,
+            "active": is_active,
             "user_id": a.user_id or "",
             "name": a.display_name(),
             "phone": a.phone or "",
         })
-    if not rows:
-        rows = [{"alias": "(no accounts)", "user_id": "", "name": "", "phone": ""}]
+    if not rows and human:
+        rows = [{"alias": "(no accounts)", "active": False, "user_id": "", "name": "", "phone": ""}]
     emit(ctx.obj, rows, columns=["alias", "user_id", "name", "phone"])
 
 

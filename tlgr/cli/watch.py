@@ -8,6 +8,7 @@ import time
 
 import click
 
+from tlgr.cli._common import resolve_account
 from tlgr.ipc_client import ipc_request
 
 
@@ -21,7 +22,7 @@ def watch_command(ctx: click.Context, chats: tuple[str, ...], events: str, accou
 
     Polls the daemon for new messages and emits one JSON object per line.
     """
-    acct = account or ctx.obj.get("account", "")
+    acct = resolve_account(ctx, account)
     event_types = {e.strip() for e in events.split(",") if e.strip()}
     chat_set = set(chats) if chats else None
 

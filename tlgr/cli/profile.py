@@ -5,6 +5,7 @@ from __future__ import annotations
 import click
 
 from tlgr.core.output import emit
+from tlgr.cli._common import resolve_account
 from tlgr.ipc_client import ipc_request
 
 
@@ -18,7 +19,7 @@ def profile_group() -> None:
 @click.pass_context
 def profile_get(ctx: click.Context, account: str | None) -> None:
     """Show your current profile."""
-    acct = account or ctx.obj.get("account", "")
+    acct = resolve_account(ctx, account)
     result = ipc_request("GET", f"/profile/get?account={acct}")
     emit(ctx.obj, result, columns=["id", "first_name", "last_name", "username", "phone"])
 
@@ -39,7 +40,7 @@ def profile_update(
     account: str | None,
 ) -> None:
     """Update your profile."""
-    acct = account or ctx.obj.get("account", "")
+    acct = resolve_account(ctx, account)
     body = {"account": acct}
     if first_name is not None:
         body["first_name"] = first_name

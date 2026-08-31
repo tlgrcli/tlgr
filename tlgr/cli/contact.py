@@ -5,6 +5,7 @@ from __future__ import annotations
 import click
 
 from tlgr.core.output import add_pagination, decode_cursor, emit
+from tlgr.cli._common import resolve_account
 from tlgr.ipc_client import ipc_request
 
 
@@ -20,7 +21,7 @@ def contact_group() -> None:
 @click.pass_context
 def contact_list(ctx: click.Context, limit: int | None, cursor: str | None, account: str | None) -> None:
     """List all contacts."""
-    acct = account or ctx.obj.get("account", "")
+    acct = resolve_account(ctx, account)
     result = ipc_request("GET", f"/contact/list?account={acct}")
     contacts = result.get("contacts", [])
     cur = decode_cursor(cursor)
@@ -46,9 +47,39 @@ def contact_list(ctx: click.Context, limit: int | None, cursor: str | None, acco
 @click.pass_context
 def contact_add(ctx: click.Context, phone: str, name: str, account: str | None) -> None:
     """Add a contact by phone number."""
-    acct = account or ctx.obj.get("account", "")
+    acct = resolve_account(ctx, account)
     result = ipc_request("POST", "/contact/add", body={"phone": phone, "name": name, "account": acct})
     emit(ctx.obj, result)
+
+
+@contact_group.command("rename")
+@click.argument("user")
+@click.option("--first-name", default=None, help="New first name (omit to keep current).")
+@click.option("--last-name", default=None, help="New last name (omit to keep current).")
+@click.option("--account", "-a", default=None)
+@click.pass_context
+def contact_rename(
+    ctx: click.Context,
+    user: str,
+    first_name: str | None,
+    last_name: str | None,
+    account: str | None,
+) -> None:
+    """Save a user as a contact under a custom name (also works on non-contacts).
+
+    Useful for tagging users, e.g. appending a state marker to the last name.
+    """
+    acct = resolve_account(ctx, account)
+    body: dict = {"user": user, "account": acct}
+    if first_name is not None:
+        body["first_name"] = first_name
+    if last_name is not None:
+        body["last_name"] = last_name
+    if ctx.obj.get("dry_run"):
+        emit(ctx.obj, {"dry_run": True, "op": "contact.rename", **body})
+        return
+    result = ipc_request("POST", "/contact/rename", body=body)
+    emit(ctx.obj, result, columns=["saved", "user_id", "first_name", "last_name"])
 
 
 @contact_group.command("remove")
@@ -57,7 +88,7 @@ def contact_add(ctx: click.Context, phone: str, name: str, account: str | None) 
 @click.pass_context
 def contact_remove(ctx: click.Context, user: str, account: str | None) -> None:
     """Remove a contact."""
-    acct = account or ctx.obj.get("account", "")
+    acct = resolve_account(ctx, account)
     if ctx.obj.get("dry_run"):
         emit(ctx.obj, {"dry_run": True, "op": "contact.remove", "user": user})
         return
@@ -73,7 +104,7 @@ def contact_remove(ctx: click.Context, user: str, account: str | None) -> None:
 @click.pass_context
 def contact_search(ctx: click.Context, query: str, limit: int | None, cursor: str | None, account: str | None) -> None:
     """Search contacts."""
-    acct = account or ctx.obj.get("account", "")
+    acct = resolve_account(ctx, account)
     result = ipc_request("GET", f"/contact/search?query={query}&account={acct}")
     contacts = result.get("contacts", [])
     cur = decode_cursor(cursor)

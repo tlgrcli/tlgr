@@ -15,6 +15,7 @@ Compact reference for LLM agents. Use `--json` for all calls.
 | `--select <fields>` | | Comma-separated dot-path field projection |
 | `-a, --account <alias>` | `TLGR_ACCOUNT` | Select account |
 | `--enable-commands <list>` | `TLGR_ENABLE_COMMANDS` | Sandbox: `message.send,chat.list` |
+| | `TLGR_REQUIRE_ACCOUNT` | With `require_account` config: every command must get an explicit `-a` (exit 2 otherwise) |
 | `--dry-run, -n` | | Preview destructive ops without executing |
 | `--no-input` | | Never prompt (agent mode) |
 | `--cursor <token>` | | Pagination cursor (on list commands) |
@@ -72,13 +73,46 @@ tlgr message react <chat> <msg_id> <emoji>
 
 tlgr message read <chat> [--up-to MSG_ID]
 → {"read": true, "chat_id": -100123}
+
+tlgr message edit <chat> <msg_id> <text> [--typing SECONDS]
+→ {"edited": true, "id": 123, "chat_id": -100123, "date": "..."}
+
+tlgr message forward <from_chat> <to_chat> <id1> [id2 ...]
+→ {"forwarded": 2, "ids": [200, 201]}
+```
+
+`message send` also supports `--typing SECONDS` (show "typing…" before sending, max 60s)
+and `--typing-auto` (duration estimated from text length) for human-like sends.
+
+### Drafts
+
+Drafts are the human-in-the-loop primitive: prepare a reply without sending;
+the user sends or discards it from any Telegram client.
+
+```
+tlgr draft set <chat> <text> [--reply-to MSG_ID]
+→ {"draft": true, "chat_id": -100123, "text": "..."}
+
+tlgr draft clear <chat>
+→ {"cleared": true, "chat_id": -100123}
+
+tlgr draft list
+→ {"drafts": [{"chat_id": ..., "chat_name": ..., "chat_username": ..., "text": ..., "date": ..., "reply_to": ...}]}
 ```
 
 ### Chats
 
 ```
-tlgr chat list [--type user|group|channel] [--search TEXT] [--limit N] [--cursor TOKEN]
-→ {"chats": [{"id": ..., "name": ..., "type": ..., "username": ...}], "has_more": true, "next_cursor": "..."}
+tlgr chat list [--type user|group|channel] [--search TEXT] [--unread] [--limit N] [--cursor TOKEN]
+→ {"chats": [{"id": ..., "name": ..., "type": ..., "username": ...,
+              "unread_count": 3, "last_message": {"id": ..., "date": ..., "out": false, "text": "..."}}],
+   "has_more": true, "next_cursor": "..."}
+
+tlgr inbox [--type user] [--limit N]        # shortcut for chat list --unread
+
+tlgr chat members <chat> [--admins] [--search TEXT] [--limit N]
+→ {"members": [{"id": ..., "first_name": ..., "last_name": ..., "username": ...,
+                "is_bot": false, "is_deleted": false, "is_contact": false, "is_self": false}]}
 
 tlgr chat get <chat>
 → {"id": ..., "name": ..., "type": ..., "username": ...}
@@ -107,6 +141,11 @@ tlgr contact list [--limit N] [--cursor TOKEN]
 
 tlgr contact add <phone> [name]
 → {"added": true, "user_id": 123}
+
+tlgr contact rename <user> [--first-name TEXT] [--last-name TEXT]
+→ {"saved": true, "user_id": 123, "first_name": "...", "last_name": "..."}
+# Works on non-contacts too (saves them as a contact). Omitted parts keep the
+# current profile name. Useful for tagging users with state markers.
 
 tlgr contact remove <user>
 → {"removed": true}
@@ -180,7 +219,8 @@ tlgr watch [--chat CHAT1 --chat CHAT2]
 ## Chat Resolution
 
 Chat arguments accept:
-- Numeric ID: `12345`, `-100123456`
+- Numeric ID: `12345`, `-100123456` — pass negative IDs after a `--` separator,
+  e.g. `tlgr message list --limit 5 -- -100123456`
 - Username: `@username`
 
 Display names and phone numbers are NOT accepted for chat arguments.

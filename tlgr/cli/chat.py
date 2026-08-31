@@ -5,6 +5,7 @@ from __future__ import annotations
 import click
 
 from tlgr.core.output import add_pagination, decode_cursor, emit
+from tlgr.cli._common import resolve_account
 from tlgr.ipc_client import ipc_request
 
 
@@ -17,6 +18,7 @@ def chat_group() -> None:
 @click.option("--type", "chat_type", default=None, help="Filter: user, group, channel, bot.")
 @click.option("--search", "-s", default=None, help="Filter by name.")
 @click.option("--limit", "-n", type=int, default=None)
+@click.option("--unread", is_flag=True, help="Only chats with unread messages.")
 @click.option("--cursor", default=None, help="Pagination cursor from a previous response.")
 @click.option("--account", "-a", default=None)
 @click.pass_context
@@ -25,11 +27,12 @@ def chat_list(
     chat_type: str | None,
     search: str | None,
     limit: int | None,
+    unread: bool,
     cursor: str | None,
     account: str | None,
 ) -> None:
     """List all chats/dialogs."""
-    acct = account or ctx.obj.get("account", "")
+    acct = resolve_account(ctx, account)
     cur = decode_cursor(cursor)
     effective_limit = limit or 100
     params = f"account={acct}&limit={effective_limit}"
@@ -39,6 +42,8 @@ def chat_list(
         params += f"&type={chat_type}"
     if search:
         params += f"&search={search}"
+    if unread:
+        params += "&unread=1"
     result = ipc_request("GET", f"/chat/list?{params}")
     fmt = ctx.obj.get("fmt", "human")
     if fmt == "json":
@@ -51,8 +56,45 @@ def chat_list(
         emit(
             ctx.obj,
             result.get("chats", []),
-            columns=["id", "name", "type", "username"],
-            headers=["ID", "Name", "Type", "Username"],
+            columns=["id", "name", "type", "username", "unread_count"],
+            headers=["ID", "Name", "Type", "Username", "Unread"],
+        )
+
+
+@chat_group.command("members")
+@click.argument("chat")
+@click.option("--admins", is_flag=True, help="Only admins and the creator.")
+@click.option("--search", "-s", default=None, help="Filter by name (server-side).")
+@click.option("--limit", "-n", type=int, default=None)
+@click.option("--account", "-a", default=None)
+@click.pass_context
+def chat_members(
+    ctx: click.Context,
+    chat: str,
+    admins: bool,
+    search: str | None,
+    limit: int | None,
+    account: str | None,
+) -> None:
+    """List members of a group or channel."""
+    acct = resolve_account(ctx, account)
+    params = f"chat={chat}&account={acct}"
+    if admins:
+        params += "&admins=1"
+    if search:
+        params += f"&search={search}"
+    if limit:
+        params += f"&limit={limit}"
+    result = ipc_request("GET", f"/chat/members?{params}")
+    fmt = ctx.obj.get("fmt", "human")
+    if fmt == "json":
+        emit(ctx.obj, result)
+    else:
+        emit(
+            ctx.obj,
+            result.get("members", []),
+            columns=["id", "first_name", "last_name", "username", "is_bot"],
+            headers=["ID", "First", "Last", "Username", "Bot"],
         )
 
 
@@ -62,7 +104,7 @@ def chat_list(
 @click.pass_context
 def chat_get(ctx: click.Context, chat: str, account: str | None) -> None:
     """Get chat info (members, permissions, etc.)."""
-    acct = account or ctx.obj.get("account", "")
+    acct = resolve_account(ctx, account)
     result = ipc_request("GET", f"/chat/get?chat={chat}&account={acct}")
     emit(ctx.obj, result)
 
@@ -81,7 +123,7 @@ def chat_create(
     account: str | None,
 ) -> None:
     """Create a new group or channel."""
-    acct = account or ctx.obj.get("account", "")
+    acct = resolve_account(ctx, account)
     result = ipc_request("POST", "/chat/create", body={
         "name": name, "type": chat_type, "members": list(members), "account": acct,
     })
@@ -94,7 +136,7 @@ def chat_create(
 @click.pass_context
 def chat_archive(ctx: click.Context, chat: str, account: str | None) -> None:
     """Archive a chat."""
-    acct = account or ctx.obj.get("account", "")
+    acct = resolve_account(ctx, account)
     if ctx.obj.get("dry_run"):
         emit(ctx.obj, {"dry_run": True, "op": "chat.archive", "chat": chat})
         return
@@ -109,7 +151,7 @@ def chat_archive(ctx: click.Context, chat: str, account: str | None) -> None:
 @click.pass_context
 def chat_mute(ctx: click.Context, chat: str, duration: int | None, account: str | None) -> None:
     """Mute a chat. Duration in seconds (omit for permanent)."""
-    acct = account or ctx.obj.get("account", "")
+    acct = resolve_account(ctx, account)
     result = ipc_request("POST", "/chat/mute", body={"chat": chat, "duration": duration, "account": acct})
     emit(ctx.obj, result)
 
@@ -120,7 +162,7 @@ def chat_mute(ctx: click.Context, chat: str, duration: int | None, account: str 
 @click.pass_context
 def chat_leave(ctx: click.Context, chat: str, account: str | None) -> None:
     """Leave a chat or group."""
-    acct = account or ctx.obj.get("account", "")
+    acct = resolve_account(ctx, account)
     if ctx.obj.get("dry_run"):
         emit(ctx.obj, {"dry_run": True, "op": "chat.leave", "chat": chat})
         return
@@ -135,6 +177,6 @@ def chat_leave(ctx: click.Context, chat: str, account: str | None) -> None:
 @click.pass_context
 def chat_typing(ctx: click.Context, chat: str, duration: float, account: str | None) -> None:
     """Send a typing indicator."""
-    acct = account or ctx.obj.get("account", "")
+    acct = resolve_account(ctx, account)
     result = ipc_request("POST", "/chat/typing", body={"chat": chat, "duration": duration, "account": acct})
     emit(ctx.obj, result)

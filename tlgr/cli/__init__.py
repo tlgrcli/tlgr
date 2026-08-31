@@ -175,6 +175,7 @@ from tlgr.cli.account import account_group  # noqa: E402
 from tlgr.cli.message import message_group  # noqa: E402
 from tlgr.cli.chat import chat_group  # noqa: E402
 from tlgr.cli.contact import contact_group  # noqa: E402
+from tlgr.cli.draft import draft_group  # noqa: E402
 from tlgr.cli.profile import profile_group  # noqa: E402
 from tlgr.cli.media import media_group  # noqa: E402
 from tlgr.cli.daemon_cmd import daemon_group  # noqa: E402
@@ -191,6 +192,7 @@ cli.add_command(message_group, "message")
 cli.add_command(message_group, "msg")
 cli.add_command(chat_group, "chat")
 cli.add_command(contact_group, "contact")
+cli.add_command(draft_group, "draft")
 cli.add_command(profile_group, "profile")
 cli.add_command(media_group, "media")
 cli.add_command(daemon_group, "daemon")
@@ -266,6 +268,19 @@ def shortcut_chats(ctx: click.Context, chat_type: str | None, search: str | None
     ctx.invoke(
         chat_group.commands["list"],
         chat_type=chat_type, search=search, limit=limit,
+        account=ctx.obj.get("account"),
+    )
+
+
+@cli.command("inbox")
+@click.option("--type", "chat_type", default=None, help="Filter: user, group, channel, bot.")
+@click.option("--limit", "-n", type=int, default=None)
+@click.pass_context
+def shortcut_inbox(ctx: click.Context, chat_type: str | None, limit: int | None) -> None:
+    """List chats with unread messages (shortcut for 'chat list --unread')."""
+    ctx.invoke(
+        chat_group.commands["list"],
+        chat_type=chat_type, limit=limit, unread=True,
         account=ctx.obj.get("account"),
     )
 

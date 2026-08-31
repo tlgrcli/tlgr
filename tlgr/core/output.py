@@ -217,9 +217,18 @@ def add_pagination(
     items: list[Any],
     limit: int,
     cursor_state: dict[str, Any],
+    has_more: bool | None = None,
 ) -> dict[str, Any]:
-    """Add ``has_more`` and ``next_cursor`` to a JSON envelope."""
-    has_more = len(items) >= limit
+    """Add ``has_more`` and ``next_cursor`` to a JSON envelope.
+
+    ``len(items) >= limit`` is a heuristic for server-paginated endpoints,
+    which cannot know whether more rows exist without asking again. Callers
+    that hold the full result set and slice it themselves know the exact
+    answer — they pass it as ``has_more`` instead of guessing, so the cursor
+    stops being emitted once the list is exhausted.
+    """
+    if has_more is None:
+        has_more = len(items) >= limit
     envelope["has_more"] = has_more
     if has_more:
         envelope["next_cursor"] = encode_cursor(cursor_state)

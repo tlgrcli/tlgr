@@ -34,7 +34,8 @@ def contact_list(ctx: click.Context, limit: int | None, cursor: str | None, acco
     if fmt == "json":
         next_state = {"offset": offset + len(page)}
         out = {"contacts": page}
-        add_pagination(out, page, effective_limit, next_state)
+        add_pagination(out, page, effective_limit, next_state,
+                       has_more=len(contacts) > len(page))
         emit(ctx.obj, out)
     else:
         emit(ctx.obj, page, columns=["id", "name", "username", "phone"])
@@ -117,7 +118,8 @@ def contact_search(ctx: click.Context, query: str, limit: int | None, cursor: st
     if fmt == "json":
         next_state = {"offset": offset + len(page)}
         out = {"contacts": page}
-        add_pagination(out, page, effective_limit, next_state)
+        add_pagination(out, page, effective_limit, next_state,
+                       has_more=len(contacts) > len(page))
         emit(ctx.obj, out)
     else:
         emit(ctx.obj, page, columns=["id", "name", "username"])

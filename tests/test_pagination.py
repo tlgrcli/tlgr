@@ -62,3 +62,32 @@ class TestAddPagination:
         envelope: dict = {"items": items}
         result = add_pagination(envelope, items, limit=20, cursor_state={"offset": 20})
         assert result["has_more"] is True
+
+    def test_explicit_has_more_false_suppresses_cursor(self):
+        """A caller holding the whole list knows the truth; the heuristic doesn't.
+
+        `contact list` with no --limit sets limit = len(page), so the
+        `len(items) >= limit` guess was always True and the cursor never
+        stopped — a `while has_more` loop over it could not terminate.
+        """
+        items = list(range(33))
+        envelope: dict = {"contacts": items}
+        result = add_pagination(envelope, items, limit=33,
+                                cursor_state={"offset": 33}, has_more=False)
+        assert result["has_more"] is False
+        assert "next_cursor" not in result
+
+    def test_explicit_has_more_true(self):
+        envelope: dict = {"contacts": [1, 2]}
+        result = add_pagination(envelope, [1, 2], limit=99,
+                                cursor_state={"offset": 2}, has_more=True)
+        assert result["has_more"] is True
+        assert decode_cursor(result["next_cursor"]) == {"offset": 2}
+
+    def test_exhausted_page_is_not_more(self):
+        """Past the end: zero items, zero limit — the guess said True."""
+        envelope: dict = {"contacts": []}
+        result = add_pagination(envelope, [], limit=0,
+                                cursor_state={"offset": 33}, has_more=False)
+        assert result["has_more"] is False
+        assert "next_cursor" not in result

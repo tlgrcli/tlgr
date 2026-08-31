@@ -98,6 +98,8 @@ class IPCServer:
 
         # Chats
         app.router.add_get("/chat/list", self._chat_list)
+        app.router.add_get("/chat/catchup", self._chat_catchup)
+        app.router.add_post("/chat/open", self._chat_open)
         app.router.add_get("/chat/get", self._chat_get)
         app.router.add_post("/chat/create", self._chat_create)
         app.router.add_post("/chat/archive", self._chat_archive)
@@ -359,6 +361,38 @@ class IPCServer:
             ):
                 chats.append(c)
             return _json_response({"chats": chats})
+        except Exception as e:
+            return _handle_exception(e)
+
+    async def _chat_catchup(self, request: web.Request) -> web.Response:
+        q = request.query
+        account = q.get("account", "")
+        client = await self.daemon.ensure_client(account)
+        if not client:
+            return _error_response("No client for account", 404)
+        try:
+            chats = await client.catchup(
+                limit_chats=int(q.get("limit_chats", 20)),
+                per_chat=int(q.get("per_chat", 10)),
+                chat_type=q.get("type"),
+            )
+            return _json_response({"chats": chats})
+        except Exception as e:
+            return _handle_exception(e)
+
+    async def _chat_open(self, request: web.Request) -> web.Response:
+        body = await _get_body(request)
+        account = body.get("account", "")
+        client = await self.daemon.ensure_client(account)
+        if not client:
+            return _error_response("No client for account", 404)
+        try:
+            result = await client.open_chat(
+                _ref(body["chat"]),
+                limit=int(body.get("limit", 30)),
+                mark_read=body.get("mark_read", True),
+            )
+            return _json_response(result)
         except Exception as e:
             return _handle_exception(e)
 

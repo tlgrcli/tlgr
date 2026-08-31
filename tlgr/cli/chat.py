@@ -61,6 +61,68 @@ def chat_list(
         )
 
 
+@chat_group.command("open")
+@click.argument("chat")
+@click.option("--limit", "-n", type=int, default=30, help="Messages to fetch.")
+@click.option("--no-read", is_flag=True, help="Peek silently (no read receipt).")
+@click.option("--account", "-a", default=None)
+@click.pass_context
+def chat_open(ctx: click.Context, chat: str, limit: int, no_read: bool, account: str | None) -> None:
+    """Open a chat like a human: recent history + read receipt.
+
+    Use --no-read (or 'message list') for a silent peek.
+    """
+    acct = resolve_account(ctx, account)
+    result = ipc_request("POST", "/chat/open", body={
+        "account": acct, "chat": chat, "limit": limit, "mark_read": not no_read,
+    })
+    fmt = ctx.obj.get("fmt", "human")
+    if fmt == "json":
+        emit(ctx.obj, result)
+    else:
+        emit(
+            ctx.obj,
+            result.get("messages", []),
+            columns=["id", "date", "out", "text"],
+            headers=["ID", "Date", "Out", "Text"],
+        )
+
+
+@chat_group.command("catchup")
+@click.option("--type", "chat_type", default=None, help="Filter: user, group, channel, bot.")
+@click.option("--limit-chats", type=int, default=20, help="Max unread chats to include.")
+@click.option("--per-chat", type=int, default=10, help="Max messages per chat.")
+@click.option("--account", "-a", default=None)
+@click.pass_context
+def chat_catchup(
+    ctx: click.Context,
+    chat_type: str | None,
+    limit_chats: int,
+    per_chat: int,
+    account: str | None,
+) -> None:
+    """What did I miss? Every unread chat with its recent messages, one call.
+
+    Read-only: emits no read receipts. Follow up with 'chat open' on the
+    chats you decide to engage.
+    """
+    acct = resolve_account(ctx, account)
+    params = f"account={acct}&limit_chats={limit_chats}&per_chat={per_chat}"
+    if chat_type:
+        params += f"&type={chat_type}"
+    result = ipc_request("GET", f"/chat/catchup?{params}")
+    fmt = ctx.obj.get("fmt", "human")
+    if fmt == "json":
+        emit(ctx.obj, result)
+    else:
+        emit(
+            ctx.obj,
+            result.get("chats", []),
+            columns=["id", "name", "unread_count"],
+            headers=["ID", "Name", "Unread"],
+        )
+
+
 @chat_group.command("members")
 @click.argument("chat")
 @click.option("--admins", is_flag=True, help="Only admins and the creator.")

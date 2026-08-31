@@ -290,6 +290,39 @@ class ClientWrapper:
             result.append(d)
         return result
 
+    async def open_chat(
+        self,
+        chat_id: int | str,
+        limit: int = 30,
+        mark_read: bool = True,
+    ) -> dict[str, Any]:
+        """Open a chat the way a human would: fetch recent history and
+        (by default) emit a read receipt. Use get_messages for silent peeks."""
+        messages = await self.get_messages(chat_id, limit=limit, include_sender=True)
+        if mark_read:
+            await self.client.send_read_acknowledge(chat_id)
+        return {"chat_id": chat_id, "marked_read": mark_read, "messages": messages}
+
+    async def catchup(
+        self,
+        limit_chats: int = 20,
+        per_chat: int = 10,
+        chat_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """One call for "what did I miss?": every unread chat with its recent
+        messages (a couple before the unread ones for context). Read-only —
+        emits no read receipts."""
+        result: list[dict[str, Any]] = []
+        async for chat in self.list_chats(
+            limit=limit_chats, chat_type=chat_type, unread_only=True
+        ):
+            depth = min(max(chat.get("unread_count", 0) + 2, 5), per_chat)
+            chat["messages"] = await self.get_messages(
+                chat["id"], limit=depth, include_sender=True
+            )
+            result.append(chat)
+        return result
+
     async def get_message(self, chat_id: int | str, msg_id: int) -> dict[str, Any]:
         msgs = await self.client.get_messages(chat_id, ids=[msg_id])
         if not msgs or msgs[0] is None:

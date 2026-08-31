@@ -110,6 +110,23 @@ tlgr chat list [--type user|group|channel] [--search TEXT] [--unread] [--limit N
 
 tlgr inbox [--type user] [--limit N]        # shortcut for chat list --unread
 
+tlgr catchup [--type user] [--limit-chats N] [--per-chat N]   # shortcut for chat catchup
+tlgr chat catchup [--type ...] [--limit-chats N] [--per-chat N]
+→ {"chats": [{...chat info..., "unread_count": 3,
+              "messages": [{"id": ..., "date": ..., "out": ..., "reply_to": ..., "text": ...,
+                            "sender": {"id": ..., "name": ..., "username": ...}}]}]}
+# "What did I miss?" — every unread chat with its recent messages in one call.
+# READ-ONLY: emits no read receipts. Start every session/wake with this.
+
+tlgr chat open <chat> [--limit N] [--no-read]
+→ {"chat_id": ..., "marked_read": true, "messages": [...same shape as catchup...]}
+# Open a chat the way a human would: fetch recent history AND emit a read
+# receipt (visible to the other side — that's the point; it humanizes you).
+# Choose your reading mode deliberately:
+#   - loud (visible):  chat open            → history + read receipt
+#   - silent (peek):   chat open --no-read, or message list
+# Read before you act: pull real history instead of trusting summaries.
+
 tlgr chat members <chat> [--admins] [--search TEXT] [--limit N]
 → {"members": [{"id": ..., "first_name": ..., "last_name": ..., "username": ...,
                 "is_bot": false, "is_deleted": false, "is_contact": false, "is_self": false}]}

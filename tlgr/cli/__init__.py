@@ -285,6 +285,22 @@ def shortcut_inbox(ctx: click.Context, chat_type: str | None, limit: int | None)
     )
 
 
+@cli.command("catchup")
+@click.option("--type", "chat_type", default=None, help="Filter: user, group, channel, bot.")
+@click.option("--limit-chats", type=int, default=20)
+@click.option("--per-chat", type=int, default=10)
+@click.pass_context
+def shortcut_catchup(
+    ctx: click.Context, chat_type: str | None, limit_chats: int, per_chat: int
+) -> None:
+    """Unread chats with their recent messages (shortcut for 'chat catchup')."""
+    ctx.invoke(
+        chat_group.commands["catchup"],
+        chat_type=chat_type, limit_chats=limit_chats, per_chat=per_chat,
+        account=ctx.obj.get("account"),
+    )
+
+
 @cli.command("contacts")
 @click.pass_context
 def shortcut_contacts(ctx: click.Context) -> None:

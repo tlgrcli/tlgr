@@ -355,6 +355,7 @@ class IPCServer:
                 chat_type=q.get("type"),
                 search=q.get("search"),
                 unread_only=q.get("unread") == "1",
+                offset=int(q.get("offset", 0)),
             ):
                 chats.append(c)
             return _json_response({"chats": chats})

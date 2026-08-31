@@ -129,7 +129,11 @@ class ClientWrapper:
         chat_type: str | None = None,
         search: str | None = None,
         unread_only: bool = False,
+        offset: int = 0,
     ) -> AsyncIterator[dict[str, Any]]:
+        # offset counts post-filter matches, so paging with a type/search
+        # filter skips already-returned chats rather than raw dialogs
+        matched = 0
         count = 0
         async for dialog in self.client.iter_dialogs():
             entity = dialog.entity
@@ -144,6 +148,9 @@ class ClientWrapper:
             if unread_only and not info.get("unread_count"):
                 continue
 
+            matched += 1
+            if matched <= offset:
+                continue
             yield info
             count += 1
             if limit and count >= limit:
@@ -259,6 +266,8 @@ class ClientWrapper:
                 "id": msg.id,
                 "date": str(msg.date),
                 "text": msg.text or "",
+                "out": bool(getattr(msg, "out", False)),
+                "reply_to": getattr(msg, "reply_to_msg_id", None),
             }
             if include_sender and msg.sender:
                 d["sender"] = {
@@ -290,6 +299,8 @@ class ClientWrapper:
             "id": msg.id,
             "date": str(msg.date),
             "text": msg.text or "",
+            "out": bool(getattr(msg, "out", False)),
+            "reply_to": getattr(msg, "reply_to_msg_id", None),
         }
         if msg.sender:
             d["sender"] = {
@@ -336,12 +347,14 @@ class ClientWrapper:
                 text = msg.text or ""
                 if compiled and not compiled.search(text):
                     continue
-                result.append({"id": msg.id, "date": str(msg.date), "text": text})
+                result.append({"id": msg.id, "date": str(msg.date), "text": text,
+                               "out": bool(getattr(msg, "out", False))})
                 if len(result) >= limit:
                     break
         else:
             async for msg in self.client.iter_messages(chat_id, search=query, limit=limit):
-                result.append({"id": msg.id, "date": str(msg.date), "text": msg.text or ""})
+                result.append({"id": msg.id, "date": str(msg.date), "text": msg.text or "",
+                               "out": bool(getattr(msg, "out", False))})
         return result
 
     async def pin_message(self, chat_id: int | str, msg_id: int) -> dict[str, Any]:

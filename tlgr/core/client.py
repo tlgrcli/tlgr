@@ -161,6 +161,11 @@ class ClientWrapper:
         extras: dict[str, Any] = {
             "unread_count": getattr(dialog, "unread_count", 0) or 0,
         }
+        # highest outgoing msg id the OTHER side has read — lets an agent see
+        # whether its last message was seen ("seen" = out msg id <= this)
+        raw = getattr(dialog, "dialog", None)
+        if raw is not None and hasattr(raw, "read_outbox_max_id"):
+            extras["read_outbox_max_id"] = raw.read_outbox_max_id
         msg = getattr(dialog, "message", None)
         if msg is not None:
             text = (getattr(msg, "text", None) or "").replace("\n", " ")

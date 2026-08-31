@@ -85,6 +85,7 @@ tlgr draft list                        # all non-empty drafts across chats
 tlgr chat list                         # --type, --search, --limit, --unread
 tlgr inbox                             # shortcut: chats with unread messages
 tlgr chat members <chat>               # --admins, --search, --limit
+tlgr chat posters <chat>               # distinct senders + message counts; --limit, --max-messages
 tlgr chat get <chat>
 tlgr chat create <name>                # --type group|channel, --members
 tlgr chat archive <chat>
@@ -101,6 +102,17 @@ tlgr contact rename <user>             # --first-name, --last-name (tags non-con
 tlgr contact remove <user>
 tlgr contact search <query>
 ```
+
+### Users
+
+```bash
+tlgr user get <user>
+tlgr user dialog-status <user>         # does THIS account have prior history with them?
+```
+
+`dialog-status` distinguishes "yes", "definitively no", and "cannot tell"
+(exit 13) instead of guessing. Never infer "no history" from an entity
+resolution error — see AGENT.md for why.
 
 ### Media
 
@@ -290,6 +302,7 @@ tlgr --json agent exit-codes           # as JSON
 | 10 | Config error |
 | 11 | Daemon error |
 | 12 | IPC error |
+| 13 | Indeterminate (unknown — not a negative) |
 | 130 | Interrupted (SIGINT) |
 
 ### Command sandboxing

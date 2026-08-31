@@ -44,6 +44,7 @@ List commands return `has_more` (bool) and `next_cursor` (opaque string). Pass `
 | 10 | CONFIG | Config error |
 | 11 | DAEMON | Daemon error |
 | 12 | IPC | IPC error |
+| 13 | INDETERMINATE | The answer could not be established — treat as unknown, NEVER as a negative |
 
 ## Commands
 
@@ -131,6 +132,21 @@ tlgr chat members <chat> [--admins] [--search TEXT] [--limit N]
 → {"members": [{"id": ..., "first_name": ..., "last_name": ..., "username": ...,
                 "is_bot": false, "is_deleted": false, "is_contact": false, "is_self": false}]}
 
+tlgr chat posters <chat> [--limit N] [--max-messages N]
+→ {"posters": [{"id": ..., "username": ..., "name": ..., "count": 44,
+                "is_bot": false, "is_deleted": false,
+                "last_date": "...", "last_message_id": ...}],
+   "scanned_messages": 2400, "distinct_posters": 137}
+# Distinct senders in a chat's recent history with per-sender counts, sorted
+# by count descending. Pagination is handled INTERNALLY — do not pass
+# --offset-id and do not hand-roll the walk. --max-messages bounds the scan
+# (default 2000, hard cap 20000). Exits 3 (EMPTY) when nobody has posted.
+# On a FloodWait mid-scan it backs off and returns the partial harvest with
+# "partial": true and "flood_wait": N.
+# Filter on is_bot / is_deleted before contacting anyone. Senders are not
+# always users: anonymous admins and a linked channel post under a negative
+# channel id, so filter to positive ids when harvesting people.
+
 tlgr chat get <chat>
 → {"id": ..., "name": ..., "type": ..., "username": ...}
 
@@ -176,7 +192,43 @@ tlgr contact search <query> [--limit N] [--cursor TOKEN]
 ```
 tlgr user get <user>
 → {"id": ..., "first_name": ..., "username": ..., "bio": ..., "is_bot": false, ...}
+
+tlgr user dialog-status <user> [--max-dialogs N]
+→ {"ref": ..., "id": ..., "username": ..., "resolved": true, "has_dialog": true,
+   "message_count": 12, "source": "peer_dialogs", "reason": null}
 ```
+
+`dialog-status` is the ONLY correct way to ask "does this account have prior
+history with this person?". Three outcomes, never conflated:
+
+| `resolved` | `has_dialog` | exit | meaning |
+|---|---|---|---|
+| `true` | `true` | 0 | a dialog exists; `message_count` is the server's exact total |
+| `true` | `false` | 0 | definitively none — the account's complete dialog list was enumerated and they were not in it |
+| `false` | `null` | **13** | could NOT be established; `reason` says why |
+
+**Do not infer a negative from an error.** `message list` on a bare numeric id
+raises "Could not find the input entity" whenever the local entity cache is
+cold — including for people the account demonstrably HAS messaged. That error
+is indistinguishable from a genuinely unknown peer, so any guard that reads it
+as "no history" will eventually let a duplicate cold message through. That is
+the bug this command exists to remove; exit 13 must be treated as a refusal.
+
+`source` says how the answer was reached:
+- `peer_dialogs` — an input peer was available, so the server was asked directly
+  (`messages.GetPeerDialogs` + an exact message total). Cheap.
+- `dialog_scan` — the peer was unresolvable, so the account's complete dialog
+  list was enumerated server-side. Finding the id is a positive; **exhausting**
+  the list is the only thing that licenses a negative. `scanned_dialogs` reports
+  how far it got.
+- `unknown` — cap hit, FloodWait, or RPC failure. `resolved` is `false`.
+
+Note: there is no MTProto call that resolves a bare user id to an access hash
+for a non-bot account (`users.GetUsers` with `access_hash=0` returns
+`UserEmpty` for non-contacts). The dialog list, not entity resolution, is what
+makes the answer authoritative. It reports on the dialog list: a conversation
+the account itself deleted is gone server-side too and correctly reads as no
+dialog.
 
 ### Profile
 

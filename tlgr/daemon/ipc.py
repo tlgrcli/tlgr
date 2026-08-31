@@ -115,6 +115,7 @@ class IPCServer:
         app.router.add_post("/chat/leave", self._chat_leave)
         app.router.add_post("/chat/typing", self._chat_typing)
         app.router.add_get("/chat/members", self._chat_members)
+        app.router.add_get("/chat/posters", self._chat_posters)
 
         app.router.add_post("/draft/set", self._draft_set)
         app.router.add_post("/draft/clear", self._draft_clear)
@@ -129,6 +130,7 @@ class IPCServer:
 
         # Users
         app.router.add_get("/user/get", self._user_get)
+        app.router.add_get("/user/dialog-status", self._user_dialog_status)
 
         # Profile
         app.router.add_get("/profile/get", self._profile_get)
@@ -497,6 +499,22 @@ class IPCServer:
         except Exception as e:
             return _handle_exception(e)
 
+    async def _chat_posters(self, request: web.Request) -> web.Response:
+        q = request.query
+        account = q.get("account", "")
+        client = await self.daemon.ensure_client(account)
+        if not client:
+            return _error_response("No client for account", 404)
+        try:
+            result = await client.chat_posters(
+                _ref(q["chat"]),
+                limit=int(q["limit"]) if q.get("limit") else None,
+                max_messages=int(q.get("max_messages", 2000)),
+            )
+            return _json_response(result)
+        except Exception as e:
+            return _handle_exception(e)
+
     # -- Contacts --
 
     async def _contact_list(self, request: web.Request) -> web.Response:
@@ -574,6 +592,21 @@ class IPCServer:
         try:
             info = await client.get_user_info(_ref(q["user"]))
             return _json_response(info)
+        except Exception as e:
+            return _handle_exception(e)
+
+    async def _user_dialog_status(self, request: web.Request) -> web.Response:
+        q = request.query
+        account = q.get("account", "")
+        client = await self.daemon.ensure_client(account)
+        if not client:
+            return _error_response("No client for account", 404)
+        try:
+            status = await client.dialog_status(
+                _ref(q["user"]),
+                max_dialogs=int(q.get("max_dialogs", 5000)),
+            )
+            return _json_response(status)
         except Exception as e:
             return _handle_exception(e)
 

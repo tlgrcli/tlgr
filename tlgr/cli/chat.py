@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import click
 
+from tlgr.core.errors import EXIT_EMPTY
 from tlgr.core.output import add_pagination, decode_cursor, emit
 from tlgr.cli._common import resolve_account
 from tlgr.ipc_client import ipc_request
@@ -242,3 +243,42 @@ def chat_typing(ctx: click.Context, chat: str, duration: float, account: str | N
     acct = resolve_account(ctx, account)
     result = ipc_request("POST", "/chat/typing", body={"chat": chat, "duration": duration, "account": acct})
     emit(ctx.obj, result)
+
+
+@chat_group.command("posters")
+@click.argument("chat")
+@click.option("--limit", "-n", type=int, default=None,
+              help="Return only the top N posters (all of them by default).")
+@click.option("--max-messages", type=int, default=2000,
+              help="How much history to walk, newest first (hard cap 20000).")
+@click.option("--account", "-a", default=None)
+@click.pass_context
+def chat_posters(
+    ctx: click.Context,
+    chat: str,
+    limit: int | None,
+    max_messages: int,
+    account: str | None,
+) -> None:
+    """Distinct senders in a chat's recent history, by message count.
+
+    Pagination is handled internally -- do not pass --offset-id and do not
+    hand-roll the walk. Exits 3 when nobody has posted.
+    """
+    acct = resolve_account(ctx, account)
+    params = f"chat={chat}&account={acct}&max_messages={max_messages}"
+    if limit:
+        params += f"&limit={limit}"
+    result = ipc_request("GET", f"/chat/posters?{params}", timeout=600)
+    fmt = ctx.obj.get("fmt", "human")
+    if fmt == "json":
+        emit(ctx.obj, result)
+    else:
+        emit(
+            ctx.obj,
+            result.get("posters", []),
+            columns=["id", "username", "name", "count", "is_bot", "is_deleted"],
+            headers=["ID", "Username", "Name", "Msgs", "Bot", "Deleted"],
+        )
+    if not result.get("posters"):
+        ctx.exit(EXIT_EMPTY)

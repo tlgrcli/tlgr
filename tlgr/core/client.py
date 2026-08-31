@@ -759,3 +759,228 @@ class ClientWrapper:
             "has_photo": getattr(user, "photo", None) is not None,
             "deleted": getattr(user, "deleted", False),
         }
+
+    # ------------------------------------------------------------------
+    # Authoritative history / harvest primitives
+    # ------------------------------------------------------------------
+
+    async def dialog_status(
+        self,
+        user_ref: int | str,
+        *,
+        max_dialogs: int = 5000,
+    ) -> dict[str, Any]:
+        """Answer "does THIS account have a dialog with this peer?" — or admit
+        it cannot tell.
+
+        The naive probe (list a few messages and read the error) is unsound for
+        a *bare numeric id*: `get_input_entity` only consults the local entity
+        cache and, for a non-bot account, the network fallback
+        (`users.GetUsers` with access_hash=0) returns `UserEmpty` for anyone
+        who is not already a contact. So a cold cache raises "Could not find
+        the input entity" for ids the account demonstrably HAS talked to, and
+        that error is indistinguishable from a genuinely unknown peer. Callers
+        that read it as "no history" will happily cold-message someone twice.
+
+        There is no MTProto call that resolves a bare user id to an access
+        hash. What *is* server-side and authoritative is the dialog list
+        itself, so:
+
+          1. try to get an input peer cheaply (cache / disk / username
+             resolution) and, if that works, ask the server directly with
+             `messages.GetPeerDialogs` plus an exact server-side message total;
+          2. if the peer cannot be resolved, enumerate the account's *complete*
+             dialog list from the server and look for the id. Finding it is a
+             positive; **exhausting** it is the only thing that licenses a
+             negative;
+          3. if neither completes — cap hit, FloodWait, RPC failure — report
+             ``resolved: false`` and let the caller fail closed. An honest
+             "I don't know" is the whole point of this command.
+
+        Caveat, deliberately not papered over: this reports on the dialog
+        list. If the account *deleted* the conversation, the history is gone
+        server-side too and this correctly says there is no dialog.
+        """
+        from telethon.tl.functions.messages import GetPeerDialogsRequest
+        from telethon.tl.types import InputDialogPeer
+
+        out: dict[str, Any] = {
+            "ref": user_ref,
+            "id": None,
+            "username": None,
+            "resolved": False,
+            "has_dialog": None,
+            "message_count": None,
+            "source": "unknown",
+            "reason": None,
+        }
+
+        target_id: int | None = None
+        target_username: str | None = None
+        if isinstance(user_ref, int):
+            target_id = user_ref
+        elif isinstance(user_ref, str):
+            s = user_ref.strip()
+            if s.lstrip("-").isdigit():
+                target_id = int(s)
+            else:
+                target_username = s.lstrip("@").lower()
+
+        peer: Any = None
+        try:
+            peer = await self.client.get_input_entity(user_ref)
+        except FloodWaitError as e:
+            out["reason"] = f"rate limited while resolving entity (wait {e.seconds}s)"
+            return out
+        except Exception as e:
+            # NOT evidence of absence — just a cold cache or an unknown handle.
+            out["reason"] = f"entity not resolvable directly: {e}"
+
+        scanned = 0
+        if peer is None:
+            if target_id is None and target_username is None:
+                out["reason"] = f"unusable reference: {user_ref!r}"
+                return out
+            try:
+                async for dialog in self.client.iter_dialogs():
+                    scanned += 1
+                    ent = dialog.entity
+                    ent_id = getattr(ent, "id", None)
+                    dlg_id = getattr(dialog, "id", None)
+                    uname = (getattr(ent, "username", None) or "").lower()
+                    if (target_id is not None and target_id in (ent_id, dlg_id)) or (
+                        target_username is not None and uname == target_username
+                    ):
+                        peer = ent
+                        out["source"] = "dialog_scan"
+                        break
+                    if scanned >= max_dialogs:
+                        out["scanned_dialogs"] = scanned
+                        out["reason"] = (
+                            f"dialog scan hit the {max_dialogs}-dialog cap without a "
+                            "match — indeterminate, NOT a negative"
+                        )
+                        return out
+            except Exception as e:
+                out["scanned_dialogs"] = scanned
+                out["reason"] = f"dialog scan did not complete: {e}"
+                return out
+
+            out["scanned_dialogs"] = scanned
+            if peer is None:
+                # The server handed us every dialog this account has and the
+                # peer was not among them. This is the definitive negative.
+                out.update(
+                    resolved=True,
+                    has_dialog=False,
+                    message_count=0,
+                    source="dialog_scan",
+                    reason="absent from the account's complete dialog list",
+                )
+                out["id"] = target_id
+                out["username"] = target_username
+                return out
+
+        try:
+            input_peer = await self.client.get_input_entity(peer)
+            res = await self.client(
+                GetPeerDialogsRequest(peers=[InputDialogPeer(peer=input_peer)])
+            )
+            dialogs = list(getattr(res, "dialogs", []) or [])
+            top = max((getattr(d, "top_message", 0) or 0) for d in dialogs) if dialogs else 0
+            msgs = await self.client.get_messages(input_peer, limit=1)
+            total = getattr(msgs, "total", None)
+            if total is None:
+                total = len(msgs)
+            total = int(total)
+        except FloodWaitError as e:
+            out["reason"] = f"rate limited while querying the server (wait {e.seconds}s)"
+            return out
+        except Exception as e:
+            out["reason"] = f"server dialog query failed: {e}"
+            return out
+
+        pid = getattr(peer, "user_id", None)
+        if pid is None:
+            pid = (
+                getattr(peer, "channel_id", None)
+                or getattr(peer, "chat_id", None)
+                or getattr(peer, "id", None)
+            )
+        out["id"] = pid if pid is not None else target_id
+        out["username"] = getattr(peer, "username", None) or target_username
+        out["resolved"] = True
+        # Presence in the dialog list is itself the dialog: a scan hit stays a
+        # positive even if both sides have since wiped the history.
+        out["has_dialog"] = out["source"] == "dialog_scan" or bool(top) or total > 0
+        out["message_count"] = total
+        if out["source"] != "dialog_scan":
+            out["source"] = "peer_dialogs"
+        return out
+
+    async def chat_posters(
+        self,
+        chat_id: int | str,
+        *,
+        limit: int | None = None,
+        max_messages: int = 2000,
+    ) -> dict[str, Any]:
+        """Distinct senders in a chat's recent history with per-sender counts.
+
+        Replaces the hand-rolled `message list --offset-id` walk every caller
+        was re-implementing: pagination is Telethon's job, the dedupe and the
+        count are done here once. Newest-first, so the first message seen for
+        a sender is their most recent one.
+        """
+        max_messages = max(1, min(int(max_messages), 20000))
+        posters: dict[int, dict[str, Any]] = {}
+        scanned = 0
+        flood_wait = 0
+
+        try:
+            async for msg in self.client.iter_messages(chat_id, limit=max_messages):
+                scanned += 1
+                sid = getattr(msg, "sender_id", None)
+                if sid is None:
+                    continue
+                rec = posters.get(sid)
+                if rec is None:
+                    sender = getattr(msg, "sender", None)
+                    name = " ".join(
+                        p for p in (
+                            getattr(sender, "first_name", None) or "",
+                            getattr(sender, "last_name", None) or "",
+                        ) if p
+                    ).strip() or (getattr(sender, "title", None) or "")
+                    rec = {
+                        "id": sid,
+                        "username": getattr(sender, "username", None),
+                        "name": name,
+                        "count": 0,
+                        "is_bot": bool(getattr(sender, "bot", False)),
+                        "is_deleted": bool(getattr(sender, "deleted", False)),
+                        "last_date": str(getattr(msg, "date", "")),
+                        "last_message_id": getattr(msg, "id", None),
+                    }
+                    posters[sid] = rec
+                rec["count"] += 1
+        except FloodWaitError as e:
+            # Back off instead of hammering: hand back the partial harvest and
+            # say so, so the caller can decide rather than retry blindly.
+            if not posters:
+                raise
+            flood_wait = int(e.seconds)
+
+        ordered = sorted(posters.values(), key=lambda p: (-p["count"], p["id"]))
+        if limit:
+            ordered = ordered[: int(limit)]
+
+        result: dict[str, Any] = {
+            "posters": ordered,
+            "scanned_messages": scanned,
+            "distinct_posters": len(posters),
+        }
+        if flood_wait:
+            result["partial"] = True
+            result["flood_wait"] = flood_wait
+        return result

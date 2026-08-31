@@ -20,6 +20,7 @@ EXIT_SPAM_FLAGGED = 9
 EXIT_CONFIG = 10
 EXIT_DAEMON = 11
 EXIT_IPC = 12
+EXIT_INDETERMINATE = 13
 EXIT_CANCELLED = 130
 
 EXIT_CODE_MAP: dict[str, dict[str, Any]] = {
@@ -45,6 +46,13 @@ EXIT_CODE_MAP: dict[str, dict[str, Any]] = {
     "DAEMON_ERROR": {"code": EXIT_DAEMON, "description": "Daemon error"},
     "DAEMON_NOT_RUNNING": {"code": EXIT_DAEMON, "description": "Daemon is not running"},
     "IPC_ERROR": {"code": EXIT_IPC, "description": "IPC communication error"},
+    "INDETERMINATE": {
+        "code": EXIT_INDETERMINATE,
+        "description": (
+            "Question could not be answered authoritatively — treat as unknown, "
+            "never as a negative"
+        ),
+    },
     "CANCELLED": {"code": EXIT_CANCELLED, "description": "Interrupted (SIGINT)"},
 }
 

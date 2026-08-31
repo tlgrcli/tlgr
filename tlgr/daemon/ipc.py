@@ -8,7 +8,7 @@ import logging
 from typing import Any, TYPE_CHECKING
 
 from aiohttp import web
-from telethon.errors import FloodWaitError
+from telethon.errors import FloodWaitError, PeerFloodError, RPCError
 
 if TYPE_CHECKING:
     from tlgr.daemon.server import DaemonServer
@@ -51,6 +51,14 @@ def _handle_exception(e: Exception) -> web.Response:
             {"error": str(e), "code": "RATE_LIMITED", "wait_seconds": e.seconds},
             status=429,
         )
+    # PeerFlood and FROZEN_* are account-level spam flags, not transient
+    # rate limits: there is no wait_seconds to sleep off. They must reach the
+    # caller as their own code so outreach automation can stop sending rather
+    # than treat them as a generic failure and keep going.
+    if isinstance(e, PeerFloodError):
+        return _error_response(str(e), 403, code="PEER_FLOOD")
+    if isinstance(e, RPCError) and "FROZEN" in str(e).upper():
+        return _error_response(str(e), 403, code="ACCOUNT_FROZEN")
     return _error_response(str(e), 500)
 
 

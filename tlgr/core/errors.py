@@ -16,6 +16,7 @@ EXIT_NOT_FOUND = 5
 EXIT_PERMISSION = 6
 EXIT_RATE_LIMITED = 7
 EXIT_RETRYABLE = 8
+EXIT_SPAM_FLAGGED = 9
 EXIT_CONFIG = 10
 EXIT_DAEMON = 11
 EXIT_IPC = 12
@@ -32,6 +33,14 @@ EXIT_CODE_MAP: dict[str, dict[str, Any]] = {
     "PERMISSION_DENIED": {"code": EXIT_PERMISSION, "description": "Permission denied"},
     "RATE_LIMITED": {"code": EXIT_RATE_LIMITED, "description": "Rate limited (retry later)"},
     "RETRYABLE": {"code": EXIT_RETRYABLE, "description": "Transient/retryable error"},
+    "PEER_FLOOD": {
+        "code": EXIT_SPAM_FLAGGED,
+        "description": "Account spam-flagged for messaging strangers (PeerFlood) — stop sending",
+    },
+    "ACCOUNT_FROZEN": {
+        "code": EXIT_SPAM_FLAGGED,
+        "description": "Account frozen/restricted by Telegram — stop sending",
+    },
     "CONFIG_ERROR": {"code": EXIT_CONFIG, "description": "Configuration error"},
     "DAEMON_ERROR": {"code": EXIT_DAEMON, "description": "Daemon error"},
     "DAEMON_NOT_RUNNING": {"code": EXIT_DAEMON, "description": "Daemon is not running"},
@@ -91,6 +100,20 @@ class RateLimitError(TlgrError):
         self.wait_seconds = wait_seconds
         if wait_seconds:
             self.hint = f"Rate limited. Retry after {wait_seconds}s"
+
+
+class SpamFlagError(TlgrError):
+    """Telegram has restricted this account from messaging strangers.
+
+    Distinct from RateLimitError: a FloodWait clears after `wait_seconds`,
+    whereas PeerFlood/FROZEN is an account-level spam flag with no advertised
+    expiry. Callers running outreach must stop ALL outgoing traffic for the
+    account rather than back off and retry.
+    """
+
+    code = "PEER_FLOOD"
+    exit_code = EXIT_SPAM_FLAGGED
+    hint = "Account is spam-flagged. Stop sending from it and let it rest."
 
 
 class DaemonError(TlgrError):

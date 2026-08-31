@@ -274,6 +274,9 @@ class ClientWrapper:
                 "out": bool(getattr(msg, "out", False)),
                 "reply_to": getattr(msg, "reply_to_msg_id", None),
             }
+            action = getattr(msg, "action", None)
+            if action is not None:
+                d["service"] = type(action).__name__
             if include_sender and msg.sender:
                 d["sender"] = {
                     "id": msg.sender_id,
@@ -340,6 +343,9 @@ class ClientWrapper:
             "out": bool(getattr(msg, "out", False)),
             "reply_to": getattr(msg, "reply_to_msg_id", None),
         }
+        action = getattr(msg, "action", None)
+        if action is not None:
+            d["service"] = type(action).__name__
         if msg.sender:
             d["sender"] = {
                 "id": msg.sender_id,

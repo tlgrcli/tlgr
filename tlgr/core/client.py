@@ -157,7 +157,10 @@ class ClientWrapper:
             if search:
                 if search.lower() not in info["name"].lower():
                     continue
-            if unread_only and not info.get("unread_count"):
+            # A chat marked unread BY HAND has unread_count 0 — filtering on
+            # the count alone hides exactly the chats someone flagged as
+            # "still waiting on me".
+            if unread_only and not (info.get("unread_count") or info.get("unread_mark")):
                 continue
 
             matched += 1
@@ -178,6 +181,10 @@ class ClientWrapper:
         raw = getattr(dialog, "dialog", None)
         if raw is not None and hasattr(raw, "read_outbox_max_id"):
             extras["read_outbox_max_id"] = raw.read_outbox_max_id
+        # the manual "unread" flag (chat unread / MarkDialogUnread) — set on a
+        # chat with nothing new in it, so it never shows in unread_count
+        if raw is not None and getattr(raw, "unread_mark", False):
+            extras["unread_mark"] = True
         msg = getattr(dialog, "message", None)
         if msg is not None:
             text = (getattr(msg, "text", None) or "").replace("\n", " ")
@@ -553,6 +560,22 @@ class ClientWrapper:
             InputFolderPeer(peer=entity, folder_id=1)
         ]))
         return {"archived": True, "chat_id": chat_id}
+
+    async def mark_chat_unread(self, chat_id: int | str, unread: bool = True) -> dict[str, Any]:
+        """Set (or clear) the dialog's manual unread mark.
+
+        This is the undo for an accidental read receipt: it restores the blue
+        badge the *owner* of the account sees in their client, which is often
+        the only reminder that a chat is still waiting on them. It does NOT
+        un-send the read receipt already delivered to the other side — that
+        part is irreversible — and it does not restore the numeric
+        unread_count, only the manual "unread" flag Telegram keeps per dialog.
+        """
+        from telethon.tl.functions.messages import MarkDialogUnreadRequest
+
+        entity = await self.client.get_input_entity(chat_id)
+        await self.client(MarkDialogUnreadRequest(peer=entity, unread=unread))
+        return {"unread": unread, "chat_id": chat_id}
 
     async def mute_chat(self, chat_id: int | str, duration: int | None = None) -> dict[str, Any]:
         from telethon.tl.functions.account import UpdateNotifySettingsRequest

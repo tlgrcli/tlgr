@@ -89,6 +89,26 @@ def chat_open(ctx: click.Context, chat: str, limit: int, no_read: bool, account:
         )
 
 
+@chat_group.command("unread")
+@click.argument("chat")
+@click.option("--clear", is_flag=True, help="Clear the mark instead of setting it.")
+@click.option("--account", "-a", default=None)
+@click.pass_context
+def chat_unread(ctx: click.Context, chat: str, clear: bool, account: str | None) -> None:
+    """Mark a chat unread again — the undo for an accidental read receipt.
+
+    Restores the badge YOU see in your own client, which is often the only
+    reminder that a chat is still waiting on you. It does not un-send the
+    read receipt the other side already got, and it restores the manual
+    unread mark rather than the numeric unread count.
+    """
+    acct = resolve_account(ctx, account)
+    result = ipc_request("POST", "/chat/unread", body={
+        "account": acct, "chat": chat, "unread": not clear,
+    })
+    emit(ctx.obj, result)
+
+
 @chat_group.command("catchup")
 @click.option("--type", "chat_type", default=None, help="Filter: user, group, channel, bot.")
 @click.option("--limit-chats", type=int, default=20, help="Max unread chats to include.")

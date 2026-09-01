@@ -127,6 +127,20 @@ tlgr chat open <chat> [--limit N] [--no-read]
 #   - loud (visible):  chat open            → history + read receipt
 #   - silent (peek):   chat open --no-read, or message list
 # Read before you act: pull real history instead of trusting summaries.
+# A read receipt has a SECOND effect that is easy to miss: it clears the
+# unread badge in the ACCOUNT OWNER's own client. On a chat the owner is
+# handling by hand, that badge is their only reminder that they owe a reply —
+# so peek with --no-read there and keep 'chat open' for chats you are
+# advancing yourself. If you cleared one by accident, see 'chat unread'.
+
+tlgr chat unread <chat> [--clear]
+→ {"unread": true, "chat_id": ...}
+# Mark a chat unread again — the undo for an accidental read receipt.
+# Restores the badge the owner sees; does NOT un-send the read receipt the
+# other side already got (that is irreversible), and sets Telegram's manual
+# unread FLAG rather than a numeric count. Chats flagged this way come back
+# with "unread_mark": true and DO appear in chat list --unread / inbox /
+# catchup, even though their unread_count is 0.
 
 tlgr chat members <chat> [--admins] [--search TEXT] [--limit N]
 → {"members": [{"id": ..., "first_name": ..., "last_name": ..., "username": ...,

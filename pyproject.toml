@@ -36,6 +36,20 @@ dependencies = [
     "pyyaml>=6.0",
 ]
 
+[project.optional-dependencies]
+# Without pytest-asyncio every `@pytest.mark.asyncio` test ERRORS on an
+# unknown mark instead of running — 13 of them did exactly that, and the
+# suite reported them as ordinary failures, so a red run looked like known
+# breakage rather than "your async tests never executed".
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.23",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
 [project.urls]
 Homepage = "https://github.com/tlgrcli/tlgr"
 Repository = "https://github.com/tlgrcli/tlgr"

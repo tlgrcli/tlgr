@@ -131,8 +131,20 @@ class ClientWrapper:
         unread_only: bool = False,
         offset: int = 0,
     ) -> AsyncIterator[dict[str, Any]]:
-        # offset counts post-filter matches, so paging with a type/search
-        # filter skips already-returned chats rather than raw dialogs
+        """Yield dialogs as dicts, optionally filtered by type/search/unread.
+
+        `limit=None` yields every match — that is how you enumerate an
+        account, and it costs ONE walk.
+
+        Do not page this to collect everything. `offset` counts post-filter
+        matches (so paging with a type/search filter skips already-returned
+        chats rather than raw dialogs), but each call restarts
+        `iter_dialogs()` at the top, making full enumeration by paging
+        O(n^2): the caller re-walks every dialog per page and discards the
+        prefix. Measured on a 708-private-dialog account: 8 pages of 100 =
+        104s, versus 24s unpaged for the identical list in identical order.
+        `offset` is for resuming or sampling, never for a full sweep.
+        """
         matched = 0
         count = 0
         async for dialog in self.client.iter_dialogs():

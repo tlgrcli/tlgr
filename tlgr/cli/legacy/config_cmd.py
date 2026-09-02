@@ -76,22 +76,29 @@ def config_group() -> None:
 @click.pass_context
 def config_init(ctx: click.Context) -> None:
     """Create default configuration files."""
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    # SEC-07: every one of these is written 0600, through the one writer that
+    # chmods before it renames. `webhook.toml` holds a token, and v1 created
+    # all three world-readable with `write_text`.
+    from tlgr.core.paths import TlgrPaths, write_private
+
+    TlgrPaths(CONFIG_DIR).ensure_base()
     created = []
 
     config_path = CONFIG_DIR / "config.toml"
     if not config_path.exists():
-        config_path.write_text(
+        write_private(
+            config_path,
             '[defaults]\ndrop_author = false\ndelete_after = false\noutput = "human"\n\n'
             '[accounts]\ndefault = ""\n\n'
             "[daemon]\nauto_start = true\n"
-            'log_level = "info"\n'
+            'log_level = "info"\n',
         )
         created.append("config.toml")
 
     jobs_path = CONFIG_DIR / "jobs.yaml"
     if not jobs_path.exists():
-        jobs_path.write_text(
+        write_private(
+            jobs_path,
             "# Gateway jobs configuration\n"
             "# See https://github.com/tlgrcli/tlgr for full reference.\n"
             "#\n"
@@ -101,18 +108,19 @@ def config_init(ctx: click.Context) -> None:
             "#     filters:\n"
             "#       chat_type: private\n"
             "#     actions:\n"
-            '#       - reply: "hello!"\n'
+            '#       - reply: "hello!"\n',
         )
         created.append("jobs.yaml")
 
     webhook_path = CONFIG_DIR / "webhook.toml"
     if not webhook_path.exists():
-        webhook_path.write_text(
+        write_private(
+            webhook_path,
             "[webhook]\nenabled = false\n"
             'url = ""\ntoken = ""\n'
             'events = ["new_message"]\n\n'
             "[webhook.retry]\nenabled = true\nmax_attempts = 3\nbackoff_base = 2\n\n"
-            "[webhook.filters]\nchats = []\n"
+            "[webhook.filters]\nchats = []\n",
         )
         created.append("webhook.toml")
 

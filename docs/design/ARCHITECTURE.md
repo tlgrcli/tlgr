@@ -1718,6 +1718,8 @@ Columns come from `op.columns` (3–6 by default); `--columns a,b,c` overrides; 
 ├── cursor.key                  0600  cursor HMAC key
 ├── identity.json               0600  stable initConnection identity strings
 ├── daemon.lock                 0600  flock target (single instance)
+├── daemon.spawn.lock           0600  flock target (serialises the autostart probe;
+│                                     separate from daemon.lock — see §5.8)
 ├── daemon.pid                  0600
 ├── daemon.sock                 0600  srw-------
 ├── daemon.state                0600  {version, protocol, pid, socket, managed_by, started_at}

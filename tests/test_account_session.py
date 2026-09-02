@@ -14,11 +14,10 @@ import asyncio
 from pathlib import Path
 
 import pytest
+from fake_telethon import FakeTelegramClient, World
 
 from tlgr.core.errors import EXIT_AUTH, EXIT_RETRYABLE, RetryableError, SessionError, classify
 from tlgr.daemon.session import AccountSession, ClientOptions, SessionState, backoff_delays
-
-from fake_telethon import FakeTelegramClient, World
 
 pytestmark = pytest.mark.asyncio
 
@@ -251,11 +250,11 @@ class TestSnapshot:
 class TestSessionManager:
     async def test_concurrent_ensures_build_exactly_one_session(self, tlgr_home, stub_account):
         """COR-12: v1's miss-then-connect raced itself into AUTH_KEY_DUPLICATED."""
+        from fake_telethon import fake_client_factory
+
         from tlgr.core.config import load_app_config
         from tlgr.core.paths import TlgrPaths
         from tlgr.daemon.sessions import SessionManager
-
-        from fake_telethon import fake_client_factory
 
         built: list[str] = []
         factory = fake_client_factory(World())
@@ -308,12 +307,12 @@ class TestSessionManager:
         assert order == ["ccc", "aaa", "bbb", "work"]
 
     async def test_one_bad_account_does_not_block_the_others(self, tlgr_home, stub_account):
+        from fake_telethon import fake_client_factory
+
         from tlgr.core.accounts import AccountManager
         from tlgr.core.config import load_app_config
         from tlgr.core.paths import TlgrPaths
         from tlgr.daemon.sessions import SessionManager
-
-        from fake_telethon import fake_client_factory
 
         AccountManager(tlgr_home).add_account("broken")  # registered, no credentials
         manager = SessionManager(

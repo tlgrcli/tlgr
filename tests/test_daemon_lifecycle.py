@@ -103,8 +103,7 @@ class TestAutoStart:
             )
 
     def test_it_does_not_fork_a_supervised_daemon(self, tlgr_home: Path):
-        from tlgr.core.paths import TlgrPaths
-        from tlgr.core.paths import write_private
+        from tlgr.core.paths import TlgrPaths, write_private
 
         paths = TlgrPaths(tlgr_home)
         write_private(paths.state, '{"managed_by": "launchd", "protocol": 2}')
@@ -228,9 +227,9 @@ class TestShutdown:
 @pytest.mark.asyncio
 async def test_ready_is_false_before_the_accounts_connect(tlgr_home, stub_account, world):
     """§12.3 item 6: "process alive" and "daemon works" are different (COR-37)."""
-    from tlgr.daemon.app import Daemon
-
     from fake_telethon import fake_client_factory
+
+    from tlgr.daemon.app import Daemon
 
     daemon = Daemon(tlgr_home, client_factory=fake_client_factory(world))
     await daemon.start_services()

@@ -31,6 +31,7 @@ from typing import Any
 
 __all__ = [
     "SAFE_FIELDS",
+    "PrivateRotatingFileHandler",
     "RedactionFilter",
     "setup_logging",
 ]
@@ -100,6 +101,29 @@ class RedactionFilter(logging.Filter):
         return True
 
 
+class PrivateRotatingFileHandler(logging.handlers.RotatingFileHandler):
+    """A rotating handler whose files are 0600 — including after a rollover.
+
+    `RotatingFileHandler` reopens the log through `open()`, which applies the
+    process umask. A daemon started from a shell with a permissive umask, or
+    one whose parent widened it, therefore ends up with a world-readable log
+    the first time it rotates — and a tlgr log names accounts, chats and
+    peers. Chmod-ing on every open is cheap and closes the window.
+    """
+
+    def _open(self) -> Any:
+        stream = super()._open()
+        with contextlib.suppress(OSError):
+            os.chmod(self.baseFilename, 0o600)
+        return stream
+
+    def doRollover(self) -> None:
+        super().doRollover()
+        for index in range(1, self.backupCount + 1):
+            with contextlib.suppress(OSError):
+                os.chmod(f"{self.baseFilename}.{index}", 0o600)
+
+
 class JsonFormatter(logging.Formatter):
     """One JSON object per line, with only allow-listed extras."""
 
@@ -151,7 +175,7 @@ def setup_logging(
         else:
             with contextlib.suppress(OSError):  # pragma: no cover
                 os.chmod(log_file, 0o600)
-        file_handler = logging.handlers.RotatingFileHandler(
+        file_handler = PrivateRotatingFileHandler(
             str(log_file), maxBytes=max_bytes, backupCount=backups, encoding="utf-8"
         )
         file_handler.setFormatter(JsonFormatter())

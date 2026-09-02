@@ -163,7 +163,10 @@ class PeerResolver:
         want: str = "peer",
     ) -> Any:
         """The `InputPeer` for *ref*, or a classified failure."""
-        parsed = parse_peer_ref(ref) if isinstance(ref, str) else ref
+        # An int is accepted as well as a string because ids come back from
+        # the models already parsed, and re-stringifying at each call site is
+        # a chance to drop the sign of a channel id.
+        parsed = parse_peer_ref(str(ref)) if isinstance(ref, (str, int)) else ref
         kind = parsed.kind
 
         if kind in ("self", "saved"):

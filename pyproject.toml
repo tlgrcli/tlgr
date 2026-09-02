@@ -164,3 +164,8 @@ version = {attr = "tlgr.__version__"}
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["tlgr*"]
+
+# The catalog index and the waiver list are data the runtime reads: `tlgr
+# agent parity` has to work from an installed wheel, not only from a checkout.
+[tool.setuptools.package-data]
+tlgr = ["data/*.json", "data/*.toml"]

@@ -1,6 +1,7 @@
 # Developer entry points. Everything runs inside the project venv.
 PY ?= .venv/bin/python
 STRICT := tlgr/models tlgr/ops tlgr/registry.py tlgr/schema.py tlgr/version.py \
+          tlgr/parity.py \
           tlgr/core/errors.py tlgr/core/timefmt.py tlgr/core/pagination.py \
           tlgr/core/config.py tlgr/core/paths.py tlgr/core/peers.py \
           tlgr/core/logging.py tlgr/core/identity.py tlgr/core/media.py \
@@ -9,7 +10,7 @@ STRICT := tlgr/models tlgr/ops tlgr/registry.py tlgr/schema.py tlgr/version.py \
           tlgr/daemon/ratelimit.py tlgr/daemon/policy.py tlgr/daemon/idle.py \
           tlgr/daemon/singleton.py tlgr/daemon/peercred.py
 
-.PHONY: lint format typecheck test test-fast check
+.PHONY: lint format typecheck test test-fast check docs parity
 
 lint:
 	$(PY) -m ruff check .
@@ -29,4 +30,13 @@ test:
 test-fast:
 	$(PY) -m pytest -q -x
 
-check: lint typecheck test
+# The parity index and the reference docs are generated; CI runs the --check
+# form so a stale artefact fails the build instead of drifting quietly.
+parity:
+	$(PY) tools/prune_catalog.py
+	$(PY) tools/gen_docs.py --parity
+
+docs:
+	$(PY) tools/gen_docs.py
+
+check: lint typecheck test docs parity

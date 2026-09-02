@@ -29,6 +29,7 @@ __all__ = [
     "get",
     "groups",
     "lint",
+    "policy_allows",
     "register",
     "reset",
 ]
@@ -440,6 +441,26 @@ def lint() -> list[str]:
                 problems.append(f"{spec.id}: alias {name!r} is also claimed by {owner!r}")
             seen_names[name] = spec.id
     return problems
+
+
+def policy_allows(allowlist: str, op_id: str) -> bool:
+    """Is *op_id* permitted by an `--enable-commands` / `[policy] allow` list?
+
+    Entries are canonicalised before comparison, so an allowlist written
+    against ids cannot be side-stepped by invoking an alias, and a bare group
+    name (`message`) allows every operation in it. This is SEC-04's fix, and
+    it lives in the registry because the CLI and the daemon must reach the
+    same verdict from the same data.
+    """
+    entries = {e.strip().lower() for e in allowlist.replace(" ", ",").split(",") if e.strip()}
+    if not entries or "*" in entries or "all" in entries:
+        return True
+    canonical_id = ALIASES.get(op_id, op_id).lower()
+    for entry in entries:
+        resolved = ALIASES.get(entry.replace(" ", "."), entry)
+        if resolved == canonical_id or canonical_id.startswith(f"{resolved}."):
+            return True
+    return False
 
 
 def lint_or_raise() -> None:

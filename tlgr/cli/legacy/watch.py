@@ -8,7 +8,7 @@ import time
 
 import click
 
-from tlgr.cli._common import resolve_account
+from tlgr.cli.legacy._common import resolve_account
 from tlgr.ipc_client import ipc_request
 
 

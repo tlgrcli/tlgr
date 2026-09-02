@@ -52,7 +52,8 @@ SPEC_EXIT_CODES = OperationSpec(
         "Every tlgr command exits with one of these codes. They are a "
         "compatibility contract: a code never changes meaning."
     ),
-    legacy_paths=("agent exit-codes", "exit-codes"),
+    aliases=("exit-codes",),
+    legacy_paths=("agent exit-codes",),
     needs_account=False,
     needs_auth=False,
     surface=Surface.LOCAL,
@@ -120,7 +121,6 @@ SPEC_SCHEMA = OperationSpec(
         "operation its request and response JSON Schema plus a validated "
         "example. Draft 2020-12."
     ),
-    aliases=("schema",),
     legacy_paths=("schema",),
     needs_account=False,
     needs_auth=False,
@@ -130,5 +130,5 @@ SPEC_SCHEMA = OperationSpec(
     timeout_s=30,
     example={"schema_version": 2, "build": "2.0.0", "ops": {}},
     example_args="schema message",
-    tags=frozenset({"infrastructure", "agent-safe"}),
+    tags=frozenset({"infrastructure", "agent-safe", "json-only"}),
 )

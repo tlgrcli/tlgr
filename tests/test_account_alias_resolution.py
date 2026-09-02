@@ -21,7 +21,7 @@ import stat
 
 import pytest
 
-from tlgr.cli.account import _resolve_alias, _secure_session_files
+from tlgr.cli.legacy.account import _resolve_alias, _secure_session_files
 from tlgr.core.accounts import AccountManager
 
 

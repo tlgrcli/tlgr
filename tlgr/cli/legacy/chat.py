@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import click
 
-from tlgr.cli._common import resolve_account
+from tlgr.cli.legacy._common import resolve_account
 from tlgr.core.errors import EXIT_EMPTY
 from tlgr.core.output import add_pagination, decode_cursor, emit
 from tlgr.ipc_client import ipc_request

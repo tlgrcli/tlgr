@@ -19,6 +19,20 @@ def _env_or(key: str, fallback: str) -> str:
     return os.environ.get(key, "") or fallback
 
 
+def _registry_op(cmd_name: str, rest: list[str]) -> str | None:
+    """The canonical op id an invocation resolves to, if the registry owns it."""
+    from tlgr.registry import ALIASES
+
+    candidates = [cmd_name]
+    if rest and not rest[0].startswith("-"):
+        candidates.append(f"{cmd_name}.{rest[0]}")
+    for candidate in reversed(candidates):
+        found = ALIASES.get(candidate)
+        if found is not None:
+            return found
+    return None
+
+
 class TlgrGroup(click.Group):
     """Custom group that handles errors, sandboxing, and output formatting."""
 
@@ -44,6 +58,14 @@ class TlgrGroup(click.Group):
 
         enabled = ctx.params.get("enable_commands") or ""
         enabled = enabled.strip()
+
+        # A registry-generated command enforces the allowlist itself, by
+        # canonical op id, so `--enable-commands agent.exit-codes` also allows
+        # the `exit-codes` alias (SEC-04). The path matching below is v1's and
+        # stays only for the groups that are still hand-written.
+        if enabled and cmd_name and _registry_op(cmd_name, rest) is not None:
+            return cmd_name, cmd, rest
+
         if enabled and cmd_name:
             allow = {p.strip().lower() for p in enabled.split(",") if p.strip()}
             if allow and "*" not in allow and "all" not in allow:
@@ -180,6 +202,7 @@ def cli(
 
     ctx.obj["json"] = use_json
     ctx.obj["account"] = account or ""
+    ctx.obj["enable_commands"] = enable_commands
     ctx.obj["results_only"] = results_only
     ctx.obj["select"] = select_fields
     ctx.obj["dry_run"] = dry_run
@@ -200,21 +223,20 @@ def cli(
 # Import and register sub-groups
 # ---------------------------------------------------------------------------
 
-from tlgr.cli.account import account_group  # noqa: E402
-from tlgr.cli.agent import agent_group  # noqa: E402
-from tlgr.cli.chat import chat_group  # noqa: E402
-from tlgr.cli.completion import completion_group  # noqa: E402
-from tlgr.cli.config_cmd import config_group  # noqa: E402
-from tlgr.cli.contact import contact_group  # noqa: E402
-from tlgr.cli.daemon_cmd import daemon_group  # noqa: E402
-from tlgr.cli.draft import draft_group  # noqa: E402
-from tlgr.cli.job import job_group  # noqa: E402
-from tlgr.cli.media import media_group  # noqa: E402
-from tlgr.cli.message import message_group  # noqa: E402
-from tlgr.cli.profile import profile_group  # noqa: E402
-from tlgr.cli.schema import schema_command  # noqa: E402
-from tlgr.cli.user import user_group  # noqa: E402
-from tlgr.cli.watch import watch_command  # noqa: E402
+from tlgr.cli.gen import build_click_tree  # noqa: E402
+from tlgr.cli.legacy.account import account_group  # noqa: E402
+from tlgr.cli.legacy.chat import chat_group  # noqa: E402
+from tlgr.cli.legacy.completion import completion_group  # noqa: E402
+from tlgr.cli.legacy.config_cmd import config_group  # noqa: E402
+from tlgr.cli.legacy.contact import contact_group  # noqa: E402
+from tlgr.cli.legacy.daemon_cmd import daemon_group  # noqa: E402
+from tlgr.cli.legacy.draft import draft_group  # noqa: E402
+from tlgr.cli.legacy.job import job_group  # noqa: E402
+from tlgr.cli.legacy.media import media_group  # noqa: E402
+from tlgr.cli.legacy.message import message_group  # noqa: E402
+from tlgr.cli.legacy.profile import profile_group  # noqa: E402
+from tlgr.cli.legacy.user import user_group  # noqa: E402
+from tlgr.cli.legacy.watch import watch_command  # noqa: E402
 
 cli.add_command(account_group, "account")
 cli.add_command(message_group, "message")
@@ -228,8 +250,6 @@ cli.add_command(daemon_group, "daemon")
 cli.add_command(job_group, "job")
 cli.add_command(config_group, "config")
 cli.add_command(completion_group, "completion")
-cli.add_command(schema_command, "schema")
-cli.add_command(agent_group, "agent")
 cli.add_command(user_group, "user")
 cli.add_command(watch_command, "watch")
 
@@ -383,9 +403,31 @@ def shortcut_upload(ctx: click.Context, chat: str, path: str, caption: str) -> N
     )
 
 
-# Top-level alias for exit-codes
-@cli.command("exit-codes", hidden=True)
-@click.pass_context
-def shortcut_exit_codes(ctx: click.Context) -> None:
-    """Print stable exit codes (shortcut for 'agent exit-codes')."""
-    ctx.invoke(agent_group.commands["exit-codes"])
+# ---------------------------------------------------------------------------
+# The generated tree
+# ---------------------------------------------------------------------------
+
+
+def build_cli() -> click.Group:
+    """Compose the generated command tree with the v1 groups still hand-written.
+
+    A group must be defined in exactly one of the two places. Being defined in
+    both would mean a migration half-landed — one path generated, one path
+    still hand-written, silently disagreeing — so it fails the import rather
+    than the user's next command (§12.4).
+    """
+    import tlgr.ops  # noqa: F401  — importing it is what populates the registry
+
+    generated = build_click_tree()
+    clash = sorted(set(generated) & set(cli.commands))
+    if clash:
+        raise RuntimeError(
+            f"these command groups are defined both by the registry and by "
+            f"tlgr/cli/legacy: {clash}. Delete the legacy module."
+        )
+    for name, command in generated.items():
+        cli.add_command(command, name)
+    return cli
+
+
+build_cli()

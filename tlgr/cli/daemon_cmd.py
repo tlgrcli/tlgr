@@ -149,7 +149,11 @@ def daemon_status(ctx: click.Context) -> None:
         try:
             from tlgr.ipc_client import ipc_request
             result = ipc_request("GET", "/daemon/status")
-            emit(ctx.obj, result, columns=["running", "pid", "uptime_seconds", "accounts"])
+            emit(
+                ctx.obj,
+                result,
+                columns=["running", "pid", "uptime_seconds", "accounts", "healthy", "disconnected"],
+            )
         except Exception:
             emit(ctx.obj, {"running": True, "pid": pid, "uptime_seconds": "?", "accounts": "?"})
     else:

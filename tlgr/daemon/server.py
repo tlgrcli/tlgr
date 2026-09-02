@@ -205,11 +205,21 @@ class DaemonServer:
 
     def status(self) -> dict[str, Any]:
         uptime = int(time.time() - self._start_time)
+        # `accounts` lists the clients the daemon HOLDS, which is not the same as
+        # the clients that can talk to Telegram: a client whose reconnects have
+        # been exhausted stays in this dict, disconnected, and every request
+        # through it fails. Reporting only the keys made a fully dead daemon
+        # indistinguishable from a healthy one.
+        connections = {alias: client.is_connected for alias, client in self._clients.items()}
+        disconnected = sorted(alias for alias, ok in connections.items() if not ok)
         return {
             "running": True,
             "pid": os.getpid(),
             "uptime_seconds": uptime,
             "accounts": list(self._clients.keys()),
+            "connections": connections,
+            "disconnected": disconnected,
+            "healthy": not disconnected,
             "jobs": self._job_runner.list_jobs(),
         }
 

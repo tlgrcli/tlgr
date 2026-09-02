@@ -142,6 +142,18 @@ class ClientWrapper:
             raise SessionError("Not logged in.")
         return self._me
 
+    @property
+    def is_connected(self) -> bool:
+        """Whether the underlying client currently holds a live connection.
+
+        A wrapper outlives its connection: when Telethon exhausts its reconnect
+        budget it raises and leaves this object in place, so the wrapper existing
+        says nothing about whether Telegram is reachable. Every send through it
+        will fail with "Cannot send requests while disconnected" until it is
+        reconnected. Ask this, not `client is not None`.
+        """
+        return self._client is not None and self._client.is_connected()
+
     async def connect(self) -> bool:
         """Connect. Returns True if already authorised."""
         self._client = create_client(self.session_path, self.api_id, self.api_hash, self.flood_wait_max)

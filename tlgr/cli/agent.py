@@ -72,7 +72,16 @@ def agent_whoami(ctx: click.Context) -> None:
             from tlgr.ipc_client import ipc_request
             status = ipc_request("GET", "/daemon/status")
             info["daemon_uptime"] = status.get("uptime_seconds")
-            info["accounts_connected"] = status.get("accounts", [])
+            # `accounts` is every client the daemon holds, connected or not — this
+            # field used to report it as `accounts_connected`, so a daemon whose
+            # clients had all given up reconnecting still listed them all here.
+            conns = status.get("connections")
+            if conns is None:  # daemon predates the connections field
+                info["accounts_connected"] = status.get("accounts", [])
+            else:
+                info["accounts_connected"] = sorted(a for a, ok in conns.items() if ok)
+                info["accounts_disconnected"] = status.get("disconnected", [])
+                info["daemon_healthy"] = status.get("healthy")
             jobs = ipc_request("GET", "/job/list")
             info["active_jobs"] = [j["name"] for j in jobs.get("jobs", []) if j.get("running")]
         except Exception:

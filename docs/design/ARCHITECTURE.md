@@ -1283,7 +1283,9 @@ Restart is attempted at most once per CLI invocation, and never for a daemon man
 4. on timeout: read the last 20 lines of daemon.log into the error message; exit 11.
 ```
 
-The daemon itself takes the same `flock` for its whole lifetime inside `main()` **before** any other work, so two daemons cannot coexist even if two CLIs spawn simultaneously. Nothing ever unlinks another process's socket or pid file; a stale socket is removed only while holding the lock. `PermissionError` on the pid file is never treated as "not running" (COR-14c).
+The daemon itself takes a `flock` for its whole lifetime inside `main()` **before** any other work, so two daemons cannot coexist even if two CLIs spawn simultaneously. Nothing ever unlinks another process's socket or pid file; a stale socket is removed only while holding the lock. `PermissionError` on the pid file is never treated as "not running" (COR-14c).
+
+> **Correction (implemented 2026-09-03).** The probe's lock and the daemon's singleton lock cannot be the same file. The probe holds its lock *across* the spawn, and the child takes the singleton lock as its first act, so one file would deadlock every start. The probe uses `~/.tlgr/daemon.spawn.lock`; `daemon.lock` remains the daemon's own. The property this section wanted — twenty simultaneous CLIs produce one daemon — is unchanged and tested.
 
 ---
 
@@ -1311,6 +1313,8 @@ main()
 ```
 
 Accounts connected at start = the union of: accounts referenced by enabled jobs, `[accounts] default`, the active alias, and every alias listed in `[daemon] preconnect`. Everything else connects on demand (§6.3). The connect list is an **ordered list**, never a `set` (COR-02).
+
+> **Correction (implemented 2026-09-03).** The jobs part is deferred: jobs are created after the accounts connect, and reading `jobs.yaml` at start to discover aliases would make the connect order depend on a file the account registry does not own. A job whose account is not in the list connects it through the same on-demand path every request uses, one second later.
 
 ### 6.2 `AccountSession` state machine
 
@@ -1419,7 +1423,7 @@ Additional triggers for `catch_up()`:
 * **Token bucket per `rate_class`** — `read` (10/s burst 20), `resolve` (0.5/s burst 5 — `contacts.resolveUsername` floods at ~50 per short period), `send` (1/s burst 3, plus a configurable per-new-peer daily cap), `bulk` (2/s), `file` (governed by transfer slots instead, §6.7). Defaults are config keys; the values above are the shipped defaults for an unwarmed account.
 * **Per-chat slow mode** — `channelFull.slowmode_next_send_date` is cached per chat; a send that would violate it is refused with `RATE_LIMITED` and `wait_seconds` **without** a network round trip.
 * **Persisted flood memory** — every `FloodWaitError` / `SlowModeWaitError` / `FloodPremiumWaitError` / `TakeoutInitDelayError` writes `{account, method, peer_id, until_unix, seconds}` to `~/.tlgr/accounts/<alias>/flood.json` (0600, atomic replace). Loaded at start. A request whose `(method, peer)` deadline has not passed fails immediately with the remaining `wait_seconds` — Telethon's in-process `_flood_waited_requests` is lost on restart, so v1 re-hit every wait after a bounce.
-* **Sleep policy** — a wait ≤ `min(request.flood_wait_max, remaining op timeout)` is slept inside the daemon and reported as `meta.flood_wait_slept`; anything longer returns `RATE_LIMITED` immediately. Per-request `flood_wait_max` is honoured by passing `flood_sleep_threshold` per call (COR-15, ROB-06).
+* **Sleep policy** — a wait ≤ `min(request.flood_wait_max, remaining op timeout)` is slept inside the daemon and reported as `meta.flood_wait_slept`; anything longer returns `RATE_LIMITED` immediately. Per-request `flood_wait_max` is honoured by setting `flood_sleep_threshold` around the call (COR-15, ROB-06). *Correction (2026-09-03): Telethon has no per-call form — it reads the attribute off the client at call time — so concurrent requests on one account necessarily share it. The active budgets are stacked and the **smallest** is in force, which can only make a request return sooner than it had to.*
 * **Circuit breaker** — `PeerFloodError`, `FrozenMethodInvalidError`/`FROZEN_*`, or three consecutive `USER_PRIVACY_RESTRICTED`-class refusals within 60 s on new peers open the breaker: state `frozen`, all `rate_class="send"` ops refused with exit 9, jobs for that account paused, a `daemon_health` event emitted, and `help.getAppConfig` polled for `freeze_since_date`/`freeze_until_date`/`freeze_appeal_url`. Reset is manual (`tlgr account unfreeze --yes`) or automatic once `freeze_until_date` passes.
 * **Idempotent sends (checklist 8)** — every outgoing message gets a `random_id` generated and journalled to `~/.tlgr/accounts/<alias>/outbox.jsonl` *before* the RPC, and cleared on a confirmed result. A retry after a lost `rpc_result` reuses the same `random_id`, so the server dedupes; `updateMessageID` reconciles the real id. `RANDOM_ID_DUPLICATE` is therefore a success, not an error.
 
@@ -1441,6 +1445,8 @@ UserUpdate, Album) + events.Raw(<everything else>)
 ```
 
 **Handlers never block the update loop.** With `sequential_updates=True` a slow subscriber would stall every account (ROB-02: v1's webhook could hold the loop for ~97 s). The Telethon handler does exactly three things: normalise, assign `seq`, `put_nowait` into each subscriber's queue (dropping the oldest and counting on overflow). All real work happens in a bounded worker pool. **Per-chat order is preserved** by hashing `chat_id` to a fixed worker lane (`workers = config [daemon] event_workers`, default 8); events for one chat always run on one lane, in order, while different chats run concurrently.
+
+> **Correction (implemented 2026-09-03).** A bus handler is called as `handler(envelope, raw)`, where `raw` is the source Telethon object for an in-process consumer and `None` for a synthesised event. The gateway's filters read the raw event, and re-deriving them from the normalised payload would be lossy and a second source of truth. Only the envelope leaves the process. An update with no taxonomy entry is **dropped**, never delivered as `unknown`: a type name meaning "we have not looked at this yet" cannot be filtered on and changes meaning the day the real type is added.
 
 **Own actions are echoed.** Telethon marks results of our own requests `_self_outgoing` and does not dispatch them, so a message the daemon sends never fires `NewMessage`. Every mutating op therefore feeds its returned `Updates` through the same normaliser with `self_origin: true`. That is what makes `tlgr watch` show the account's own sends, and what lets a gateway job react to them.
 

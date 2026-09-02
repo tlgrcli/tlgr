@@ -112,3 +112,77 @@ declared in `pyproject.toml` for the modules that are ready
 (`models`, `ops`, `registry`, `schema`, `core.errors`, `core.timefmt`,
 `core.pagination`) with `follow_imports = "silent"`, and the list grows as
 each group PR lands.
+
+## 2026-09-03 — the spawn probe and the daemon singleton are different locks
+
+§5.8 says the autostart probe takes `flock(~/.tlgr/daemon.lock)`, keeps it
+across the spawn, and releases it once the child reports ready; §6.1 says the
+daemon takes the same lock as its first act. Both cannot hold one file: the
+child would block forever on a lock its parent is holding on its behalf, and
+no daemon would ever start. The probe therefore uses a separate
+`daemon.spawn.lock` to serialise *the decision to spawn*, and `daemon.lock`
+remains the daemon's own singleton. The property §5.8 wanted — twenty
+simultaneous CLIs produce one daemon — is tested and holds.
+
+## 2026-09-03 — `--flood-wait-max` stacks, and the smallest budget wins
+
+§6.4 says a per-request `flood_wait_max` is honoured "by passing
+`flood_sleep_threshold` per call". Telethon has no per-call form: it reads
+`client.flood_sleep_threshold` at call time, so concurrent requests on one
+account necessarily share it. Serialising every request to make the flag exact
+would cost far more than the flag is worth. Instead the active budgets are
+kept on a stack and the **smallest** is in force, so a caller that asked for at
+most five seconds is never held for a hundred and twenty. The cost is that a
+generous caller may return sooner than it had to, which is the safe direction.
+
+## 2026-09-03 — the event bus carries the raw Telethon object beside the envelope
+
+§6.5 has the bus deliver `EventEnvelope`s. The gateway's filters read the raw
+Telethon event (`chat_type`, `is_reply`, media predicates), and re-deriving
+those from the normalised payload would be both lossy and a second source of
+truth. A bus handler is therefore called as `handler(envelope, raw)`, where
+`raw` is the source object for an in-process consumer and `None` for a
+synthesised event. The envelope alone is what leaves the process. Moving the
+filters onto models is PR-4's job, and this signature is what lets the gateway
+run on bus worker lanes today instead of on the update loop (ROB-02).
+
+## 2026-09-03 — an unrecognised update is dropped, not named `unknown`
+
+The bus normalises only the nine starter types. §6.5 does not say what to do
+with the rest, and the tempting answer — deliver them as `unknown` with the
+Telethon class name — is wrong: a type name that means "we have not looked at
+this yet" cannot be filtered on, and it changes meaning the day the real type
+is added, silently breaking every consumer that matched it. Unrecognised
+updates are dropped until PR-4 gives them names.
+
+## 2026-09-03 — the legacy IPC surface answers GENERIC, not IPC_ERROR
+
+v1's `_handle_exception` recognised three exception types and answered
+`500 IPC_ERROR` (exit 12) for everything else, which said "the channel between
+you and the daemon failed" about errors that had nothing to do with the
+channel. COR-06 routes it through `core.errors.classify`, the same table the
+v2 dispatcher uses, so an unclassified failure now lands on the table's
+`GENERIC` row (exit 1) and a recognised one gets its real code. The body keeps
+v1's flat `error`/`code`/`exit_code` shape, because that is what its callers
+parse. One pinned test changed with it.
+
+## 2026-09-03 — `Message.text` and `sender_id` are derived when Telethon cannot
+
+`message_to_model` read `message.text` and `message.sender_id`. Both are
+filled in by Telethon's `_finish_init`, which only runs for a *client-bound*
+message — so every message tlgr builds from a raw `Updates` reply, including
+the one `message send` returns, reported empty text and no sender. The
+serialiser now falls back to `raw_text`/`message` and computes the sender from
+`from_id` with the same arithmetic `utils.get_peer_id` uses, kept local so
+nothing below `ops/` has to import Telethon.
+
+## 2026-09-03 — the daemon does not connect an account it was not given
+
+§6.1's connect list is "accounts referenced by enabled jobs, `[accounts]
+default`, the active alias, and `[daemon] preconnect`", as an ordered list.
+The jobs part is deferred: jobs are created after the accounts connect, and
+reading `jobs.yaml` twice at start to discover aliases would make the connect
+order depend on a file the account registry does not own. A job whose account
+is not in the list connects it on demand through `SessionManager.ensure`,
+which is the same path every request uses, so the only difference is that the
+connection happens a second later.

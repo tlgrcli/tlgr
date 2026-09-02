@@ -1,0 +1,75 @@
+# Gateway jobs configuration for tlgr.
+#
+# Each job is an event-driven pipeline:
+#   event -> filters -> processors -> actions
+#
+# See tlgr/gateway/README.md for the full reference.
+
+jobs:
+  # Auto-reply to all private messages
+  - name: private-bot
+    account: main
+    filters:
+      chat_type: private
+    actions:
+      - reply: "Away until Monday. Will respond when I'm back."
+
+  # Forward from one channel to another
+  - name: news-forward
+    account: main
+    filters:
+      chat_id: "@source_channel"
+      types: [text, photo]
+      contains: [breaking]
+    actions:
+      - forward:
+          to: ["@my_archive", "@friend"]
+          drop_author: true
+
+  # Forward with per-action processors
+  - name: cleaned-forward
+    account: main
+    filters:
+      chat_id: "@raw_feed"
+    actions:
+      - forward:
+          to: ["@clean_feed"]
+          processors:
+            - strip_formatting
+            - type: regex
+              pattern: "sponsor"
+              replacement: ""
+              flags: i
+      - forward:
+          to: ["@archive"]
+
+  # Complex filter composition (AND / OR / NOT)
+  - name: smart-reply
+    account: main
+    filters:
+      chat_type: private
+      any_of:
+        - contains: [hello, hi]
+        - from_users: [12345]
+      none_of:
+        - contains: [spam, ad]
+    actions:
+      - reply: "Thanks for reaching out!"
+
+  # Time-based auto-reply
+  - name: night-mode
+    account: main
+    filters:
+      chat_type: private
+      time_of_day: "23:00-07:00"
+    actions:
+      - reply: "I'm sleeping. Will reply tomorrow."
+
+  # Disabled job (won't run)
+  - name: disabled-example
+    account: main
+    enabled: false
+    filters:
+      chat_type: private
+    actions:
+      - reply: "This job is disabled."

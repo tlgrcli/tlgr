@@ -80,8 +80,12 @@ venv.bak/
 config.json
 
 # Route configs (except example)
-*.yaml
-!routes.example.yaml
+# Scoped to the repo root: blanket `*.yaml` also swallowed
+# .github/workflows/*.yml siblings, docs/**/*.yaml and YAML test fixtures
+# (PKG-04), which is how CI config kept failing to be committed.
+/*.yaml
+!/routes.example.yaml
+!/jobs.example.yaml
 
 # Job state and logs
 jobs.json

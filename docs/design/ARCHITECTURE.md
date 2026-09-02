@@ -124,7 +124,8 @@ tlgr/
 │
 ├── ops/                         operation definitions — one module per (sub)domain
 │   ├── __init__.py              imports every module, builds REGISTRY, runs lints
-│   ├── _spec.py                 OperationSpec, PageKind, OpFlags, OpContext, helpers
+│   ├── _spec.py                 OperationSpec, OpContext, Surface, helpers (PageKind is
+│   │                            re-exported from core/pagination — core sits below ops)
 │   ├── _params.py               request-field annotation vocabulary (positional(), secret(), …)
 │   ├── message.py               ← FOUNDATION: the whole `message` group (proof of the model)
 │   ├── draft.py                 ← FOUNDATION: `draft set|clear|list` (rides the same models)
@@ -139,6 +140,8 @@ tlgr/
 ├── cli/
 │   ├── __init__.py              build_cli(): generated tree + not-yet-migrated legacy groups
 │   ├── gen.py                   OperationSpec → click.Command (params, aliases, help, examples)
+│   ├── introspect.py            describes the click tree for `tlgr schema` (handed to
+│   │                            tlgr/schema.py, which imports no click)
 │   ├── params.py                click ParamTypes: PEER, USER, MSGREF, DURATION, DATETIME, SECRET…
 │   ├── globals.py               global flags attached to every command; CliState
 │   ├── render.py                JSON / plain / human renderers driven by op.columns
@@ -181,7 +184,7 @@ tlgr/
 ├── core/
 │   ├── errors.py                ERROR_MAP (the single Telethon-exception table), TlgrError tree
 │   ├── peers.py                 entity resolution service (per account)
-│   ├── pagination.py            Cursor encode/decode/validate, PageKind state machines
+│   ├── pagination.py            PageKind, Cursor encode/decode/validate, Page building
 │   ├── paths.py                 ~/.tlgr layout, alias validation, write_private(), 0600 audit
 │   ├── config.py                config.toml → typed Structs; reload; defaults
 │   ├── accounts.py              AccountManager (validated aliases, health, active alias)
@@ -1011,7 +1014,7 @@ From `REGISTRY`, deterministically:
 
 1. **The Click tree** — `cli/gen.py::build_click_tree()` produces groups (`message`), sub-groups (`chat member`), commands, aliases, shortcuts, `--help`, and shell completion. One factory; zero per-command modules.
 2. **The daemon dispatch table** — `daemon/dispatch.py` looks the op up by id; there is no route per operation.
-3. **`tlgr schema`** — JSON Schema for every request and response (`msgspec.json.schema_components`), plus `example`, flags, columns, exit codes, aliases and catalog coverage. Emitted as one document with `$defs` so the models are defined once.
+3. **`tlgr schema`** — JSON Schema for every request and response (`msgspec.json.schema_components`), plus `example`, flags, columns, exit codes, aliases and catalog coverage. Emitted as one document with `$defs` so the models are defined once. The click tree it also carries comes from `cli/introspect.py` and is passed *in*: `tlgr/schema.py` and `ops/` must not import `cli/`.
 4. **`docs/reference/<group>.md`** — synopsis, argument table, flag table, response schema summary, example invocation + example JSON, covered catalog ids. `make docs` regenerates; CI fails on a diff (this is PKG-03's fix).
 5. **Contract tests** — `tests/test_registry_contract.py` parametrised over `REGISTRY` (§11.3).
 6. **`docs/reference/PARITY.md`** — §1.3.
@@ -1551,6 +1554,8 @@ Telethon exception / msgspec ValidationError / tlgr exception
         │  (raised inside impl, inside asyncio.timeout, inside the dispatcher)
         ▼
 core/errors.py::classify(exc)  ── the ONLY place Telethon exception classes are named
+        │  (as *strings*: keying ERROR_MAP by class name is what lets cli/ stay
+        │   Telethon-free while this table still classifies every Telethon error)
         │  → ErrorBody{code, message, exit_code, retryable, wait_seconds?, field?, rpc?, hint?}
         ▼
 daemon: log (structured, redacted, with request_id) → HTTP status from the table → JSON envelope

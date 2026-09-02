@@ -131,6 +131,21 @@ def decode_payload(spec: OperationSpec, payload: dict[str, Any]) -> Any:
 async def dispatch(daemon: Daemon, request: OpRequest) -> dict[str, Any]:
     """Run one operation and return its success envelope."""
     started = time.monotonic()
+    spec, context, result = await execute(daemon, request)
+    return _envelope(
+        spec, context.account, result, context, started, dry_run=context.dry_run and spec.mutating
+    )
+
+
+async def execute(daemon: Daemon, request: OpRequest) -> tuple[OperationSpec, DaemonContext, Any]:
+    """The prologue and the implementation, without the envelope.
+
+    Split out so that a streaming response can take the *result* — which may
+    be an async page iterator — instead of a dict that has already been
+    flattened. Both paths therefore run the identical policy, account,
+    dry-run, rate-limit and timeout sequence; there is no second order to get
+    wrong.
+    """
     spec = resolve_spec(request.op)
 
     daemon.policy.enforce(spec.id, spec)
@@ -161,14 +176,7 @@ async def dispatch(daemon: Daemon, request: OpRequest) -> dict[str, Any]:
     )
 
     if request.dry_run and spec.mutating:
-        return _envelope(
-            spec,
-            account,
-            {"dry_run": True, "would": spec.id, "request": to_builtins(payload)},
-            context,
-            started,
-            dry_run=True,
-        )
+        return spec, context, {"dry_run": True, "would": spec.id, "request": to_builtins(payload)}
 
     if spec.surface is not Surface.LOCAL and spec.needs_account:
         session = await daemon.sessions.ensure(account)
@@ -193,7 +201,15 @@ async def dispatch(daemon: Daemon, request: OpRequest) -> dict[str, Any]:
         if spec.min_interval_s:
             await asyncio.sleep(spec.min_interval_s)
         with _budget(session, budget):
-            result = await asyncio.wait_for(spec.impl(context, payload), timeout=spec.timeout_s)
+            call = spec.impl(context, payload)
+            # A streaming implementation returns an async iterator rather than
+            # a coroutine; the caller walks it, and the timeout then bounds
+            # each page rather than the whole walk (which may legitimately
+            # take an hour).
+            if hasattr(call, "__aiter__"):
+                result: Any = call
+            else:
+                result = await asyncio.wait_for(call, timeout=spec.timeout_s)
     except (TimeoutError, asyncio.TimeoutError) as exc:
         raise RetryableError(
             f"{spec.id} did not finish within {spec.timeout_s}s and was cancelled"
@@ -202,7 +218,7 @@ async def dispatch(daemon: Daemon, request: OpRequest) -> dict[str, Any]:
         if session is not None:
             session.in_flight = max(0, session.in_flight - 1)
 
-    return _envelope(spec, account, result, context, started)
+    return spec, context, result
 
 
 def _envelope(

@@ -49,7 +49,7 @@ from tlgr.daemon.peercred import current_uid, peer_of, token_matches
 from tlgr.daemon.policy import Policy
 from tlgr.daemon.preauth import PreAuthService
 from tlgr.daemon.sessions import SessionManager
-from tlgr.daemon.stream import NdjsonResponse, pump_events
+from tlgr.daemon.stream import NdjsonResponse, pump_events, walk_pages
 from tlgr.daemon.webhook import WebhookPusher
 from tlgr.version import HEADER_PROTOCOL, HEADER_TOKEN, MIN_DAEMON_PROTOCOL, PROTOCOL
 
@@ -635,19 +635,44 @@ async def _handle_op_stream(
     await stream.prepare(op=spec.id, account=op_request.account, request_id=op_request.request_id)
     started = time.monotonic()
     try:
-        envelope = await dispatch_module.dispatch(daemon, op_request)
+        # `spec` is the same object `resolve_spec` returned above; the
+        # execute() call is what runs the policy/account/timeout prologue.
+        _, context, result = await dispatch_module.execute(daemon, op_request)
+        if hasattr(result, "__aiter__"):
+            # A `--all` walk paces itself against the account's own limiter,
+            # inside the daemon: v1 looped in the client and hammered the
+            # socket with no backpressure between pages (ROB-01).
+            count = await walk_pages(
+                result, stream, limiter=context.limiter, rate_class=spec.rate_class
+            )
+        else:
+            count = await _stream_result(stream, result)
     except Exception as exc:
         return await stream.fail(exc, account=op_request.account)
-    result = envelope.get("result")
-    items = result if isinstance(result, list) else [result]
+    return await stream.end(
+        ok=True, count=count, elapsed_ms=int((time.monotonic() - started) * 1000)
+    )
+
+
+async def _stream_result(stream: NdjsonResponse, result: Any) -> int:
+    """Emit a non-streaming result as items, so the framing is the same."""
+    from tlgr.models.base import to_builtins
+
+    body = to_builtins(result) if result is not None else None
+    if isinstance(body, dict) and isinstance(body.get("items"), list):
+        items = body["items"]
+        page = {
+            "has_more": bool(body.get("has_more")),
+            "next_cursor": body.get("next_cursor"),
+        }
+    else:
+        items = body if isinstance(body, list) else [body]
+        page = None
     for index, item in enumerate(items, start=1):
         await stream.write({"type": "item", "seq": index, "data": item})
-    page = envelope.get("page")
-    if page:
+    if page is not None:
         await stream.write({"type": "page", **page, "fetched": len(items)})
-    return await stream.end(
-        ok=True, count=len(items), elapsed_ms=int((time.monotonic() - started) * 1000)
-    )
+    return len(items)
 
 
 async def handle_events(request: web.Request) -> web.StreamResponse:

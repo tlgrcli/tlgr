@@ -141,3 +141,62 @@ class TestFraming:
         await stream.end(ok=True, count=1)
         for frame in stream.frames:
             assert parse_frame(dump_frame(frame).strip()) == frame
+
+
+class TestOverTheSocket:
+    """A streaming operation, end to end, framed the way §5.3 says."""
+
+    async def test_a_walking_operation_streams_items_and_pages(
+        self, live_daemon, tlgr_home, in_thread
+    ):
+        from tlgr.models.base import Request
+        from tlgr.ops._spec import OperationSpec, Surface
+        from tlgr.registry import ALIASES, REGISTRY
+        from tlgr.transport.client import DaemonClient
+
+        class _Empty(Request):
+            pass
+
+        async def walk(context: Any, payload: Any) -> Any:
+            for page in (_Page([{"id": 1}, {"id": 2}], True, "c1"), _Page([{"id": 3}], False)):
+                yield page
+
+        spec = OperationSpec(
+            id="test.walk",
+            request=_Empty,
+            response=dict,
+            impl=walk,
+            summary="walk it",
+            stream=True,
+            surface=Surface.LOCAL,
+            needs_account=False,
+        )
+        REGISTRY[spec.id] = spec
+        for name in spec.names:
+            ALIASES[name] = spec.id
+        try:
+            client = DaemonClient(tlgr_home, auto_start=False)
+            client._ready = True
+            frames = await in_thread(lambda: list(client.op_stream("test.walk", {})))
+        finally:
+            REGISTRY.pop(spec.id, None)
+            for name in spec.names:
+                ALIASES.pop(name, None)
+
+        kinds = [frame["type"] for frame in frames]
+        assert kinds[0] == "meta"
+        assert kinds[-1] == "end"
+        items = [f["data"]["id"] for f in frames if f["type"] == "item"]
+        assert items == [1, 2, 3]
+        assert frames[-1]["ok"] is True
+        assert frames[-1]["count"] == 3
+
+    async def test_a_plain_result_is_framed_the_same_way(self, live_daemon, tlgr_home, in_thread):
+        """`--all` and a single page must look alike to a consumer."""
+        from tlgr.transport.client import DaemonClient
+
+        client = DaemonClient(tlgr_home, auto_start=False)
+        client._ready = True
+        frames = await in_thread(lambda: list(client.op_stream("agent.exit-codes", {})))
+        assert frames[0]["type"] == "meta"
+        assert frames[-1] == {**frames[-1], "type": "end", "ok": True}

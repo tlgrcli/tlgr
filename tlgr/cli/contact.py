@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import click
 
-from tlgr.core.output import add_pagination, decode_cursor, emit
 from tlgr.cli._common import resolve_account
+from tlgr.core.output import add_pagination, decode_cursor, emit
 from tlgr.ipc_client import ipc_request
 
 
@@ -19,7 +19,9 @@ def contact_group() -> None:
 @click.option("--cursor", default=None, help="Pagination cursor from a previous response.")
 @click.option("--account", "-a", default=None)
 @click.pass_context
-def contact_list(ctx: click.Context, limit: int | None, cursor: str | None, account: str | None) -> None:
+def contact_list(
+    ctx: click.Context, limit: int | None, cursor: str | None, account: str | None
+) -> None:
     """List all contacts."""
     acct = resolve_account(ctx, account)
     result = ipc_request("GET", f"/contact/list?account={acct}")
@@ -34,8 +36,7 @@ def contact_list(ctx: click.Context, limit: int | None, cursor: str | None, acco
     if fmt == "json":
         next_state = {"offset": offset + len(page)}
         out = {"contacts": page}
-        add_pagination(out, page, effective_limit, next_state,
-                       has_more=len(contacts) > len(page))
+        add_pagination(out, page, effective_limit, next_state, has_more=len(contacts) > len(page))
         emit(ctx.obj, out)
     else:
         emit(ctx.obj, page, columns=["id", "name", "username", "phone"])
@@ -49,7 +50,9 @@ def contact_list(ctx: click.Context, limit: int | None, cursor: str | None, acco
 def contact_add(ctx: click.Context, phone: str, name: str, account: str | None) -> None:
     """Add a contact by phone number."""
     acct = resolve_account(ctx, account)
-    result = ipc_request("POST", "/contact/add", body={"phone": phone, "name": name, "account": acct})
+    result = ipc_request(
+        "POST", "/contact/add", body={"phone": phone, "name": name, "account": acct}
+    )
     emit(ctx.obj, result)
 
 
@@ -103,7 +106,9 @@ def contact_remove(ctx: click.Context, user: str, account: str | None) -> None:
 @click.option("--cursor", default=None, help="Pagination cursor from a previous response.")
 @click.option("--account", "-a", default=None)
 @click.pass_context
-def contact_search(ctx: click.Context, query: str, limit: int | None, cursor: str | None, account: str | None) -> None:
+def contact_search(
+    ctx: click.Context, query: str, limit: int | None, cursor: str | None, account: str | None
+) -> None:
     """Search contacts."""
     acct = resolve_account(ctx, account)
     result = ipc_request("GET", f"/contact/search?query={query}&account={acct}")
@@ -118,8 +123,7 @@ def contact_search(ctx: click.Context, query: str, limit: int | None, cursor: st
     if fmt == "json":
         next_state = {"offset": offset + len(page)}
         out = {"contacts": page}
-        add_pagination(out, page, effective_limit, next_state,
-                       has_more=len(contacts) > len(page))
+        add_pagination(out, page, effective_limit, next_state, has_more=len(contacts) > len(page))
         emit(ctx.obj, out)
     else:
         emit(ctx.obj, page, columns=["id", "name", "username"])

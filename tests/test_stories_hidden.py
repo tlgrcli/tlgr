@@ -88,6 +88,7 @@ def test_refuses_a_non_user_peer():
 
 # -- the flag has to be readable, not only writable -------------------------
 
+
 class _FullFake(_FakeTelethon):
     async def __call__(self, request):
         raise RuntimeError("no full-user fetch in this test")

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 from telethon.errors import FloodWaitError, PeerFloodError, RPCError
@@ -261,7 +261,9 @@ class IPCServer:
         if not client:
             return _error_response("No client for account", 404)
         try:
-            result = await client.react_to_message(_ref(body["chat"]), body["msg_id"], body["emoji"])
+            result = await client.react_to_message(
+                _ref(body["chat"]), body["msg_id"], body["emoji"]
+            )
             return _json_response(result)
         except Exception as e:
             return _handle_exception(e)

@@ -72,10 +72,14 @@ def filter_has_links(event: Event, value: Any) -> tuple[bool, str]:
     if event.source != "telegram":
         return False, "has_links requires telegram source"
     msg = event.raw.message
-    has = bool(msg.entities and any(
-        hasattr(e, "url") or e.__class__.__name__ in ("MessageEntityUrl", "MessageEntityTextUrl")
-        for e in msg.entities
-    ))
+    has = bool(
+        msg.entities
+        and any(
+            hasattr(e, "url")
+            or e.__class__.__name__ in ("MessageEntityUrl", "MessageEntityTextUrl")
+            for e in msg.entities
+        )
+    )
     if has == bool(value):
         return True, "links filter matched"
     return False, "links filter"

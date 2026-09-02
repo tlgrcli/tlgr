@@ -3,19 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any
 
 from telethon import TelegramClient, utils
-from telethon.errors import SessionPasswordNeededError, FloodWaitError
-from telethon.tl.types import User, Chat, Channel
+from telethon.errors import FloodWaitError, SessionPasswordNeededError
+from telethon.tl.types import Channel, Chat, User
 
 from tlgr.core.errors import (
     AuthenticationError,
-    SessionError,
-    ConfigurationError,
     ChatNotFoundError,
-    RateLimitError,
+    SessionError,
     TlgrError,
 )
 
@@ -48,7 +47,9 @@ def media_details(media: Any) -> dict[str, Any]:
     if doc is None:
         # webpage previews, geo, contacts, polls… — the class name is the
         # only honest answer, minus the MessageMedia prefix.
-        out["kind"] = name[len("MessageMedia") :].lower() if name.startswith("MessageMedia") else name
+        out["kind"] = (
+            name[len("MessageMedia") :].lower() if name.startswith("MessageMedia") else name
+        )
         return out
 
     mime = getattr(doc, "mime_type", None)
@@ -122,7 +123,13 @@ def create_client(
 
 
 class ClientWrapper:
-    def __init__(self, session_path: Path, api_id: int, api_hash: str, flood_wait_max: int = DEFAULT_FLOOD_WAIT_MAX):
+    def __init__(
+        self,
+        session_path: Path,
+        api_id: int,
+        api_hash: str,
+        flood_wait_max: int = DEFAULT_FLOOD_WAIT_MAX,
+    ):
         self.session_path = session_path
         self.api_id = api_id
         self.api_hash = api_hash
@@ -156,7 +163,9 @@ class ClientWrapper:
 
     async def connect(self) -> bool:
         """Connect. Returns True if already authorised."""
-        self._client = create_client(self.session_path, self.api_id, self.api_hash, self.flood_wait_max)
+        self._client = create_client(
+            self.session_path, self.api_id, self.api_hash, self.flood_wait_max
+        )
         await self._client.connect()
         if await self._client.is_user_authorized():
             self._me = await self._client.get_me()
@@ -180,7 +189,10 @@ class ClientWrapper:
                 await self._client.sign_in(phone, code)  # type: ignore[union-attr]
             except SessionPasswordNeededError:
                 import getpass
-                password = password_callback() if password_callback else getpass.getpass("2FA password: ")
+
+                password = (
+                    password_callback() if password_callback else getpass.getpass("2FA password: ")
+                )
                 await self._client.sign_in(password=password)  # type: ignore[union-attr]
             self._me = await self._client.get_me()  # type: ignore[union-attr]
             return self._me
@@ -455,7 +467,8 @@ class ClientWrapper:
             if include_sender and msg.sender:
                 d["sender"] = {
                     "id": msg.sender_id,
-                    "name": getattr(msg.sender, "first_name", None) or getattr(msg.sender, "title", ""),
+                    "name": getattr(msg.sender, "first_name", None)
+                    or getattr(msg.sender, "title", ""),
                     "username": getattr(msg.sender, "username", None),
                 }
             if include_media and msg.media:
@@ -503,13 +516,9 @@ class ClientWrapper:
         messages (a couple before the unread ones for context). Read-only —
         emits no read receipts."""
         result: list[dict[str, Any]] = []
-        async for chat in self.list_chats(
-            limit=limit_chats, chat_type=chat_type, unread_only=True
-        ):
+        async for chat in self.list_chats(limit=limit_chats, chat_type=chat_type, unread_only=True):
             depth = min(max(chat.get("unread_count", 0) + 2, 5), per_chat)
-            chat["messages"] = await self.get_messages(
-                chat["id"], limit=depth, include_sender=True
-            )
+            chat["messages"] = await self.get_messages(chat["id"], limit=depth, include_sender=True)
             result.append(chat)
         return result
 
@@ -575,19 +584,33 @@ class ClientWrapper:
 
         result: list[dict[str, Any]] = []
         if local:
-            compiled = re_mod.compile(regex or query, re_mod.IGNORECASE) if (regex or query) else None
+            compiled = (
+                re_mod.compile(regex or query, re_mod.IGNORECASE) if (regex or query) else None
+            )
             async for msg in self.client.iter_messages(chat_id, limit=limit * 10):
                 text = msg.text or ""
                 if compiled and not compiled.search(text):
                     continue
-                result.append({"id": msg.id, "date": str(msg.date), "text": text,
-                               "out": bool(getattr(msg, "out", False))})
+                result.append(
+                    {
+                        "id": msg.id,
+                        "date": str(msg.date),
+                        "text": text,
+                        "out": bool(getattr(msg, "out", False)),
+                    }
+                )
                 if len(result) >= limit:
                     break
         else:
             async for msg in self.client.iter_messages(chat_id, search=query, limit=limit):
-                result.append({"id": msg.id, "date": str(msg.date), "text": msg.text or "",
-                               "out": bool(getattr(msg, "out", False))})
+                result.append(
+                    {
+                        "id": msg.id,
+                        "date": str(msg.date),
+                        "text": msg.text or "",
+                        "out": bool(getattr(msg, "out", False)),
+                    }
+                )
         return result
 
     async def pin_message(self, chat_id: int | str, msg_id: int) -> dict[str, Any]:
@@ -599,11 +622,13 @@ class ClientWrapper:
         from telethon.tl.types import ReactionEmoji
 
         try:
-            await self.client(SendReactionRequest(
-                peer=chat_id,
-                msg_id=msg_id,
-                reaction=[ReactionEmoji(emoticon=emoji)],
-            ))
+            await self.client(
+                SendReactionRequest(
+                    peer=chat_id,
+                    msg_id=msg_id,
+                    reaction=[ReactionEmoji(emoticon=emoji)],
+                )
+            )
         except Exception as e:
             # Telegram answers a reaction that is already there with
             # MESSAGE_NOT_MODIFIED. That is the desired end state, not a
@@ -628,7 +653,12 @@ class ClientWrapper:
             except Exception:
                 await asyncio.sleep(min(typing_s, 60))
         msg = await self.client.edit_message(chat_id, msg_id, text)
-        return {"edited": True, "id": msg.id, "chat_id": chat_id, "date": str(msg.edit_date or msg.date)}
+        return {
+            "edited": True,
+            "id": msg.id,
+            "chat_id": chat_id,
+            "date": str(msg.edit_date or msg.date),
+        }
 
     async def forward_messages(
         self,
@@ -668,14 +698,16 @@ class ClientWrapper:
             except Exception:
                 pass
             info = self._entity_to_dict(entity) if entity is not None else {"id": None, "name": "?"}
-            drafts.append({
-                "chat_id": info.get("id"),
-                "chat_name": info.get("name"),
-                "chat_username": info.get("username"),
-                "text": draft.text or "",
-                "date": str(draft.date) if draft.date else None,
-                "reply_to": getattr(draft, "reply_to_msg_id", None),
-            })
+            drafts.append(
+                {
+                    "chat_id": info.get("id"),
+                    "chat_name": info.get("name"),
+                    "chat_username": info.get("username"),
+                    "text": draft.text or "",
+                    "date": str(draft.date) if draft.date else None,
+                    "reply_to": getattr(draft, "reply_to_msg_id", None),
+                }
+            )
         return drafts
 
     async def list_participants(
@@ -697,16 +729,18 @@ class ClientWrapper:
         async for u in self.client.iter_participants(chat_id, limit=limit, **kwargs):
             if not isinstance(u, User):
                 continue
-            users.append({
-                "id": u.id,
-                "first_name": u.first_name or "",
-                "last_name": u.last_name or "",
-                "username": u.username,
-                "is_bot": bool(u.bot),
-                "is_deleted": bool(u.deleted),
-                "is_contact": bool(u.contact),
-                "is_self": bool(u.is_self),
-            })
+            users.append(
+                {
+                    "id": u.id,
+                    "first_name": u.first_name or "",
+                    "last_name": u.last_name or "",
+                    "username": u.username,
+                    "is_bot": bool(u.bot),
+                    "is_deleted": bool(u.deleted),
+                    "is_contact": bool(u.contact),
+                    "is_self": bool(u.is_self),
+                }
+            )
         return users
 
     async def create_chat(
@@ -718,11 +752,14 @@ class ClientWrapper:
     ) -> dict[str, Any]:
         if chat_type == "channel":
             from telethon.tl.functions.channels import CreateChannelRequest
-            result = await self.client(CreateChannelRequest(
-                title=name,
-                about="",
-                megagroup=False,
-            ))
+
+            result = await self.client(
+                CreateChannelRequest(
+                    title=name,
+                    about="",
+                    megagroup=False,
+                )
+            )
             ch = result.chats[0]
             return {"id": utils.get_peer_id(ch), "name": name, "type": "channel"}
         else:
@@ -735,9 +772,7 @@ class ClientWrapper:
         from telethon.tl.types import InputFolderPeer
 
         entity = await self.client.get_input_entity(chat_id)
-        await self.client(EditPeerFoldersRequest([
-            InputFolderPeer(peer=entity, folder_id=1)
-        ]))
+        await self.client(EditPeerFoldersRequest([InputFolderPeer(peer=entity, folder_id=1)]))
         return {"archived": True, "chat_id": chat_id}
 
     async def mark_chat_unread(self, chat_id: int | str, unread: bool = True) -> dict[str, Any]:
@@ -758,37 +793,46 @@ class ClientWrapper:
 
     async def mute_chat(self, chat_id: int | str, duration: int | None = None) -> dict[str, Any]:
         from telethon.tl.functions.account import UpdateNotifySettingsRequest
-        from telethon.tl.types import InputPeerNotifySettings, InputNotifyPeer
+        from telethon.tl.types import InputNotifyPeer, InputPeerNotifySettings
 
         entity = await self.client.get_input_entity(chat_id)
-        mute_until = 2**31 - 1 if duration is None else int(asyncio.get_event_loop().time()) + duration
-        await self.client(UpdateNotifySettingsRequest(
-            peer=InputNotifyPeer(peer=entity),
-            settings=InputPeerNotifySettings(mute_until=mute_until),
-        ))
+        mute_until = (
+            2**31 - 1 if duration is None else int(asyncio.get_event_loop().time()) + duration
+        )
+        await self.client(
+            UpdateNotifySettingsRequest(
+                peer=InputNotifyPeer(peer=entity),
+                settings=InputPeerNotifySettings(mute_until=mute_until),
+            )
+        )
         return {"muted": True, "chat_id": chat_id}
 
     async def leave_chat(self, chat_id: int | str) -> dict[str, Any]:
         entity = await self.client.get_entity(chat_id)
         if isinstance(entity, Channel):
             from telethon.tl.functions.channels import LeaveChannelRequest
+
             await self.client(LeaveChannelRequest(entity))
         elif isinstance(entity, Chat):
             from telethon.tl.functions.messages import DeleteChatUserRequest
+
             await self.client(DeleteChatUserRequest(entity.id, self.me.id))
         return {"left": True, "chat_id": chat_id}
 
     async def list_contacts(self) -> list[dict[str, Any]]:
         from telethon.tl.functions.contacts import GetContactsRequest
+
         result = await self.client(GetContactsRequest(hash=0))
         contacts: list[dict[str, Any]] = []
         for u in result.users:
-            contacts.append({
-                "id": u.id,
-                "name": f"{u.first_name or ''} {u.last_name or ''}".strip(),
-                "username": u.username,
-                "phone": u.phone,
-            })
+            contacts.append(
+                {
+                    "id": u.id,
+                    "name": f"{u.first_name or ''} {u.last_name or ''}".strip(),
+                    "username": u.username,
+                    "phone": u.phone,
+                }
+            )
         return contacts
 
     async def add_contact(self, phone: str, name: str = "") -> dict[str, Any]:
@@ -798,9 +842,11 @@ class ClientWrapper:
         parts = name.split(maxsplit=1)
         first = parts[0] if parts else ""
         last = parts[1] if len(parts) > 1 else ""
-        result = await self.client(ImportContactsRequest([
-            InputPhoneContact(client_id=0, phone=phone, first_name=first, last_name=last)
-        ]))
+        result = await self.client(
+            ImportContactsRequest(
+                [InputPhoneContact(client_id=0, phone=phone, first_name=first, last_name=last)]
+            )
+        )
         imported = result.imported
         if imported:
             return {"added": True, "user_id": imported[0].user_id}
@@ -827,23 +873,27 @@ class ClientWrapper:
         last = last_name if last_name is not None else (entity.last_name or "")
         if not first:
             first = "."
-        await self.client(AddContactRequest(
-            id=entity,
-            first_name=first,
-            last_name=last,
-            phone=getattr(entity, "phone", None) or "",
-            add_phone_privacy_exception=False,
-        ))
+        await self.client(
+            AddContactRequest(
+                id=entity,
+                first_name=first,
+                last_name=last,
+                phone=getattr(entity, "phone", None) or "",
+                add_phone_privacy_exception=False,
+            )
+        )
         return {"saved": True, "user_id": entity.id, "first_name": first, "last_name": last}
 
     async def remove_contact(self, user_ref: str) -> dict[str, Any]:
         from telethon.tl.functions.contacts import DeleteContactsRequest
+
         entity = await self.client.get_entity(user_ref)
         await self.client(DeleteContactsRequest(id=[entity]))
         return {"removed": True}
 
     async def search_contacts(self, query: str) -> list[dict[str, Any]]:
         from telethon.tl.functions.contacts import SearchRequest
+
         result = await self.client(SearchRequest(q=query, limit=50))
         return [
             {
@@ -936,6 +986,7 @@ class ClientWrapper:
         if duration > 0:
             await asyncio.sleep(min(duration, 30))
             from telethon.tl.types import SendMessageCancelAction
+
             await self.client(SetTypingRequest(peer=entity, action=SendMessageCancelAction()))
         return {"typing": True, "chat_id": chat_id, "duration": duration}
 
@@ -979,9 +1030,7 @@ class ClientWrapper:
             "stories_hidden": bool(getattr(user, "stories_hidden", False)),
         }
 
-    async def set_stories_hidden(
-        self, user_ref: int | str, hidden: bool = True
-    ) -> dict[str, Any]:
+    async def set_stories_hidden(self, user_ref: int | str, hidden: bool = True) -> dict[str, Any]:
         """Archive (or unarchive) a peer's stories for this account.
 
         Exactly Telegram's own "Hide Stories" context-menu item: the peer moves
@@ -1139,9 +1188,7 @@ class ClientWrapper:
 
         try:
             input_peer = await self.client.get_input_entity(peer)
-            res = await self.client(
-                GetPeerDialogsRequest(peers=[InputDialogPeer(peer=input_peer)])
-            )
+            res = await self.client(GetPeerDialogsRequest(peers=[InputDialogPeer(peer=input_peer)]))
             dialogs = list(getattr(res, "dialogs", []) or [])
             top = max((getattr(d, "top_message", 0) or 0) for d in dialogs) if dialogs else 0
             msgs = await self.client.get_messages(input_peer, limit=1)
@@ -1203,10 +1250,12 @@ class ClientWrapper:
                 if rec is None:
                     sender = getattr(msg, "sender", None)
                     name = " ".join(
-                        p for p in (
+                        p
+                        for p in (
                             getattr(sender, "first_name", None) or "",
                             getattr(sender, "last_name", None) or "",
-                        ) if p
+                        )
+                        if p
                     ).strip() or (getattr(sender, "title", None) or "")
                     rec = {
                         "id": sid,

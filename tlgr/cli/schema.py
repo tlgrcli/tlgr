@@ -75,31 +75,82 @@ def _build_param(param: click.Parameter) -> dict[str, Any]:
 
 EXAMPLE_RESPONSES: dict[str, Any] = {
     "tlgr message send": {"id": 12345, "chat_id": -100123, "date": "2025-03-06 12:00:00+00:00"},
-    "tlgr message list": {"messages": [{"id": 100, "date": "2025-03-06 12:00:00+00:00", "text": "Hello"}], "has_more": True, "next_cursor": "eyJvZmZzZXRfaWQiOjEwMH0"},
-    "tlgr message get": {"id": 100, "date": "2025-03-06 12:00:00+00:00", "text": "Hello", "sender": {"id": 123, "name": "Alice", "username": "alice"}},
+    "tlgr message list": {
+        "messages": [{"id": 100, "date": "2025-03-06 12:00:00+00:00", "text": "Hello"}],
+        "has_more": True,
+        "next_cursor": "eyJvZmZzZXRfaWQiOjEwMH0",
+    },
+    "tlgr message get": {
+        "id": 100,
+        "date": "2025-03-06 12:00:00+00:00",
+        "text": "Hello",
+        "sender": {"id": 123, "name": "Alice", "username": "alice"},
+    },
     "tlgr message delete": {"deleted": 2},
-    "tlgr message search": {"messages": [{"id": 50, "date": "2025-03-05", "text": "match"}], "has_more": False},
+    "tlgr message search": {
+        "messages": [{"id": 50, "date": "2025-03-05", "text": "match"}],
+        "has_more": False,
+    },
     "tlgr message pin": {"pinned": True, "msg_id": 100},
     "tlgr message react": {"reacted": True, "msg_id": 100, "emoji": "👍"},
-    "tlgr chat list": {"chats": [{"id": -100123, "name": "My Group", "type": "supergroup", "username": "mygroup"}], "has_more": True, "next_cursor": "eyJvZmZzZXQiOjF9"},
-    "tlgr chat get": {"id": -100123, "name": "My Group", "type": "supergroup", "username": "mygroup"},
+    "tlgr chat list": {
+        "chats": [{"id": -100123, "name": "My Group", "type": "supergroup", "username": "mygroup"}],
+        "has_more": True,
+        "next_cursor": "eyJvZmZzZXQiOjF9",
+    },
+    "tlgr chat get": {
+        "id": -100123,
+        "name": "My Group",
+        "type": "supergroup",
+        "username": "mygroup",
+    },
     "tlgr chat create": {"id": -100456, "name": "New Group", "type": "group"},
     "tlgr chat archive": {"archived": True, "chat_id": -100123},
     "tlgr chat mute": {"muted": True, "chat_id": -100123},
     "tlgr chat leave": {"left": True, "chat_id": -100123},
-    "tlgr contact list": {"contacts": [{"id": 123, "name": "Alice", "username": "alice", "phone": "+1555123"}], "has_more": False},
+    "tlgr contact list": {
+        "contacts": [{"id": 123, "name": "Alice", "username": "alice", "phone": "+1555123"}],
+        "has_more": False,
+    },
     "tlgr contact add": {"added": True, "user_id": 123},
     "tlgr contact remove": {"removed": True},
-    "tlgr contact search": {"contacts": [{"id": 123, "name": "Alice", "username": "alice"}], "has_more": False},
-    "tlgr profile get": {"id": 123, "first_name": "Me", "last_name": "", "username": "me", "phone": "+1555000"},
+    "tlgr contact search": {
+        "contacts": [{"id": 123, "name": "Alice", "username": "alice"}],
+        "has_more": False,
+    },
+    "tlgr profile get": {
+        "id": 123,
+        "first_name": "Me",
+        "last_name": "",
+        "username": "me",
+        "phone": "+1555000",
+    },
     "tlgr profile update": {"updated": True},
     "tlgr media download": {"path": "/home/user/.tlgr/downloads/photo.jpg", "msg_id": 100},
     "tlgr media upload": {"id": 200, "chat_id": -100123},
-    "tlgr daemon status": {"running": True, "pid": 12345, "uptime_seconds": 3600, "accounts": ["main"]},
-    "tlgr job list": {"jobs": [{"name": "my-job", "type": "gateway", "enabled": True, "running": True}]},
+    "tlgr daemon status": {
+        "running": True,
+        "pid": 12345,
+        "uptime_seconds": 3600,
+        "accounts": ["main"],
+    },
+    "tlgr job list": {
+        "jobs": [{"name": "my-job", "type": "gateway", "enabled": True, "running": True}]
+    },
     "tlgr account list": [{"alias": "* main", "user_id": 123, "name": "Me", "phone": "+1555000"}],
-    "tlgr account info": {"alias": "main", "user_id": 123, "username": "me", "first_name": "Me", "phone": "+1555000"},
-    "tlgr agent whoami": {"account": "main", "user_id": 123, "username": "me", "daemon_running": True},
+    "tlgr account info": {
+        "alias": "main",
+        "user_id": 123,
+        "username": "me",
+        "first_name": "Me",
+        "phone": "+1555000",
+    },
+    "tlgr agent whoami": {
+        "account": "main",
+        "user_id": 123,
+        "username": "me",
+        "daemon_running": True,
+    },
 }
 
 

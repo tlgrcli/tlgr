@@ -21,16 +21,29 @@ from tlgr.core.client import ClientWrapper
 
 
 def _rc(emoticon=None, count=1, chosen=None, document_id=None):
-    reaction = SimpleNamespace(emoticon=emoticon) if emoticon is not None \
+    reaction = (
+        SimpleNamespace(emoticon=emoticon)
+        if emoticon is not None
         else SimpleNamespace(document_id=document_id)
+    )
     return SimpleNamespace(reaction=reaction, count=count, chosen_order=chosen)
 
 
 def _msg(mid, text, *, out=False, reactions=None):
     return SimpleNamespace(
-        id=mid, date="2026-09-02", text=text, out=out, action=None,
-        reply_to_msg_id=None, sender=None, sender_id=None, media=None,
-        entities=None, reactions=reactions, reply_to=None, forward=None,
+        id=mid,
+        date="2026-09-02",
+        text=text,
+        out=out,
+        action=None,
+        reply_to_msg_id=None,
+        sender=None,
+        sender_id=None,
+        media=None,
+        entities=None,
+        reactions=reactions,
+        reply_to=None,
+        forward=None,
     )
 
 
@@ -44,6 +57,7 @@ class _FakeTelethon:
         async def _gen():
             for m in msgs:
                 yield m
+
         return _gen()
 
     async def get_messages(self, chat_id, ids=None):
@@ -81,10 +95,12 @@ def test_our_own_reaction_is_reported_as_mine():
 
 
 def test_mixed_reactions_separate_ours_from_theirs():
-    r = SimpleNamespace(results=[
-        _rc("❤", count=2, chosen=0),
-        _rc("👍", count=3, chosen=None),
-    ])
+    r = SimpleNamespace(
+        results=[
+            _rc("❤", count=2, chosen=0),
+            _rc("👍", count=3, chosen=None),
+        ]
+    )
     w = _wrap([_msg(1, "x", reactions=r)])
     out = asyncio.run(w.get_messages(7, limit=10))
     assert out[0]["reactions"]["counts"] == {"❤": 2, "👍": 3}
@@ -130,6 +146,7 @@ class _AlreadyReacted(Exception):
 
 def test_duplicate_reaction_reports_already_not_error():
     """MESSAGE_NOT_MODIFIED is the desired end state, not a failed send."""
+
     class _T:
         async def __call__(self, req):
             raise _AlreadyReacted()
@@ -153,6 +170,7 @@ def test_fresh_reaction_reports_already_false():
 
 def test_other_react_errors_still_raise():
     """Only 'not modified' is swallowed — a real failure must stay a failure."""
+
     class _T:
         async def __call__(self, req):
             raise RuntimeError("PEER_FLOOD")

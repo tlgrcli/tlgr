@@ -17,7 +17,9 @@ from tlgr.ipc_client import ipc_request
 @click.option("--events", default="new_message", help="Comma-separated event types.")
 @click.option("--account", "-a", default=None)
 @click.pass_context
-def watch_command(ctx: click.Context, chats: tuple[str, ...], events: str, account: str | None) -> None:
+def watch_command(
+    ctx: click.Context, chats: tuple[str, ...], events: str, account: str | None
+) -> None:
     """Stream events as newline-delimited JSON. Ctrl+C to stop.
 
     Polls the daemon for new messages and emits one JSON object per line.

@@ -59,6 +59,7 @@ def _status(clients):
 
 # -- ClientWrapper.is_connected --
 
+
 def test_wrapper_never_connected_is_not_connected():
     assert _wrapper(client=None).is_connected is False
 
@@ -77,6 +78,7 @@ def test_wrapper_survives_its_connection():
 
 
 # -- Daemon.status() --
+
 
 def test_status_reports_all_connected_as_healthy():
     live = SimpleNamespace(is_connected=lambda: True)

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import click
 
+from tlgr.cli._common import resolve_account
 from tlgr.core.errors import EXIT_INDETERMINATE
 from tlgr.core.output import emit
-from tlgr.cli._common import resolve_account
 from tlgr.ipc_client import ipc_request
 
 
@@ -26,20 +26,18 @@ def user_get(ctx: click.Context, user: str, account: str | None) -> None:
     emit(
         ctx.obj,
         result,
-        columns=["id", "first_name", "username", "bio", "is_bot", "status",
-                 "stories_hidden"],
+        columns=["id", "first_name", "username", "bio", "is_bot", "status", "stories_hidden"],
     )
 
 
 @user_group.command("hide-stories")
 @click.argument("user")
-@click.option("--unhide", is_flag=True, default=False,
-              help="Put them back in the main stories bar instead.")
+@click.option(
+    "--unhide", is_flag=True, default=False, help="Put them back in the main stories bar instead."
+)
 @click.option("--account", "-a", default=None)
 @click.pass_context
-def user_hide_stories(
-    ctx: click.Context, user: str, unhide: bool, account: str | None
-) -> None:
+def user_hide_stories(ctx: click.Context, user: str, unhide: bool, account: str | None) -> None:
     """Archive USER's stories for this account ("Hide Stories").
 
     The same thing as the "Hide Stories" item in Telegram's own story
@@ -62,9 +60,13 @@ def user_hide_stories(
 
 @user_group.command("dialog-status")
 @click.argument("user")
-@click.option("--max-dialogs", type=int, default=5000,
-              help="Cap on the fallback dialog-list scan. Hitting it is reported "
-                   "as indeterminate, never as 'no dialog'.")
+@click.option(
+    "--max-dialogs",
+    type=int,
+    default=5000,
+    help="Cap on the fallback dialog-list scan. Hitting it is reported "
+    "as indeterminate, never as 'no dialog'.",
+)
 @click.option("--account", "-a", default=None)
 @click.pass_context
 def user_dialog_status(

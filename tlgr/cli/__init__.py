@@ -26,7 +26,7 @@ class TlgrGroup(click.Group):
         try:
             super().invoke(ctx)
         except TlgrError as e:
-            use_json = ctx.params.get("json") or ctx.obj and ctx.obj.get("json")
+            use_json = ctx.params.get("json") or (ctx.obj and ctx.obj.get("json"))
             emit_error(e, use_json=bool(use_json))
             sys.exit(exit_code_for(e))
         except (click.ClickException, click.exceptions.Exit, SystemExit):
@@ -34,7 +34,7 @@ class TlgrGroup(click.Group):
         except KeyboardInterrupt:
             sys.exit(130)
         except Exception as e:
-            use_json = ctx.params.get("json") or ctx.obj and ctx.obj.get("json")
+            use_json = ctx.params.get("json") or (ctx.obj and ctx.obj.get("json"))
             emit_error(e, use_json=bool(use_json))
             sys.exit(1)
 
@@ -75,47 +75,73 @@ class TlgrGroup(click.Group):
 @click.group(cls=TlgrGroup)
 @click.version_option(__version__, prog_name="tlgr")
 @click.option(
-    "--json", "use_json", is_flag=True, default=_env_bool("TLGR_JSON"),
+    "--json",
+    "use_json",
+    is_flag=True,
+    default=_env_bool("TLGR_JSON"),
     help="Output JSON to stdout.",
 )
 @click.option(
-    "--plain", "use_plain", is_flag=True, default=_env_bool("TLGR_PLAIN"),
+    "--plain",
+    "use_plain",
+    is_flag=True,
+    default=_env_bool("TLGR_PLAIN"),
     help="Output stable TSV for piping.",
 )
 @click.option(
-    "--account", "-a", default=_env_or("TLGR_ACCOUNT", ""),
+    "--account",
+    "-a",
+    default=_env_or("TLGR_ACCOUNT", ""),
     help="Account alias to use.",
 )
 @click.option(
-    "--enable-commands", default=_env_or("TLGR_ENABLE_COMMANDS", ""),
+    "--enable-commands",
+    default=_env_or("TLGR_ENABLE_COMMANDS", ""),
     help="Comma-separated allowlist of commands (e.g. 'message.send,chat.list').",
 )
 @click.option(
-    "--results-only", is_flag=True, default=False,
+    "--results-only",
+    is_flag=True,
+    default=False,
     help="In JSON mode, emit only the primary result (strip envelope).",
 )
 @click.option(
-    "--select", "select_fields", default=None,
+    "--select",
+    "select_fields",
+    default=None,
     help="In JSON mode, select comma-separated fields (supports dot paths).",
 )
 @click.option(
-    "--dry-run", "-n", is_flag=True, default=False,
+    "--dry-run",
+    "-n",
+    is_flag=True,
+    default=False,
     help="Preview destructive operations without executing.",
 )
 @click.option(
-    "--force", "-y", is_flag=True, default=False,
+    "--force",
+    "-y",
+    is_flag=True,
+    default=False,
     help="Skip confirmations for destructive commands.",
 )
 @click.option(
-    "--flood-wait-max", type=int, default=None,
+    "--flood-wait-max",
+    type=int,
+    default=None,
     help="Max seconds to auto-sleep on rate limit (default from config).",
 )
 @click.option(
-    "--no-input", is_flag=True, default=False,
+    "--no-input",
+    is_flag=True,
+    default=False,
     help="Never prompt; fail instead (CI/agent mode).",
 )
 @click.option(
-    "--verbose", "-v", is_flag=True, default=False,
+    "--verbose",
+    "-v",
+    is_flag=True,
+    default=False,
     help="Enable verbose logging to stderr.",
 )
 @click.pass_context
@@ -164,7 +190,10 @@ def cli(
 
     if verbose:
         import logging
-        logging.basicConfig(level=logging.DEBUG, stream=sys.stderr, format="%(levelname)s: %(message)s")
+
+        logging.basicConfig(
+            level=logging.DEBUG, stream=sys.stderr, format="%(levelname)s: %(message)s"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -172,18 +201,18 @@ def cli(
 # ---------------------------------------------------------------------------
 
 from tlgr.cli.account import account_group  # noqa: E402
-from tlgr.cli.message import message_group  # noqa: E402
-from tlgr.cli.chat import chat_group  # noqa: E402
-from tlgr.cli.contact import contact_group  # noqa: E402
-from tlgr.cli.draft import draft_group  # noqa: E402
-from tlgr.cli.profile import profile_group  # noqa: E402
-from tlgr.cli.media import media_group  # noqa: E402
-from tlgr.cli.daemon_cmd import daemon_group  # noqa: E402
-from tlgr.cli.job import job_group  # noqa: E402
-from tlgr.cli.config_cmd import config_group  # noqa: E402
-from tlgr.cli.completion import completion_group  # noqa: E402
-from tlgr.cli.schema import schema_command  # noqa: E402
 from tlgr.cli.agent import agent_group  # noqa: E402
+from tlgr.cli.chat import chat_group  # noqa: E402
+from tlgr.cli.completion import completion_group  # noqa: E402
+from tlgr.cli.config_cmd import config_group  # noqa: E402
+from tlgr.cli.contact import contact_group  # noqa: E402
+from tlgr.cli.daemon_cmd import daemon_group  # noqa: E402
+from tlgr.cli.draft import draft_group  # noqa: E402
+from tlgr.cli.job import job_group  # noqa: E402
+from tlgr.cli.media import media_group  # noqa: E402
+from tlgr.cli.message import message_group  # noqa: E402
+from tlgr.cli.profile import profile_group  # noqa: E402
+from tlgr.cli.schema import schema_command  # noqa: E402
 from tlgr.cli.user import user_group  # noqa: E402
 from tlgr.cli.watch import watch_command  # noqa: E402
 
@@ -209,6 +238,7 @@ cli.add_command(watch_command, "watch")
 # Top-level action shortcuts (desire paths)
 # ---------------------------------------------------------------------------
 
+
 @cli.command("send")
 @click.argument("chat")
 @click.argument("text", required=False, default="")
@@ -229,8 +259,13 @@ def shortcut_send(
     """Send a message (shortcut for 'message send')."""
     ctx.invoke(
         message_group.commands["send"],
-        chat=chat, text=text, file_path=file_path, caption=caption,
-        reply_to=reply_to, silent=silent, account=ctx.obj.get("account"),
+        chat=chat,
+        text=text,
+        file_path=file_path,
+        caption=caption,
+        reply_to=reply_to,
+        silent=silent,
+        account=ctx.obj.get("account"),
     )
 
 
@@ -263,11 +298,15 @@ def shortcut_status(ctx: click.Context) -> None:
 @click.option("--search", "-s", default=None, help="Filter by name.")
 @click.option("--limit", "-n", type=int, default=None)
 @click.pass_context
-def shortcut_chats(ctx: click.Context, chat_type: str | None, search: str | None, limit: int | None) -> None:
+def shortcut_chats(
+    ctx: click.Context, chat_type: str | None, search: str | None, limit: int | None
+) -> None:
     """List all chats (shortcut for 'chat list')."""
     ctx.invoke(
         chat_group.commands["list"],
-        chat_type=chat_type, search=search, limit=limit,
+        chat_type=chat_type,
+        search=search,
+        limit=limit,
         account=ctx.obj.get("account"),
     )
 
@@ -280,7 +319,9 @@ def shortcut_inbox(ctx: click.Context, chat_type: str | None, limit: int | None)
     """List chats with unread messages (shortcut for 'chat list --unread')."""
     ctx.invoke(
         chat_group.commands["list"],
-        chat_type=chat_type, limit=limit, unread=True,
+        chat_type=chat_type,
+        limit=limit,
+        unread=True,
         account=ctx.obj.get("account"),
     )
 
@@ -296,7 +337,9 @@ def shortcut_catchup(
     """Unread chats with their recent messages (shortcut for 'chat catchup')."""
     ctx.invoke(
         chat_group.commands["catchup"],
-        chat_type=chat_type, limit_chats=limit_chats, per_chat=per_chat,
+        chat_type=chat_type,
+        limit_chats=limit_chats,
+        per_chat=per_chat,
         account=ctx.obj.get("account"),
     )
 
@@ -317,7 +360,9 @@ def shortcut_download(ctx: click.Context, chat: str, msg_id: int, out_dir: str |
     """Download media (shortcut for 'media download')."""
     ctx.invoke(
         media_group.commands["download"],
-        chat=chat, msg_id=msg_id, out_dir=out_dir,
+        chat=chat,
+        msg_id=msg_id,
+        out_dir=out_dir,
         account=ctx.obj.get("account"),
     )
 
@@ -331,7 +376,9 @@ def shortcut_upload(ctx: click.Context, chat: str, path: str, caption: str) -> N
     """Upload a file (shortcut for 'media upload')."""
     ctx.invoke(
         media_group.commands["upload"],
-        chat=chat, path=path, caption=caption,
+        chat=chat,
+        path=path,
+        caption=caption,
         account=ctx.obj.get("account"),
     )
 

@@ -29,31 +29,22 @@ def completion_fish() -> None:
 
 
 def _get_completion(shell: str) -> str:
-    import os
 
     env_var = "_TLGR_COMPLETE"
     scripts = {
         "bash": f'eval "$({env_var}=bash_source tlgr)"',
         "zsh": f'eval "$({env_var}=zsh_source tlgr)"',
-        "fish": f'{env_var}=fish_source tlgr | source',
+        "fish": f"{env_var}=fish_source tlgr | source",
     }
 
     if shell == "bash":
-        return (
-            f'# Add to ~/.bashrc:\n'
-            f'# {scripts["bash"]}\n\n'
-            f'{scripts["bash"]}'
-        )
+        return f"# Add to ~/.bashrc:\n# {scripts['bash']}\n\n{scripts['bash']}"
     elif shell == "zsh":
-        return (
-            f'# Add to ~/.zshrc:\n'
-            f'# {scripts["zsh"]}\n\n'
-            f'{scripts["zsh"]}'
-        )
+        return f"# Add to ~/.zshrc:\n# {scripts['zsh']}\n\n{scripts['zsh']}"
     elif shell == "fish":
         return (
-            f'# Add to ~/.config/fish/completions/tlgr.fish:\n'
-            f'# {scripts["fish"]}\n\n'
-            f'{scripts["fish"]}'
+            f"# Add to ~/.config/fish/completions/tlgr.fish:\n"
+            f"# {scripts['fish']}\n\n"
+            f"{scripts['fish']}"
         )
     return ""

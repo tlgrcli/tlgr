@@ -128,6 +128,7 @@ flowchart TB
 from tlgr.filters import register_filter
 from tlgr.gateway.event import Event
 
+
 @register_filter("text_length")
 def filter_text_length(event, value):
     if event.source != "telegram":

@@ -36,9 +36,9 @@ Defined in `event.py`. Intentionally thin -- filters extract what they need from
 ```python
 @dataclass(slots=True)
 class Event:
-    source: str          # "telegram", "webhook", etc.
-    raw: Any             # original Telethon event or webhook payload
-    account: str         # which account received it
+    source: str  # "telegram", "webhook", etc.
+    raw: Any  # original Telethon event or webhook payload
+    account: str  # which account received it
     timestamp: datetime
 ```
 
@@ -165,6 +165,7 @@ Valid types: `text`, `photo`, `video`, `document`, `sticker`, `voice`, `video_no
 # tlgr/filters/my_filter.py
 from tlgr.filters import register_filter
 
+
 @register_filter("text_length")
 def filter_text_length(event, value):
     if event.source != "telegram":
@@ -223,6 +224,7 @@ processors:
 ```python
 from tlgr.processors import register_processor
 
+
 @register_processor("uppercase")
 def uppercase(text, config=None):
     return text.upper()
@@ -262,6 +264,7 @@ Forwards the message to one or more destinations.
 
 ```python
 from tlgr.actions import register_action
+
 
 @register_action("react")
 async def action_react(event, config, client, chain=None):

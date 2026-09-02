@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import click
 
-from tlgr.core.output import emit
 from tlgr.cli._common import resolve_account
+from tlgr.core.output import emit
 from tlgr.ipc_client import ipc_request
 
 

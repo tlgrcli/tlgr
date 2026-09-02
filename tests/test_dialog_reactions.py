@@ -22,16 +22,23 @@ from tlgr.core.client import ClientWrapper
 
 
 def _rc(emoticon=None, count=1, chosen=None, document_id=None):
-    reaction = SimpleNamespace(emoticon=emoticon) if emoticon is not None \
+    reaction = (
+        SimpleNamespace(emoticon=emoticon)
+        if emoticon is not None
         else SimpleNamespace(document_id=document_id)
+    )
     return SimpleNamespace(reaction=reaction, count=count, chosen_order=chosen)
 
 
-def _msg(mid=5, text="سلام", *, out=False, reactions=None, media=None,
-         action=None):
+def _msg(mid=5, text="سلام", *, out=False, reactions=None, media=None, action=None):
     return SimpleNamespace(
-        id=mid, date="2026-09-02", text=text, out=out, action=action,
-        media=media, reactions=reactions,
+        id=mid,
+        date="2026-09-02",
+        text=text,
+        out=out,
+        action=action,
+        media=media,
+        reactions=reactions,
     )
 
 
@@ -49,8 +56,7 @@ def test_last_message_reports_our_own_reaction():
 
 def test_last_message_reaction_by_them_only():
     """A contact reacting to US: counted, but `mine` stays empty."""
-    msg = _msg(out=True,
-               reactions=SimpleNamespace(results=[_rc("👍", count=2, chosen=None)]))
+    msg = _msg(out=True, reactions=SimpleNamespace(results=[_rc("👍", count=2, chosen=None)]))
     extras = ClientWrapper._dialog_extras(_dialog(msg))
     assert extras["last_message"]["reactions"]["counts"] == {"👍": 2}
     assert extras["last_message"]["reactions"]["mine"] == []
@@ -65,8 +71,9 @@ def test_field_absent_when_there_are_no_reactions():
 def test_reactions_survive_alongside_media_and_service_labels():
     """The new field must not displace the labels already emitted here."""
     media = SimpleNamespace(document=SimpleNamespace(attributes=[], mime_type=None))
-    msg = _msg(text="", media=media,
-               reactions=SimpleNamespace(results=[_rc("❤", count=1, chosen=0)]))
+    msg = _msg(
+        text="", media=media, reactions=SimpleNamespace(results=[_rc("❤", count=1, chosen=0)])
+    )
     extras = ClientWrapper._dialog_extras(_dialog(msg))
     lm = extras["last_message"]
     assert lm["media_type"] == "SimpleNamespace"
@@ -75,6 +82,7 @@ def test_reactions_survive_alongside_media_and_service_labels():
 
 def test_no_message_means_no_crash():
     """An empty dialog has no last_message to decorate."""
-    extras = ClientWrapper._dialog_extras(SimpleNamespace(
-        unread_count=0, dialog=None, message=None))
+    extras = ClientWrapper._dialog_extras(
+        SimpleNamespace(unread_count=0, dialog=None, message=None)
+    )
     assert "last_message" not in extras

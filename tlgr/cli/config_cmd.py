@@ -7,7 +7,13 @@ from typing import Any
 
 import click
 
-from tlgr.core.config import CONFIG_DIR, load_app_config, load_webhook_config, _load_toml, _save_toml
+from tlgr.core.config import (
+    CONFIG_DIR,
+    _load_toml,
+    _save_toml,
+    load_app_config,
+    load_webhook_config,
+)
 from tlgr.core.output import emit
 from tlgr.gateway.config import load_gateway_configs
 
@@ -17,7 +23,7 @@ else:
     try:
         import tomllib
     except ModuleNotFoundError:
-        import tomli as tomllib  # type: ignore[no-redef]
+        pass  # type: ignore[no-redef]
 
 _CONFIG_FILE = CONFIG_DIR / "config.toml"
 
@@ -27,11 +33,19 @@ _KNOWN_KEYS: dict[str, tuple[str, str, str]] = {
     "drop_author": ("defaults", "drop_author", "Strip author on forwarded messages"),
     "delete_after": ("defaults", "delete_after", "Delete source after forwarding"),
     "default_account": ("accounts", "default", "Default account alias"),
-    "require_account": ("defaults", "require_account", "Require -a <alias> on every command (no default-account fallback)"),
+    "require_account": (
+        "defaults",
+        "require_account",
+        "Require -a <alias> on every command (no default-account fallback)",
+    ),
     "auto_start": ("daemon", "auto_start", "Auto-start daemon on CLI use"),
     "log_level": ("daemon", "log_level", "Daemon log level: debug | info | warning | error"),
     "idle_timeout": ("daemon", "idle_timeout", "Seconds before idle daemon auto-stops (0 = never)"),
-    "flood_wait_max": ("daemon", "flood_wait_max", "Max seconds to auto-sleep on Telegram rate limit"),
+    "flood_wait_max": (
+        "daemon",
+        "flood_wait_max",
+        "Max seconds to auto-sleep on Telegram rate limit",
+    ),
 }
 
 
@@ -128,6 +142,7 @@ def config_validate(ctx: click.Context) -> None:
                 errors.append(f"jobs.yaml: job '{cfg.name}' has no actions")
             for ac in cfg.actions:
                 from tlgr.actions import get_action
+
                 if get_action(ac.name) is None:
                     errors.append(f"jobs.yaml: job '{cfg.name}' has unknown action '{ac.name}'")
     except Exception as e:
@@ -159,10 +174,16 @@ def config_keys(ctx: click.Context) -> None:
     obj = ctx.obj or {}
     fmt = obj.get("fmt", "human")
     if fmt == "json":
-        rows = {k: {"section": sec, "key": key, "description": desc} for k, (sec, key, desc) in _KNOWN_KEYS.items()}
+        rows = {
+            k: {"section": sec, "key": key, "description": desc}
+            for k, (sec, key, desc) in _KNOWN_KEYS.items()
+        }
         emit(obj, {"keys": rows})
     else:
-        rows = [{"key": k, "section": sec, "description": desc} for k, (sec, _, desc) in _KNOWN_KEYS.items()]
+        rows = [
+            {"key": k, "section": sec, "description": desc}
+            for k, (sec, _, desc) in _KNOWN_KEYS.items()
+        ]
         emit(obj, rows, columns=["key", "section", "description"])
 
 

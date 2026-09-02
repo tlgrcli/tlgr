@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
-
-from tlgr.core.output import encode_cursor, decode_cursor, add_pagination
+from tlgr.core.output import add_pagination, decode_cursor, encode_cursor
 
 
 class TestCursorEncoding:
@@ -33,6 +31,7 @@ class TestCursorEncoding:
 
     def test_decode_corrupt_json(self):
         import base64
+
         token = base64.urlsafe_b64encode(b"not json").decode().rstrip("=")
         assert decode_cursor(token) == {}
 
@@ -72,22 +71,23 @@ class TestAddPagination:
         """
         items = list(range(33))
         envelope: dict = {"contacts": items}
-        result = add_pagination(envelope, items, limit=33,
-                                cursor_state={"offset": 33}, has_more=False)
+        result = add_pagination(
+            envelope, items, limit=33, cursor_state={"offset": 33}, has_more=False
+        )
         assert result["has_more"] is False
         assert "next_cursor" not in result
 
     def test_explicit_has_more_true(self):
         envelope: dict = {"contacts": [1, 2]}
-        result = add_pagination(envelope, [1, 2], limit=99,
-                                cursor_state={"offset": 2}, has_more=True)
+        result = add_pagination(
+            envelope, [1, 2], limit=99, cursor_state={"offset": 2}, has_more=True
+        )
         assert result["has_more"] is True
         assert decode_cursor(result["next_cursor"]) == {"offset": 2}
 
     def test_exhausted_page_is_not_more(self):
         """Past the end: zero items, zero limit — the guess said True."""
         envelope: dict = {"contacts": []}
-        result = add_pagination(envelope, [], limit=0,
-                                cursor_state={"offset": 33}, has_more=False)
+        result = add_pagination(envelope, [], limit=0, cursor_state={"offset": 33}, has_more=False)
         assert result["has_more"] is False
         assert "next_cursor" not in result

@@ -8,17 +8,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
 
 from telethon import events
 
 from tlgr.actions import get_action
 from tlgr.core.client import ClientWrapper
 from tlgr.filters.compose import evaluate
-from tlgr.gateway.config import GatewayConfig, ActionConfig
+from tlgr.gateway.config import ActionConfig, GatewayConfig
 from tlgr.gateway.event import Event
 from tlgr.jobs.base import BaseJob
-from tlgr.processors import ProcessorChain
 
 log = logging.getLogger("tlgr.gateway")
 
@@ -29,6 +27,7 @@ class _GatewayJobConfig:
     BaseJob expects a config object with ``.name``, ``.type``, and
     ``.enabled`` attributes.
     """
+
     def __init__(self, gw: GatewayConfig) -> None:
         self.name = gw.name
         self.type = "gateway"

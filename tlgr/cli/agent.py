@@ -70,6 +70,7 @@ def agent_whoami(ctx: click.Context) -> None:
     if info["daemon_running"]:
         try:
             from tlgr.ipc_client import ipc_request
+
             status = ipc_request("GET", "/daemon/status")
             info["daemon_uptime"] = status.get("uptime_seconds")
             # `accounts` is every client the daemon holds, connected or not — this

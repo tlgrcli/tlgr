@@ -32,20 +32,20 @@ class MessageType(Enum):
 
 def detect_message_type(message) -> MessageType:
     from telethon.tl.types import (
-        MessageMediaPhoto,
-        MessageMediaDocument,
-        MessageMediaPoll,
-        MessageMediaGeo,
-        MessageMediaGeoLive,
-        MessageMediaContact,
-        MessageMediaWebPage,
-        MessageMediaGame,
-        MessageMediaInvoice,
-        MessageMediaDice,
+        DocumentAttributeAnimated,
+        DocumentAttributeAudio,
         DocumentAttributeSticker,
         DocumentAttributeVideo,
-        DocumentAttributeAudio,
-        DocumentAttributeAnimated,
+        MessageMediaContact,
+        MessageMediaDice,
+        MessageMediaDocument,
+        MessageMediaGame,
+        MessageMediaGeo,
+        MessageMediaGeoLive,
+        MessageMediaInvoice,
+        MessageMediaPhoto,
+        MessageMediaPoll,
+        MessageMediaWebPage,
     )
 
     if not message.media:

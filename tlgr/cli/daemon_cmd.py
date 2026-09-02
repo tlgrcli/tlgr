@@ -10,7 +10,7 @@ import time
 
 import click
 
-from tlgr.core.config import CONFIG_DIR, get_socket_path, get_pid_path, get_logs_dir
+from tlgr.core.config import CONFIG_DIR, get_logs_dir, get_pid_path, get_socket_path
 from tlgr.core.output import emit
 from tlgr.daemon.lifecycle import read_pid, stop_daemon
 
@@ -31,10 +31,11 @@ def daemon_start(ctx: click.Context, foreground: bool) -> None:
         sys.exit(1)
 
     if foreground:
-        from tlgr.daemon.server import DaemonServer
-        from tlgr.daemon.lifecycle import setup_logging
-        from tlgr.core.config import load_app_config
         import asyncio
+
+        from tlgr.core.config import load_app_config
+        from tlgr.daemon.lifecycle import setup_logging
+        from tlgr.daemon.server import DaemonServer
 
         cfg = load_app_config()
         setup_logging(CONFIG_DIR, cfg.daemon.log_level)
@@ -113,7 +114,7 @@ def daemon_install(ctx: click.Context, force: bool) -> None:
         click.echo("Service installation is only supported on macOS for now.", err=True)
         sys.exit(1)
 
-    from tlgr.daemon.launchd import is_installed, install
+    from tlgr.daemon.launchd import install, is_installed
 
     if is_installed() and not force:
         click.echo("Service already installed. Use --force to reinstall.", err=True)
@@ -148,6 +149,7 @@ def daemon_status(ctx: click.Context) -> None:
     if pid:
         try:
             from tlgr.ipc_client import ipc_request
+
             result = ipc_request("GET", "/daemon/status")
             emit(
                 ctx.obj,

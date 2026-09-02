@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import sys
-
 import click
 
-from tlgr.core.output import add_pagination, decode_cursor, emit
 from tlgr.cli._common import resolve_account
+from tlgr.core.output import add_pagination, decode_cursor, emit
 from tlgr.ipc_client import ipc_request
 
 
@@ -29,10 +27,18 @@ def message_group() -> None:
 @click.option("--caption", default=None, help="Caption for file.")
 @click.option("--reply-to", type=int, default=None, help="Reply to message ID.")
 @click.option("--silent", is_flag=True, help="Send without notification.")
-@click.option("--typing", "typing_s", type=float, default=0.0,
-              help="Show 'typing…' for N seconds before sending (max 60).")
-@click.option("--typing-auto", is_flag=True,
-              help="Show 'typing…' for a duration estimated from the text length.")
+@click.option(
+    "--typing",
+    "typing_s",
+    type=float,
+    default=0.0,
+    help="Show 'typing…' for N seconds before sending (max 60).",
+)
+@click.option(
+    "--typing-auto",
+    is_flag=True,
+    help="Show 'typing…' for a duration estimated from the text length.",
+)
 @click.option("--account", "-a", default=None)
 @click.pass_context
 def message_send(
@@ -137,15 +143,26 @@ def message_get(ctx: click.Context, chat: str, msg_id: int, account: str | None)
 @click.argument("msg_ids", nargs=-1, type=int, required=True)
 @click.option("--account", "-a", default=None)
 @click.pass_context
-def message_delete(ctx: click.Context, chat: str, msg_ids: tuple[int, ...], account: str | None) -> None:
+def message_delete(
+    ctx: click.Context, chat: str, msg_ids: tuple[int, ...], account: str | None
+) -> None:
     """Delete messages from a chat."""
     acct = resolve_account(ctx, account)
     if ctx.obj.get("dry_run"):
-        emit(ctx.obj, {"dry_run": True, "op": "message.delete", "chat": chat, "msg_ids": list(msg_ids)})
+        emit(
+            ctx.obj,
+            {"dry_run": True, "op": "message.delete", "chat": chat, "msg_ids": list(msg_ids)},
+        )
         return
-    result = ipc_request("POST", "/message/delete", body={
-        "chat": chat, "msg_ids": list(msg_ids), "account": acct,
-    })
+    result = ipc_request(
+        "POST",
+        "/message/delete",
+        body={
+            "chat": chat,
+            "msg_ids": list(msg_ids),
+            "account": acct,
+        },
+    )
     emit(ctx.obj, result, columns=["deleted"])
 
 
@@ -194,8 +211,13 @@ def message_search(
 @click.argument("chat")
 @click.argument("msg_id", type=int)
 @click.argument("text")
-@click.option("--typing", "typing_s", type=float, default=0.0,
-              help="Show 'typing…' for N seconds before editing (max 60).")
+@click.option(
+    "--typing",
+    "typing_s",
+    type=float,
+    default=0.0,
+    help="Show 'typing…' for N seconds before editing (max 60).",
+)
 @click.option("--account", "-a", default=None)
 @click.pass_context
 def message_edit(
@@ -249,7 +271,9 @@ def message_forward(
 def message_pin(ctx: click.Context, chat: str, msg_id: int, account: str | None) -> None:
     """Pin a message in a chat."""
     acct = resolve_account(ctx, account)
-    result = ipc_request("POST", "/message/pin", body={"chat": chat, "msg_id": msg_id, "account": acct})
+    result = ipc_request(
+        "POST", "/message/pin", body={"chat": chat, "msg_id": msg_id, "account": acct}
+    )
     emit(ctx.obj, result)
 
 
@@ -274,8 +298,14 @@ def message_read(ctx: click.Context, chat: str, up_to: int | None, account: str 
 @click.argument("emoji")
 @click.option("--account", "-a", default=None)
 @click.pass_context
-def message_react(ctx: click.Context, chat: str, msg_id: int, emoji: str, account: str | None) -> None:
+def message_react(
+    ctx: click.Context, chat: str, msg_id: int, emoji: str, account: str | None
+) -> None:
     """React to a message with an emoji."""
     acct = resolve_account(ctx, account)
-    result = ipc_request("POST", "/message/react", body={"chat": chat, "msg_id": msg_id, "emoji": emoji, "account": acct})
+    result = ipc_request(
+        "POST",
+        "/message/react",
+        body={"chat": chat, "msg_id": msg_id, "emoji": emoji, "account": acct},
+    )
     emit(ctx.obj, result)

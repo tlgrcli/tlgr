@@ -23,11 +23,11 @@ from tlgr.core.config import (
     load_app_config,
     load_webhook_config,
 )
-from tlgr.gateway.config import load_gateway_configs
 from tlgr.daemon.ipc import IPCServer
 from tlgr.daemon.jobs import JobRunner
-from tlgr.daemon.lifecycle import write_pid, setup_logging, daemonize, read_pid
+from tlgr.daemon.lifecycle import daemonize, read_pid, setup_logging, write_pid
 from tlgr.daemon.webhook import WebhookPusher
+from tlgr.gateway.config import load_gateway_configs
 
 log = logging.getLogger("tlgr.daemon")
 
@@ -73,7 +73,7 @@ class DaemonServer:
             log.warning("No credentials for account '%s'", alias)
             return None
         session_path = acct_mgr.get_session_path(alias)
-        flood_max = getattr(self, '_flood_wait_max', 120)
+        flood_max = getattr(self, "_flood_wait_max", 120)
         client = ClientWrapper(session_path, api_id, api_hash, flood_wait_max=flood_max)
         authorized = await client.connect()
         if not authorized:
@@ -114,7 +114,10 @@ class DaemonServer:
             async def on_deleted(event, _alias=alias):
                 if not self._webhook.should_push("message_deleted"):
                     return
-                data = {"deleted_ids": event.deleted_ids, "chat_id": getattr(event, "chat_id", None)}
+                data = {
+                    "deleted_ids": event.deleted_ids,
+                    "chat_id": getattr(event, "chat_id", None),
+                }
                 await self._webhook.push("message_deleted", data, account=_alias)
 
             @tel.on(events.ChatAction())
@@ -124,7 +127,9 @@ class DaemonServer:
                 data = {
                     "chat_id": event.chat_id,
                     "user_id": event.user_id,
-                    "action": type(event.action_message.action).__name__ if event.action_message else "unknown",
+                    "action": type(event.action_message.action).__name__
+                    if event.action_message
+                    else "unknown",
                 }
                 await self._webhook.push("chat_action", data, account=_alias)
 
@@ -132,7 +137,10 @@ class DaemonServer:
             async def on_user_update(event, _alias=alias):
                 if not self._webhook.should_push("user_joined"):
                     return
-                data = {"user_id": event.user_id, "status": str(event.status) if hasattr(event, "status") else "unknown"}
+                data = {
+                    "user_id": event.user_id,
+                    "status": str(event.status) if hasattr(event, "status") else "unknown",
+                }
                 await self._webhook.push("user_joined", data, account=_alias)
 
             @tel.on(events.MessageRead())
@@ -195,7 +203,12 @@ class DaemonServer:
                 except Exception:
                     log.exception("Failed to create job '%s'", jc.name)
 
-        return {"reloaded": True, "added": list(added), "removed": list(removed), "updated": list(updated)}
+        return {
+            "reloaded": True,
+            "added": list(added),
+            "removed": list(removed),
+            "updated": list(updated),
+        }
 
     # -- Status & shutdown --
 
@@ -235,7 +248,9 @@ class DaemonServer:
             active_jobs = [j for j in self._job_runner.list_jobs() if j.get("running")]
             idle_seconds = time.time() - self._last_ipc_time
             if not active_jobs and idle_seconds >= self._idle_timeout:
-                log.info("Daemon idle for %ds with no active jobs — shutting down", int(idle_seconds))
+                log.info(
+                    "Daemon idle for %ds with no active jobs — shutting down", int(idle_seconds)
+                )
                 self.request_shutdown()
                 return
 

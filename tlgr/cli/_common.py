@@ -25,6 +25,7 @@ def _require_account_enabled() -> bool:
         else:
             try:
                 from tlgr.core.config import load_app_config
+
                 _require_cached = bool(load_app_config().defaults.require_account)
             except Exception:
                 _require_cached = False

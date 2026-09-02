@@ -32,20 +32,19 @@ def _dialog(msg):
 
 
 def _msg(text, *, out=False, action=None, media=None):
-    return SimpleNamespace(id=9, date="2026-09-02", text=text, out=out,
-                           action=action, media=media)
+    return SimpleNamespace(id=9, date="2026-09-02", text=text, out=out, action=action, media=media)
 
 
 def test_service_event_is_labelled_in_last_message():
     e = ClientWrapper._dialog_extras(
-        _dialog(_msg("", out=True, action=MessageActionContactSignUp())))
+        _dialog(_msg("", out=True, action=MessageActionContactSignUp()))
+    )
     assert e["last_message"]["service"] == "MessageActionContactSignUp"
     assert e["last_message"]["text"] == ""
 
 
 def test_media_only_is_labelled_in_last_message():
-    e = ClientWrapper._dialog_extras(
-        _dialog(_msg("", media=MessageMediaDocument())))
+    e = ClientWrapper._dialog_extras(_dialog(_msg("", media=MessageMediaDocument())))
     assert e["last_message"]["media_type"] == "MessageMediaDocument"
     assert "service" not in e["last_message"]
 

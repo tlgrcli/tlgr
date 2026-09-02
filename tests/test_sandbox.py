@@ -24,18 +24,30 @@ class TestEnableCommands:
         assert result.exit_code == 0
 
     def test_subcommand_block(self, runner):
-        result = runner.invoke(cli, [
-            "--enable-commands", "message.list",
-            "message", "send", "test", "hello",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--enable-commands",
+                "message.list",
+                "message",
+                "send",
+                "test",
+                "hello",
+            ],
+        )
         assert result.exit_code == 2
         assert "not enabled" in result.output
 
     def test_subcommand_allow(self, runner):
-        result = runner.invoke(cli, [
-            "--enable-commands", "agent.exit-codes",
-            "agent", "exit-codes",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--enable-commands",
+                "agent.exit-codes",
+                "agent",
+                "exit-codes",
+            ],
+        )
         assert result.exit_code == 0
 
     def test_wildcard_allows_all(self, runner):

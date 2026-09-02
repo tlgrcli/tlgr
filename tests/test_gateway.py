@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import pytest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
-from tlgr.gateway.config import GatewayConfig, ActionConfig, load_gateway_configs
-from tlgr.gateway.engine import Gateway
-from tlgr.gateway.event import Event
+import pytest
+
 from tlgr.filters.compose import parse_filter_config
+from tlgr.gateway.config import ActionConfig, GatewayConfig
+from tlgr.gateway.engine import Gateway
 from tlgr.processors import ProcessorChain
 
 

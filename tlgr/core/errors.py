@@ -49,8 +49,7 @@ EXIT_CODE_MAP: dict[str, dict[str, Any]] = {
     "INDETERMINATE": {
         "code": EXIT_INDETERMINATE,
         "description": (
-            "Question could not be answered authoritatively — treat as unknown, "
-            "never as a negative"
+            "Question could not be answered authoritatively — treat as unknown, never as a negative"
         ),
     },
     "CANCELLED": {"code": EXIT_CANCELLED, "description": "Interrupted (SIGINT)"},

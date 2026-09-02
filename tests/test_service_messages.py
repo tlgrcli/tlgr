@@ -26,9 +26,19 @@ class MessageActionContactSignUp(_Action):
 
 def _msg(mid, text, *, out=False, action=None):
     return SimpleNamespace(
-        id=mid, date="2026-08-31", text=text, out=out, action=action,
-        reply_to_msg_id=None, sender=None, sender_id=None, media=None,
-        entities=None, reactions=None, reply_to=None, forward=None,
+        id=mid,
+        date="2026-08-31",
+        text=text,
+        out=out,
+        action=action,
+        reply_to_msg_id=None,
+        sender=None,
+        sender_id=None,
+        media=None,
+        entities=None,
+        reactions=None,
+        reply_to=None,
+        forward=None,
     )
 
 
@@ -42,6 +52,7 @@ class _FakeTelethon:
         async def _gen():
             for m in msgs:
                 yield m
+
         return _gen()
 
     async def get_messages(self, chat_id, ids=None):
@@ -55,8 +66,9 @@ def _wrap(msgs):
 
 
 def test_service_message_is_labelled():
-    w = _wrap([_msg(2, "", out=True, action=MessageActionContactSignUp()),
-               _msg(1, "سلام", out=True)])
+    w = _wrap(
+        [_msg(2, "", out=True, action=MessageActionContactSignUp()), _msg(1, "سلام", out=True)]
+    )
     out = asyncio.run(w.get_messages(7, limit=10))
     assert out[0]["service"] == "MessageActionContactSignUp"
     assert out[0]["text"] == ""

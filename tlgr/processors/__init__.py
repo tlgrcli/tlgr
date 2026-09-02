@@ -9,7 +9,8 @@ Use :class:`ProcessorChain` to run multiple processors in sequence.
 from __future__ import annotations
 
 import re
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 ProcessorFunc = Callable[[str, dict[str, Any]], str]
 
@@ -18,9 +19,11 @@ _REGISTRY: dict[str, ProcessorFunc] = {}
 
 def register_processor(name: str):
     """Decorator that registers a processor function under *name*."""
+
     def decorator(func: ProcessorFunc) -> ProcessorFunc:
         _REGISTRY[name] = func
         return func
+
     return decorator
 
 
@@ -48,7 +51,9 @@ class ProcessorChain:
     def add_inline(self, pattern: str, replacement: str = "", flags: str = "") -> ProcessorChain:
         func = get_processor("regex_replace")
         assert func is not None
-        self.processors.append((func, {"pattern": pattern, "replacement": replacement, "flags": flags}))
+        self.processors.append(
+            (func, {"pattern": pattern, "replacement": replacement, "flags": flags})
+        )
         return self
 
     def apply(self, text: str) -> str:
@@ -117,4 +122,4 @@ def create_chain_from_list(items: list[str | dict]) -> ProcessorChain:
 
 
 # Import built-in processor modules so they self-register.
-from tlgr.processors import text, regex  # noqa: E402, F401
+from tlgr.processors import regex, text  # noqa: E402, F401

@@ -9,7 +9,8 @@ Modules in this package auto-register their filters on import.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from tlgr.gateway.event import Event
 
@@ -20,9 +21,11 @@ _REGISTRY: dict[str, FilterFunc] = {}
 
 def register_filter(name: str):
     """Decorator that registers a filter function under *name*."""
+
     def decorator(func: FilterFunc) -> FilterFunc:
         _REGISTRY[name] = func
         return func
+
     return decorator
 
 
@@ -35,5 +38,5 @@ def list_filters() -> list[str]:
 
 
 # Import built-in filter modules so they self-register.
-from tlgr.filters import context, content, message, temporal, user  # noqa: E402, F401
+from tlgr.filters import content, context, message, temporal, user  # noqa: E402, F401
 from tlgr.filters.compose import evaluate, parse_filter_config  # noqa: E402, F401

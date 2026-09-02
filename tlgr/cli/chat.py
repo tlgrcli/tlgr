@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import click
 
+from tlgr.cli._common import resolve_account
 from tlgr.core.errors import EXIT_EMPTY
 from tlgr.core.output import add_pagination, decode_cursor, emit
-from tlgr.cli._common import resolve_account
 from tlgr.ipc_client import ipc_request
 
 
@@ -68,15 +68,24 @@ def chat_list(
 @click.option("--no-read", is_flag=True, help="Peek silently (no read receipt).")
 @click.option("--account", "-a", default=None)
 @click.pass_context
-def chat_open(ctx: click.Context, chat: str, limit: int, no_read: bool, account: str | None) -> None:
+def chat_open(
+    ctx: click.Context, chat: str, limit: int, no_read: bool, account: str | None
+) -> None:
     """Open a chat like a human: recent history + read receipt.
 
     Use --no-read (or 'message list') for a silent peek.
     """
     acct = resolve_account(ctx, account)
-    result = ipc_request("POST", "/chat/open", body={
-        "account": acct, "chat": chat, "limit": limit, "mark_read": not no_read,
-    })
+    result = ipc_request(
+        "POST",
+        "/chat/open",
+        body={
+            "account": acct,
+            "chat": chat,
+            "limit": limit,
+            "mark_read": not no_read,
+        },
+    )
     fmt = ctx.obj.get("fmt", "human")
     if fmt == "json":
         emit(ctx.obj, result)
@@ -103,9 +112,15 @@ def chat_unread(ctx: click.Context, chat: str, clear: bool, account: str | None)
     unread mark rather than the numeric unread count.
     """
     acct = resolve_account(ctx, account)
-    result = ipc_request("POST", "/chat/unread", body={
-        "account": acct, "chat": chat, "unread": not clear,
-    })
+    result = ipc_request(
+        "POST",
+        "/chat/unread",
+        body={
+            "account": acct,
+            "chat": chat,
+            "unread": not clear,
+        },
+    )
     emit(ctx.obj, result)
 
 
@@ -207,9 +222,16 @@ def chat_create(
 ) -> None:
     """Create a new group or channel."""
     acct = resolve_account(ctx, account)
-    result = ipc_request("POST", "/chat/create", body={
-        "name": name, "type": chat_type, "members": list(members), "account": acct,
-    })
+    result = ipc_request(
+        "POST",
+        "/chat/create",
+        body={
+            "name": name,
+            "type": chat_type,
+            "members": list(members),
+            "account": acct,
+        },
+    )
     emit(ctx.obj, result)
 
 
@@ -235,7 +257,9 @@ def chat_archive(ctx: click.Context, chat: str, account: str | None) -> None:
 def chat_mute(ctx: click.Context, chat: str, duration: int | None, account: str | None) -> None:
     """Mute a chat. Duration in seconds (omit for permanent)."""
     acct = resolve_account(ctx, account)
-    result = ipc_request("POST", "/chat/mute", body={"chat": chat, "duration": duration, "account": acct})
+    result = ipc_request(
+        "POST", "/chat/mute", body={"chat": chat, "duration": duration, "account": acct}
+    )
     emit(ctx.obj, result)
 
 
@@ -261,16 +285,27 @@ def chat_leave(ctx: click.Context, chat: str, account: str | None) -> None:
 def chat_typing(ctx: click.Context, chat: str, duration: float, account: str | None) -> None:
     """Send a typing indicator."""
     acct = resolve_account(ctx, account)
-    result = ipc_request("POST", "/chat/typing", body={"chat": chat, "duration": duration, "account": acct})
+    result = ipc_request(
+        "POST", "/chat/typing", body={"chat": chat, "duration": duration, "account": acct}
+    )
     emit(ctx.obj, result)
 
 
 @chat_group.command("posters")
 @click.argument("chat")
-@click.option("--limit", "-n", type=int, default=None,
-              help="Return only the top N posters (all of them by default).")
-@click.option("--max-messages", type=int, default=2000,
-              help="How much history to walk, newest first (hard cap 20000).")
+@click.option(
+    "--limit",
+    "-n",
+    type=int,
+    default=None,
+    help="Return only the top N posters (all of them by default).",
+)
+@click.option(
+    "--max-messages",
+    type=int,
+    default=2000,
+    help="How much history to walk, newest first (hard cap 20000).",
+)
 @click.option("--account", "-a", default=None)
 @click.pass_context
 def chat_posters(

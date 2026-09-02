@@ -45,7 +45,9 @@ class WebhookPusher:
         """Set resolved numeric chat IDs for filtering."""
         self._resolved_chat_ids = chat_ids
 
-    def should_push(self, event_type: str, chat_id: int | None = None, tg_event: Any = None) -> bool:
+    def should_push(
+        self, event_type: str, chat_id: int | None = None, tg_event: Any = None
+    ) -> bool:
         if not self.config.enabled:
             return False
         if event_type not in self.config.events:
@@ -105,11 +107,13 @@ class WebhookPusher:
                 log.warning("Webhook push error (attempt %d): %s", attempt + 1, e)
 
             if attempt < max_attempts - 1:
-                wait = retry.backoff_base ** attempt
+                wait = retry.backoff_base**attempt
                 log.debug("Retrying webhook in %ds", wait)
                 await asyncio.sleep(wait)
 
-        log.error("Webhook push exhausted retries for event %s — writing to dead letter", event_type)
+        log.error(
+            "Webhook push exhausted retries for event %s — writing to dead letter", event_type
+        )
         self._write_dead_letter(payload)
 
     def _write_dead_letter(self, payload: dict[str, Any]) -> None:

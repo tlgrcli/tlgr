@@ -9,7 +9,7 @@ import signal
 import sys
 from pathlib import Path
 
-from tlgr.core.config import get_pid_path, get_logs_dir, get_socket_path
+from tlgr.core.config import get_logs_dir, get_pid_path, get_socket_path
 
 log = logging.getLogger("tlgr.daemon")
 

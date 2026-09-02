@@ -31,8 +31,9 @@ def _msg(mid, sender):
 
 
 def _user(uid, username=None, bot=False, deleted=False, first="U", last=None):
-    return User(id=uid, first_name=first, last_name=last, username=username,
-                bot=bot, deleted=deleted)
+    return User(
+        id=uid, first_name=first, last_name=last, username=username, bot=bot, deleted=deleted
+    )
 
 
 class _FakeTelethon:
@@ -53,6 +54,7 @@ class _FakeTelethon:
                 if flood_after is not None and i == flood_after:
                     raise FloodWaitError(GetHistoryRequest, capture=25)
                 yield m
+
         return _gen()
 
 
@@ -64,8 +66,7 @@ def _wrap(fake):
 
 def test_counts_are_per_sender_and_sorted_descending():
     a, b, c = _user(1, "alice"), _user(2, "bob"), _user(3)
-    msgs = [_msg(i, a) for i in range(10)] + [_msg(i, b) for i in range(10, 13)] \
-        + [_msg(99, c)]
+    msgs = [_msg(i, a) for i in range(10)] + [_msg(i, b) for i in range(10, 13)] + [_msg(99, c)]
     r = asyncio.run(_wrap(_FakeTelethon(msgs)).chat_posters(-1004451258462))
     assert [p["id"] for p in r["posters"]] == [1, 2, 3]
     assert [p["count"] for p in r["posters"]] == [10, 3, 1]
@@ -90,9 +91,11 @@ def test_negative_chat_ids_pass_straight_through():
 def test_bot_and_deleted_flags_are_exposed_for_filtering():
     """Callers filter on these to avoid messaging bots and dead accounts —
     if they are missing the filter silently passes everyone."""
-    msgs = [_msg(1, _user(1, "helperbot", bot=True)),
-            _msg(2, _user(2, deleted=True)),
-            _msg(3, _user(3, "real"))]
+    msgs = [
+        _msg(1, _user(1, "helperbot", bot=True)),
+        _msg(2, _user(2, deleted=True)),
+        _msg(3, _user(3, "real")),
+    ]
     r = asyncio.run(_wrap(_FakeTelethon(msgs)).chat_posters(-100))
     by_id = {p["id"]: p for p in r["posters"]}
     assert by_id[1]["is_bot"] is True and by_id[1]["is_deleted"] is False
@@ -102,8 +105,9 @@ def test_bot_and_deleted_flags_are_exposed_for_filtering():
 
 
 def test_name_joins_first_and_last():
-    r = asyncio.run(_wrap(_FakeTelethon([_msg(1, _user(1, first="Ali", last="R"))]))
-                    .chat_posters(-100))
+    r = asyncio.run(
+        _wrap(_FakeTelethon([_msg(1, _user(1, first="Ali", last="R"))])).chat_posters(-100)
+    )
     assert r["posters"][0]["name"] == "Ali R"
 
 
@@ -121,7 +125,7 @@ def test_max_messages_bounds_the_scan_and_is_hard_capped():
 
     fake2 = _FakeTelethon([_msg(1, _user(1))])
     asyncio.run(_wrap(fake2).chat_posters(-100, max_messages=10**9))
-    assert fake2.requested_limits == [20000]      # runaway scans are refused
+    assert fake2.requested_limits == [20000]  # runaway scans are refused
 
 
 def test_default_scan_is_bounded():
@@ -134,12 +138,14 @@ def test_limit_trims_to_the_top_n_posters():
     msgs = [_msg(i, _user(1)) for i in range(5)] + [_msg(9, _user(2))]
     r = asyncio.run(_wrap(_FakeTelethon(msgs)).chat_posters(-100, limit=1))
     assert [p["id"] for p in r["posters"]] == [1]
-    assert r["distinct_posters"] == 2             # the total is still honest
+    assert r["distinct_posters"] == 2  # the total is still honest
 
 
 def test_messages_without_a_sender_are_skipped_not_counted_as_a_poster():
-    msgs = [_msg(1, _user(1)), SimpleNamespace(id=2, sender_id=None, sender=None,
-                                               date=None, text="")]
+    msgs = [
+        _msg(1, _user(1)),
+        SimpleNamespace(id=2, sender_id=None, sender=None, date=None, text=""),
+    ]
     r = asyncio.run(_wrap(_FakeTelethon(msgs)).chat_posters(-100))
     assert r["distinct_posters"] == 1
     assert r["scanned_messages"] == 2

@@ -4,17 +4,16 @@ from __future__ import annotations
 
 import json
 import os
-import signal
 import subprocess
 import sys
 import time
 from pathlib import Path
 from typing import Any
 
-from tlgr.core.config import get_socket_path, get_pid_path, CONFIG_DIR, load_app_config
+from tlgr.core.config import CONFIG_DIR, get_pid_path, get_socket_path, load_app_config
 from tlgr.core.errors import (
-    DaemonNotRunningError,
     DaemonError,
+    DaemonNotRunningError,
     IPCError,
     RateLimitError,
     SpamFlagError,
@@ -56,10 +55,7 @@ def _auto_start_daemon(base: Path | None = None) -> None:
             pid_path = get_pid_path(base)
             pid_path.unlink(missing_ok=True)
             continue
-    raise DaemonError(
-        "Daemon did not start after retries. "
-        "Check logs with: tlgr daemon logs"
-    )
+    raise DaemonError("Daemon did not start after retries. Check logs with: tlgr daemon logs")
 
 
 def _ensure_daemon(base: Path | None = None) -> None:
@@ -70,9 +66,7 @@ def _ensure_daemon(base: Path | None = None) -> None:
     if cfg.daemon.auto_start:
         _auto_start_daemon(base)
     else:
-        raise DaemonNotRunningError(
-            "Daemon is not running. Start it with 'tlgr daemon start'."
-        )
+        raise DaemonNotRunningError("Daemon is not running. Start it with 'tlgr daemon start'.")
 
 
 def ipc_request(
@@ -116,7 +110,7 @@ def ipc_request(
             if not chunk:
                 break
             chunks.append(chunk)
-        except sock_mod.timeout:
+        except TimeoutError:
             break
     s.close()
 
@@ -124,7 +118,7 @@ def ipc_request(
 
     # Parse HTTP response
     if "\r\n\r\n" not in raw:
-        raise IPCError(f"Malformed daemon response")
+        raise IPCError("Malformed daemon response")
 
     header_part, body_part = raw.split("\r\n\r\n", 1)
     status_line = header_part.split("\r\n")[0]
@@ -164,7 +158,7 @@ def _decode_chunked(data: str) -> str:
             break
         size_str = data[:nl].strip()
         if not size_str:
-            data = data[nl + 2:]
+            data = data[nl + 2 :]
             continue
         try:
             size = int(size_str, 16)
@@ -172,7 +166,7 @@ def _decode_chunked(data: str) -> str:
             break
         if size == 0:
             break
-        data = data[nl + 2:]
+        data = data[nl + 2 :]
         result.append(data[:size])
-        data = data[size + 2:]
+        data = data[size + 2 :]
     return "".join(result)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import sys
 
 import click
@@ -46,6 +45,7 @@ def account_group() -> None:
 def account_add(ctx: click.Context, phone: str, alias: str | None) -> None:
     """Authenticate a new Telegram account (interactive — requires human input)."""
     import asyncio
+
     from tlgr.core.client import ClientWrapper
 
     mgr = _get_mgr()
@@ -86,8 +86,12 @@ def account_add(ctx: click.Context, phone: str, alias: str | None) -> None:
 @account_group.command("import")
 @click.argument("session_file", type=click.Path(exists=True, dir_okay=False))
 @click.option("--alias", required=True, help="Alias for the imported account.")
-@click.option("--api-id", type=int, default=None, help="Telegram API ID (falls back to TELEGRAM_API_ID).")
-@click.option("--api-hash", default=None, help="Telegram API Hash (falls back to TELEGRAM_API_HASH).")
+@click.option(
+    "--api-id", type=int, default=None, help="Telegram API ID (falls back to TELEGRAM_API_ID)."
+)
+@click.option(
+    "--api-hash", default=None, help="Telegram API Hash (falls back to TELEGRAM_API_HASH)."
+)
 @click.pass_context
 def account_import(
     ctx: click.Context,
@@ -104,9 +108,12 @@ def account_import(
     import asyncio
     import os
     import shutil
+
     from tlgr.core.client import ClientWrapper
 
-    api_id = api_id or (int(os.environ["TELEGRAM_API_ID"]) if os.environ.get("TELEGRAM_API_ID") else None)
+    api_id = api_id or (
+        int(os.environ["TELEGRAM_API_ID"]) if os.environ.get("TELEGRAM_API_ID") else None
+    )
     api_hash = api_hash or os.environ.get("TELEGRAM_API_HASH")
     if not api_id or not api_hash:
         click.echo(
@@ -120,7 +127,9 @@ def account_import(
     mgr.save_credentials(api_id, api_hash, alias)
 
     session_path = mgr.get_session_path(alias)
-    dest = session_path.with_suffix(".session") if session_path.suffix != ".session" else session_path
+    dest = (
+        session_path.with_suffix(".session") if session_path.suffix != ".session" else session_path
+    )
     shutil.copy2(session_file, dest)
     dest.chmod(0o600)
     _secure_session_files(session_path)
@@ -150,7 +159,13 @@ def account_import(
         sys.exit(4)
     emit(
         ctx.obj,
-        {"alias": alias, "user_id": me.id, "name": me.first_name, "username": me.username, "imported": True},
+        {
+            "alias": alias,
+            "user_id": me.id,
+            "name": me.first_name,
+            "username": me.username,
+            "imported": True,
+        },
         columns=["alias", "user_id", "name", "username", "imported"],
     )
 
@@ -166,13 +181,15 @@ def account_list(ctx: click.Context) -> None:
     rows = []
     for a in accounts:
         is_active = a.alias == active
-        rows.append({
-            "alias": (("* " if is_active else "  ") + a.alias) if human else a.alias,
-            "active": is_active,
-            "user_id": a.user_id or "",
-            "name": a.display_name(),
-            "phone": a.phone or "",
-        })
+        rows.append(
+            {
+                "alias": (("* " if is_active else "  ") + a.alias) if human else a.alias,
+                "active": is_active,
+                "user_id": a.user_id or "",
+                "name": a.display_name(),
+                "phone": a.phone or "",
+            }
+        )
     if not rows and human:
         rows = [{"alias": "(no accounts)", "active": False, "user_id": "", "name": "", "phone": ""}]
     emit(ctx.obj, rows, columns=["alias", "user_id", "name", "phone"])
@@ -230,7 +247,11 @@ def account_info(ctx: click.Context, alias: str | None) -> None:
     if acct is None:
         click.echo(f"Account '{alias}' not found", err=True)
         sys.exit(1)
-    emit(ctx.obj, acct.to_dict(), columns=["alias", "user_id", "username", "first_name", "phone", "created_at"])
+    emit(
+        ctx.obj,
+        acct.to_dict(),
+        columns=["alias", "user_id", "username", "first_name", "phone", "created_at"],
+    )
 
 
 @account_group.command("sync")
@@ -259,4 +280,6 @@ def account_sync(ctx: click.Context, alias: str | None) -> None:
         user_id=profile.get("id"),
     )
     updated = mgr.get_account(alias)
-    emit(ctx.obj, updated.to_dict(), columns=["alias", "user_id", "username", "first_name", "phone"])
+    emit(
+        ctx.obj, updated.to_dict(), columns=["alias", "user_id", "username", "first_name", "phone"]
+    )

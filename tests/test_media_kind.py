@@ -57,9 +57,19 @@ def _doc(*attrs, mime=None):
 
 def _msg(mid, text, *, out=False, media=None):
     return SimpleNamespace(
-        id=mid, date="2026-09-02", text=text, out=out, action=None,
-        reply_to_msg_id=None, sender=None, sender_id=None, media=media,
-        entities=None, reactions=None, reply_to=None, forward=None,
+        id=mid,
+        date="2026-09-02",
+        text=text,
+        out=out,
+        action=None,
+        reply_to_msg_id=None,
+        sender=None,
+        sender_id=None,
+        media=media,
+        entities=None,
+        reactions=None,
+        reply_to=None,
+        forward=None,
     )
 
 
@@ -73,6 +83,7 @@ class _FakeTelethon:
         async def _gen():
             for m in msgs:
                 yield m
+
         return _gen()
 
     async def get_messages(self, chat_id, ids=None):
@@ -86,6 +97,7 @@ def _wrap(msgs):
 
 
 # --- the classifier itself ------------------------------------------------
+
 
 def test_sticker_carries_its_alt_emoji():
     """A 👍 sticker and a 😢 sticker are opposite replies. The alt IS the text."""
@@ -113,26 +125,32 @@ def test_round_video_message_is_a_video_note():
 
 def test_gif_carries_video_and_animated_and_reads_as_gif():
     """The ordering trap: an mp4 GIF has BOTH attributes, video listed first."""
-    d = media_details(_doc(
-        DocumentAttributeVideo(round_message=False, duration=3),
-        DocumentAttributeAnimated(),
-        DocumentAttributeFilename(file_name="giphy.mp4"),
-    ))
+    d = media_details(
+        _doc(
+            DocumentAttributeVideo(round_message=False, duration=3),
+            DocumentAttributeAnimated(),
+            DocumentAttributeFilename(file_name="giphy.mp4"),
+        )
+    )
     assert d["kind"] == "gif"
 
 
 def test_video_sticker_stays_a_sticker():
     """The other ordering trap: a webm sticker also carries a video attribute."""
-    d = media_details(_doc(
-        DocumentAttributeVideo(round_message=False, duration=2),
-        DocumentAttributeSticker(alt="🔥"),
-    ))
+    d = media_details(
+        _doc(
+            DocumentAttributeVideo(round_message=False, duration=2),
+            DocumentAttributeSticker(alt="🔥"),
+        )
+    )
     assert d["kind"] == "sticker"
     assert d["alt"] == "🔥"
 
 
 def test_plain_file_reports_its_name_and_mime():
-    d = media_details(_doc(DocumentAttributeFilename(file_name="resume.pdf"), mime="application/pdf"))
+    d = media_details(
+        _doc(DocumentAttributeFilename(file_name="resume.pdf"), mime="application/pdf")
+    )
     assert d["kind"] == "file"
     assert d["file_name"] == "resume.pdf"
     assert d["mime_type"] == "application/pdf"
@@ -156,6 +174,7 @@ def test_none_media_is_empty():
 
 
 # --- wired into every serialization site ----------------------------------
+
 
 def test_get_messages_labels_kind_without_asking():
     w = _wrap([_msg(2, "", media=_doc(DocumentAttributeSticker(alt="👍")))])

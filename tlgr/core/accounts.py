@@ -5,14 +5,13 @@ from __future__ import annotations
 import json
 import os
 import shutil
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from tlgr.core.config import get_accounts_dir, CONFIG_DIR
+from tlgr.core.config import CONFIG_DIR, get_accounts_dir
 from tlgr.core.errors import TlgrError
-
 
 ACCOUNTS_FILE = "accounts.json"
 
@@ -60,7 +59,7 @@ class AccountManager:
             with open(self.accounts_file) as f:
                 self._data = json.load(f)
                 return self._data
-        except (json.JSONDecodeError, IOError):
+        except (OSError, json.JSONDecodeError):
             self._data = {"active": None, "accounts": {}}
             return self._data
 
@@ -207,7 +206,7 @@ class AccountManager:
                     data = json.load(f)
                 api_id = data.get("api_id")
                 api_hash = data.get("api_hash")
-            except (json.JSONDecodeError, IOError):
+            except (OSError, json.JSONDecodeError):
                 pass
 
         env_id = os.environ.get("TELEGRAM_API_ID")

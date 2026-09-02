@@ -8,7 +8,6 @@ Handles three config files:
 
 from __future__ import annotations
 
-import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -40,6 +39,7 @@ def _ensure_dir(path: Path) -> Path:
 # ---------------------------------------------------------------------------
 # Dataclasses
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class Defaults:
@@ -80,6 +80,7 @@ class JobFilterConfig:
 @dataclass
 class TransformInline:
     """An inline TOML-defined transform (always regex type)."""
+
     type: str = "regex"
     pattern: str = ""
     replacement: str = ""
@@ -129,9 +130,11 @@ class WebhookConfig:
     enabled: bool = False
     url: str = ""
     token: str = ""
-    events: list[str] = field(default_factory=lambda: [
-        "new_message",
-    ])
+    events: list[str] = field(
+        default_factory=lambda: [
+            "new_message",
+        ]
+    )
     retry: WebhookRetryConfig = field(default_factory=WebhookRetryConfig)
     filters: WebhookFilterConfig = field(default_factory=WebhookFilterConfig)
 
@@ -146,6 +149,7 @@ class AppConfig:
 # ---------------------------------------------------------------------------
 # Loaders
 # ---------------------------------------------------------------------------
+
 
 def _load_toml(path: Path) -> dict[str, Any]:
     if not path.exists():
@@ -166,7 +170,9 @@ def _save_toml(path: Path, data: dict[str, Any]) -> None:
 def _parse_filter(raw: dict[str, Any] | None) -> JobFilterConfig | None:
     if not raw:
         return None
-    return JobFilterConfig(**{k: v for k, v in raw.items() if k in JobFilterConfig.__dataclass_fields__})
+    return JobFilterConfig(
+        **{k: v for k, v in raw.items() if k in JobFilterConfig.__dataclass_fields__}
+    )
 
 
 def _parse_transforms(raw: list[Any]) -> list[str | TransformInline]:
@@ -175,7 +181,11 @@ def _parse_transforms(raw: list[Any]) -> list[str | TransformInline]:
         if isinstance(item, str):
             result.append(item)
         elif isinstance(item, dict):
-            result.append(TransformInline(**{k: v for k, v in item.items() if k in TransformInline.__dataclass_fields__}))
+            result.append(
+                TransformInline(
+                    **{k: v for k, v in item.items() if k in TransformInline.__dataclass_fields__}
+                )
+            )
     return result
 
 

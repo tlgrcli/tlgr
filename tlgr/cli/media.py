@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import click
 
-from tlgr.core.output import emit
 from tlgr.cli._common import resolve_account
+from tlgr.core.output import emit
 from tlgr.ipc_client import ipc_request
 
 
@@ -51,7 +51,14 @@ def media_upload(
 ) -> None:
     """Upload a file to a chat."""
     acct = resolve_account(ctx, account)
-    result = ipc_request("POST", "/media/upload", body={
-        "chat": chat, "path": path, "caption": caption, "account": acct,
-    })
+    result = ipc_request(
+        "POST",
+        "/media/upload",
+        body={
+            "chat": chat,
+            "path": path,
+            "caption": caption,
+            "account": acct,
+        },
+    )
     emit(ctx.obj, result, columns=["id", "chat_id"])

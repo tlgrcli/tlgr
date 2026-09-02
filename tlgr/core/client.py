@@ -288,6 +288,17 @@ class ClientWrapper:
                 extras["last_message"].update(
                     {"media_" + k: v for k, v in media_details(msg.media).items()}
                 )
+            # ...and the same reaction summary, for exactly the same reason.
+            # A consumer that reads the dialog list could see WHAT the last
+            # message was but never whether this account had already reacted
+            # to it, so "have we answered this warm close yet?" was
+            # unanswerable without re-fetching the chat — and the re-fetch is
+            # a read receipt away from being the wrong gesture on a closed or
+            # user-driven chat. `mine` is the field that matters; `counts`
+            # also carries the only signal that a CONTACT reacted to US.
+            summary = ClientWrapper._reactions_summary(msg)
+            if summary:
+                extras["last_message"]["reactions"] = summary
         return extras
 
     def _entity_to_dict(self, entity: Any, dialog: Any = None) -> dict[str, Any]:

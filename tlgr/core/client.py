@@ -194,6 +194,17 @@ class ClientWrapper:
                 "out": bool(getattr(msg, "out", False)),
                 "text": text[:120],
             }
+            # Same two labels get_messages() emits. Without them an empty
+            # `text` here is three different facts wearing one shape: a
+            # Telegram service event, a caption-less sticker, and a message
+            # someone really did send blank. Consumers that read the dialog
+            # list (inbox, chat list) got the bare shape and had to re-fetch
+            # the chat to tell them apart — or, worse, not notice.
+            action = getattr(msg, "action", None)
+            if action is not None:
+                extras["last_message"]["service"] = type(action).__name__
+            if getattr(msg, "media", None) is not None:
+                extras["last_message"]["media_type"] = type(msg.media).__name__
         return extras
 
     def _entity_to_dict(self, entity: Any, dialog: Any = None) -> dict[str, Any]:
@@ -296,6 +307,8 @@ class ClientWrapper:
             action = getattr(msg, "action", None)
             if action is not None:
                 d["service"] = type(action).__name__
+            if getattr(msg, "media", None) is not None:
+                d["media_type"] = type(msg.media).__name__
             if include_sender and msg.sender:
                 d["sender"] = {
                     "id": msg.sender_id,
@@ -365,6 +378,8 @@ class ClientWrapper:
         action = getattr(msg, "action", None)
         if action is not None:
             d["service"] = type(action).__name__
+        if getattr(msg, "media", None) is not None:
+            d["media_type"] = type(msg.media).__name__
         if msg.sender:
             d["sender"] = {
                 "id": msg.sender_id,

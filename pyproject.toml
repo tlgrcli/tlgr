@@ -81,6 +81,12 @@ ignore = [
 # (ARCHITECTURE §2.4). Restyling them now would bury the foundation diff in
 # unrelated churn, so their remaining nits are parked rather than fixed.
 [tool.ruff.lint.per-file-ignores]
+# RUF012: msgspec turns a mutable Struct default into a default_factory, so
+# `list[str] = []` is the documented spelling, not a shared-mutable bug.
+# UP007: `Unset` is a generic alias; `X | Y` over a TypeVar is not subscriptable
+# on 3.10, so typing.Union is the only form that works there.
+"tlgr/models/*" = ["RUF012", "UP007"]
+"tlgr/ops/*" = ["RUF012"]
 "tests/*" = ["B011", "SIM117", "RUF059"]
 "tlgr/cli/__init__.py" = ["SIM102"]
 "tlgr/cli/legacy/*" = ["SIM102", "SIM105", "F401", "F841", "B904"]

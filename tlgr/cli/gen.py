@@ -67,6 +67,12 @@ class LocalContext:
     def warn(self, message: str) -> None:
         self.warnings.append(message)
 
+    def emit(self, event_type: str, payload: dict[str, Any], **kwargs: Any) -> None:
+        """No-op: a local operation runs in the CLI, where there is no bus."""
+
+    def mark_already(self) -> None:
+        """No-op: a local operation has no envelope meta to flag."""
+
 
 Dispatcher = Callable[[OperationSpec, msgspec.Struct, CliState], dict[str, Any]]
 _dispatch: Dispatcher | None = None
@@ -333,7 +339,9 @@ def _secret_options(f: _Field) -> list[click.Parameter]:
     ]
 
 
-def _pagination_options(spec: OperationSpec) -> list[click.Parameter]:
+def _pagination_options(
+    spec: OperationSpec, declared: frozenset[str] = frozenset()
+) -> list[click.Parameter]:
     options: list[click.Parameter] = [
         click.Option(
             ["-n", "--limit", "limit"], type=int, default=None, help="Maximum items to return."
@@ -344,13 +352,23 @@ def _pagination_options(spec: OperationSpec) -> list[click.Parameter]:
         click.Option(["--all", "fetch_all"], is_flag=True, default=False, help="Walk every page."),
     ]
     if spec.paginated in DATE_OFFSET_KINDS:
+        # Injected only when the op does not declare them itself. An op that
+        # does needs them *inside* its request — the injected pair is
+        # transport-level and would be dropped on the way to the daemon, so
+        # two parameters with one name would silently shadow the real one.
         options += [
             click.Option(
                 ["--since", "since"], type=ptypes.DATETIME, default=None, help="Only after this."
-            ),
+            )
+            for name in ("since",)
+            if name not in declared
+        ]
+        options += [
             click.Option(
                 ["--until", "until"], type=ptypes.DATETIME, default=None, help="Only before this."
-            ),
+            )
+            for name in ("until",)
+            if name not in declared
         ]
     return options
 
@@ -420,7 +438,7 @@ def build_command(
         parameters.extend(_secret_options(f) if f.cli.get("secret") else [_parameter(f)])
 
     if spec.paginated is not None:
-        parameters.extend(_pagination_options(spec))
+        parameters.extend(_pagination_options(spec, frozenset(f.name for f in fields)))
         parameters.append(
             # `-n` belongs to --limit here, so --dry-run gets no short form.
             click.Option(["--dry-run"], is_flag=True, default=None, help="Do not actually do it.")

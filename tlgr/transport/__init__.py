@@ -14,6 +14,7 @@ from tlgr.transport.client import (
     legacy_request,
     make_dispatcher,
     op,
+    set_default_flood_wait_max,
     status,
     stream,
 )
@@ -25,6 +26,7 @@ __all__ = [
     "legacy_request",
     "make_dispatcher",
     "op",
+    "set_default_flood_wait_max",
     "status",
     "stream",
 ]

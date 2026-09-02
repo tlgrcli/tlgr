@@ -106,16 +106,24 @@ def message_list(
     cur = decode_cursor(cursor)
     if cur.get("offset_id"):
         offset_id = cur["offset_id"]
-    params = f"chat={chat}&limit={limit}&offset_id={offset_id}&account={acct}"
+    # The query is built as a dict and urlencoded by the transport: a chat
+    # reference or a search term containing '#', '&', '+' or non-ASCII text
+    # did not survive v1's f-string (COR-04).
+    params: dict[str, object] = {
+        "chat": chat,
+        "limit": limit,
+        "offset_id": offset_id,
+        "account": acct,
+    }
     if sender:
-        params += "&sender=1"
+        params["sender"] = 1
     if media:
-        params += "&media=1"
+        params["media"] = 1
     if reactions:
-        params += "&reactions=1"
+        params["reactions"] = 1
     if entities:
-        params += "&entities=1"
-    result = ipc_request("GET", f"/message/list?{params}")
+        params["entities"] = 1
+    result = ipc_request("GET", "/message/list", params=params)
     fmt = ctx.obj.get("fmt", "human")
     if fmt == "json":
         msgs = result.get("messages", [])
@@ -134,7 +142,9 @@ def message_list(
 def message_get(ctx: click.Context, chat: str, msg_id: int, account: str | None) -> None:
     """Get a single message with full metadata."""
     acct = resolve_account(ctx, account)
-    result = ipc_request("GET", f"/message/get?chat={chat}&msg_id={msg_id}&account={acct}")
+    result = ipc_request(
+        "GET", "/message/get", params={"chat": chat, "msg_id": msg_id, "account": acct}
+    )
     emit(ctx.obj, result)
 
 
@@ -189,14 +199,19 @@ def message_search(
     acct = resolve_account(ctx, account)
     cur = decode_cursor(cursor)
     offset_id = cur.get("offset_id", 0)
-    params = f"chat={chat}&query={query}&limit={limit}&account={acct}"
+    params: dict[str, object] = {
+        "chat": chat,
+        "query": query,
+        "limit": limit,
+        "account": acct,
+    }
     if offset_id:
-        params += f"&offset_id={offset_id}"
+        params["offset_id"] = offset_id
     if local:
-        params += "&local=1"
+        params["local"] = 1
     if regex:
-        params += f"&regex={regex}"
-    result = ipc_request("GET", f"/message/search?{params}")
+        params["regex"] = regex
+    result = ipc_request("GET", "/message/search", params=params)
     fmt = ctx.obj.get("fmt", "human")
     if fmt == "json":
         msgs = result.get("messages", [])

@@ -207,6 +207,12 @@ def cli(
     ctx.obj["select"] = select_fields
     ctx.obj["dry_run"] = dry_run
     ctx.obj["flood_wait_max"] = flood_wait_max
+    # The forty hand-written v1 commands do not thread this through their own
+    # request bodies, so the transport attaches it and the daemon applies it
+    # per request. Without this the flag parsed and did nothing (COR-15).
+    from tlgr.transport import set_default_flood_wait_max
+
+    set_default_flood_wait_max(flood_wait_max)
     ctx.obj["force"] = force
     ctx.obj["no_input"] = no_input
     ctx.obj["verbose"] = verbose

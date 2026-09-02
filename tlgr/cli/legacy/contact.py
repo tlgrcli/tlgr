@@ -24,7 +24,7 @@ def contact_list(
 ) -> None:
     """List all contacts."""
     acct = resolve_account(ctx, account)
-    result = ipc_request("GET", f"/contact/list?account={acct}")
+    result = ipc_request("GET", "/contact/list", params={"account": acct})
     contacts = result.get("contacts", [])
     cur = decode_cursor(cursor)
     offset = cur.get("offset", 0)
@@ -111,7 +111,7 @@ def contact_search(
 ) -> None:
     """Search contacts."""
     acct = resolve_account(ctx, account)
-    result = ipc_request("GET", f"/contact/search?query={query}&account={acct}")
+    result = ipc_request("GET", "/contact/search", params={"query": query, "account": acct})
     contacts = result.get("contacts", [])
     cur = decode_cursor(cursor)
     offset = cur.get("offset", 0)

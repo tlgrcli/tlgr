@@ -22,7 +22,7 @@ def user_group() -> None:
 def user_get(ctx: click.Context, user: str, account: str | None) -> None:
     """Get detailed info about a user."""
     acct = resolve_account(ctx, account)
-    result = ipc_request("GET", f"/user/get?user={user}&account={acct}")
+    result = ipc_request("GET", "/user/get", params={"user": user, "account": acct})
     emit(
         ctx.obj,
         result,
@@ -87,7 +87,8 @@ def user_dialog_status(
     acct = resolve_account(ctx, account)
     result = ipc_request(
         "GET",
-        f"/user/dialog-status?user={user}&account={acct}&max_dialogs={max_dialogs}",
+        "/user/dialog-status",
+        params={"user": user, "account": acct, "max_dialogs": max_dialogs},
         timeout=600,
     )
     emit(

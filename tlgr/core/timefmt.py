@@ -19,6 +19,7 @@ UTC = timezone.utc
 __all__ = [
     "fmt_dt",
     "fmt_local",
+    "fmt_unix",
     "legacy_dates_enabled",
     "parse_dt",
     "parse_duration",
@@ -61,6 +62,19 @@ def fmt_dt(value: datetime | None, *, legacy: bool = False) -> str | None:
     if legacy:
         return str(utc)
     return utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def fmt_unix(value: int | float | None, *, legacy: bool = False) -> str | None:
+    """A Unix timestamp as RFC-3339 UTC.
+
+    The mirror of `to_unix`, for the values Telegram gives as integers
+    (`mute_until`, `freeze_until_date`, `slowmode_next_send_date`): they have
+    to come back out as a timestamp a human can check, because "muted: true"
+    with a deadline in 1970 looks exactly like a mute that worked (COR-01).
+    """
+    if value is None:
+        return None
+    return fmt_dt(datetime.fromtimestamp(float(value), UTC), legacy=legacy)
 
 
 def to_unix(value: datetime | None) -> int | None:

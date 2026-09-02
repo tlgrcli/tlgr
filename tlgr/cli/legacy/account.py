@@ -271,7 +271,7 @@ def account_sync(ctx: click.Context, alias: str | None) -> None:
         click.echo(f"Account '{alias}' not found", err=True)
         sys.exit(1)
 
-    profile = ipc_request("GET", f"/profile/get?account={alias}")
+    profile = ipc_request("GET", "/profile/get", params={"account": alias})
     mgr.update_account(
         alias,
         phone=profile.get("phone"),

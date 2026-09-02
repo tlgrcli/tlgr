@@ -33,8 +33,34 @@ def _require_account_enabled() -> bool:
 
 
 def resolve_account(ctx: click.Context, account: str | None) -> str:
-    """Resolve the account for a command; enforce require_account if enabled."""
-    acct = account or (ctx.obj or {}).get("account", "") or ""
+    """Resolve the account for a command, in the CLI, in one order.
+
+    `-a` → the root flag → `TLGR_ACCOUNT` → `[accounts] default` → the active
+    alias. v1 stopped after the root flag and let the *daemon* pick "whichever
+    alias came first out of a set" when the result was empty, so a two-account
+    user could send from the wrong identity with no signal (COR-02). The
+    daemon no longer chooses; the choice is made here, where the user's
+    configuration is, and an unresolvable account is a usage error rather than
+    a silent substitution.
+    """
+    acct = (account or (ctx.obj or {}).get("account", "") or "").strip()
+    if not acct:
+        acct = os.environ.get("TLGR_ACCOUNT", "").strip()
+    if not acct:
+        try:
+            from tlgr.core.config import load_app_config
+
+            acct = (load_app_config().default_account or "").strip()
+        except Exception:
+            acct = ""
+    if not acct:
+        try:
+            from tlgr.core.accounts import AccountManager
+            from tlgr.core.paths import default_base
+
+            acct = (AccountManager(default_base()).get_active() or "").strip()
+        except Exception:
+            acct = ""
     if not acct and _require_account_enabled():
         raise click.UsageError(
             "No account specified and require_account is enabled. "

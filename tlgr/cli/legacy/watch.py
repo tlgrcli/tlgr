@@ -37,7 +37,9 @@ def watch_command(
                 target_chats = list(chat_set)
             else:
                 try:
-                    result = ipc_request("GET", f"/chat/list?account={acct}&limit=50")
+                    result = ipc_request(
+                        "GET", "/chat/list", params={"account": acct, "limit": 50}
+                    )
                     target_chats = [str(c["id"]) for c in result.get("chats", [])[:20]]
                 except Exception:
                     target_chats = []
@@ -47,10 +49,14 @@ def watch_command(
                     continue
                 try:
                     offset_id = last_ids.get(chat_ref, 0)
-                    params = f"chat={chat_ref}&limit=10&account={acct}"
+                    params: dict[str, object] = {
+                        "chat": chat_ref,
+                        "limit": 10,
+                        "account": acct,
+                    }
                     if offset_id:
-                        params += f"&min_id={offset_id}"
-                    result = ipc_request("GET", f"/message/list?{params}")
+                        params["min_id"] = offset_id
+                    result = ipc_request("GET", "/message/list", params=params)
                     msgs = result.get("messages", [])
                     for msg in reversed(msgs):
                         msg_id = msg.get("id", 0)

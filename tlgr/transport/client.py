@@ -56,6 +56,7 @@ __all__ = [
     "legacy_request",
     "make_dispatcher",
     "op",
+    "set_default_flood_wait_max",
     "status",
     "stream",
 ]
@@ -668,6 +669,17 @@ def admin(action: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
     return default_client().admin(action, body)
 
 
+#: Set once by the CLI root from `--flood-wait-max`. Legacy commands do not
+#: thread the flag through their own bodies (there are forty of them), and
+#: dropping it silently is COR-15 — the flag existed and did nothing.
+_default_flood_wait_max: int | None = None
+
+
+def set_default_flood_wait_max(seconds: int | None) -> None:
+    global _default_flood_wait_max
+    _default_flood_wait_max = seconds
+
+
 def legacy_request(
     method: str,
     path: str,
@@ -684,6 +696,11 @@ def legacy_request(
     instead of at their own group's PR.
     """
     client = DaemonClient(base, timeout=timeout)
+    if _default_flood_wait_max is not None:
+        if body is not None:
+            body = {"flood_wait_max": _default_flood_wait_max, **body}
+        else:
+            params = {**(params or {}), "flood_wait_max": _default_flood_wait_max}
     result = client.request(method, path, body=body, params=params, timeout=timeout)
     if result is None:
         return {}

@@ -20,7 +20,7 @@ def profile_group() -> None:
 def profile_get(ctx: click.Context, account: str | None) -> None:
     """Show your current profile."""
     acct = resolve_account(ctx, account)
-    result = ipc_request("GET", f"/profile/get?account={acct}")
+    result = ipc_request("GET", "/profile/get", params={"account": acct})
     emit(ctx.obj, result, columns=["id", "first_name", "last_name", "username", "phone"])
 
 

@@ -792,20 +792,38 @@ class ClientWrapper:
         return {"unread": unread, "chat_id": chat_id}
 
     async def mute_chat(self, chat_id: int | str, duration: int | None = None) -> dict[str, Any]:
+        """Mute a chat for *duration* seconds, or for ever when it is None.
+
+        `mute_until` is a **Unix timestamp**, and v1 built it from
+        `asyncio.get_event_loop().time()` — the loop's monotonic clock, which
+        on a freshly started daemon is a number near zero. `now + 3600` was
+        therefore a moment in 1970, which is in the past, so every timed mute
+        was a no-op that reported success (COR-01). The effective deadline is
+        returned as RFC-3339 so the caller can see what actually happened.
+        """
+        import time as _time
+
         from telethon.tl.functions.account import UpdateNotifySettingsRequest
         from telethon.tl.types import InputNotifyPeer, InputPeerNotifySettings
 
+        from tlgr.core.timefmt import fmt_unix
+
         entity = await self.client.get_input_entity(chat_id)
-        mute_until = (
-            2**31 - 1 if duration is None else int(asyncio.get_event_loop().time()) + duration
-        )
+        forever = duration is None
+        mute_until = 2**31 - 1 if forever else int(_time.time()) + int(duration or 0)
         await self.client(
             UpdateNotifySettingsRequest(
                 peer=InputNotifyPeer(peer=entity),
                 settings=InputPeerNotifySettings(mute_until=mute_until),
             )
         )
-        return {"muted": True, "chat_id": chat_id}
+        return {
+            "muted": True,
+            "chat_id": chat_id,
+            "mute_until": None if forever else fmt_unix(mute_until),
+            "mute_until_unix": None if forever else mute_until,
+            "forever": forever,
+        }
 
     async def leave_chat(self, chat_id: int | str) -> dict[str, Any]:
         entity = await self.client.get_entity(chat_id)

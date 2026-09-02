@@ -64,7 +64,7 @@ def draft_clear(ctx: click.Context, chat: str, account: str | None) -> None:
 def draft_list(ctx: click.Context, account: str | None) -> None:
     """List all non-empty drafts across chats."""
     acct = resolve_account(ctx, account)
-    result = ipc_request("GET", f"/draft/list?account={acct}")
+    result = ipc_request("GET", "/draft/list", params={"account": acct})
     fmt = ctx.obj.get("fmt", "human")
     if fmt == "json":
         emit(ctx.obj, result)

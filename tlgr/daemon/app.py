@@ -534,6 +534,47 @@ async def version_middleware(request: web.Request, handler: Any) -> web.StreamRe
     return await handler(request)
 
 
+async def _requested_flood_budget(request: web.Request) -> tuple[str, int | None]:
+    """`(account, flood_wait_max)` from a legacy request's body or query.
+
+    Reading the body here is safe: aiohttp caches it, so the handler's own
+    `request.json()` sees the same bytes.
+    """
+    account = request.query.get("account", "")
+    raw = request.query.get("flood_wait_max")
+    if request.method in ("POST", "PUT", "PATCH"):
+        with contextlib.suppress(Exception):
+            body = await request.json()
+            if isinstance(body, dict):
+                account = str(body.get("account", account) or account)
+                raw = body.get("flood_wait_max", raw)
+    if raw in (None, ""):
+        return account, None
+    with contextlib.suppress(TypeError, ValueError):
+        return account, int(raw)
+    return account, None
+
+
+@web.middleware
+async def flood_budget_middleware(request: web.Request, handler: Any) -> web.StreamResponse:
+    """Honour `--flood-wait-max` on the v1 routes as well (COR-15).
+
+    The v2 dispatcher applies the budget itself, per operation. The forty
+    hand-written v1 handlers do not thread the value through, so it is applied
+    here instead — which is why the flag now means something for every command
+    rather than for none.
+    """
+    if _is_v1(request):
+        return await handler(request)
+    daemon: Daemon = request.app["daemon"]
+    account, budget = await _requested_flood_budget(request)
+    session = daemon.sessions.get(account) if account and budget is not None else None
+    if session is None:
+        return await handler(request)
+    with session.flood_budget(budget):
+        return await handler(request)
+
+
 @web.middleware
 async def activity_middleware(request: web.Request, handler: Any) -> web.StreamResponse:
     """Count the request, and refuse new work while shutting down (§6.11)."""
@@ -751,6 +792,7 @@ def build_app(daemon: Daemon) -> web.Application:
             auth_middleware,
             version_middleware,
             activity_middleware,
+            flood_budget_middleware,
         ]
     )
     app["daemon"] = daemon

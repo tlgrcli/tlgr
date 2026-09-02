@@ -36,16 +36,18 @@ def chat_list(
     acct = resolve_account(ctx, account)
     cur = decode_cursor(cursor)
     effective_limit = limit or 100
-    params = f"account={acct}&limit={effective_limit}"
+    # A dict, not an f-string: the transport urlencodes it, so a search term
+    # with a '#', a '&' or a Persian word arrives intact (COR-04).
+    params: dict[str, object] = {"account": acct, "limit": effective_limit}
     if cur.get("offset"):
-        params += f"&offset={cur['offset']}"
+        params["offset"] = cur["offset"]
     if chat_type:
-        params += f"&type={chat_type}"
+        params["type"] = chat_type
     if search:
-        params += f"&search={search}"
+        params["search"] = search
     if unread:
-        params += "&unread=1"
-    result = ipc_request("GET", f"/chat/list?{params}")
+        params["unread"] = 1
+    result = ipc_request("GET", "/chat/list", params=params)
     fmt = ctx.obj.get("fmt", "human")
     if fmt == "json":
         chats = result.get("chats", [])
@@ -143,10 +145,14 @@ def chat_catchup(
     chats you decide to engage.
     """
     acct = resolve_account(ctx, account)
-    params = f"account={acct}&limit_chats={limit_chats}&per_chat={per_chat}"
+    params: dict[str, object] = {
+        "account": acct,
+        "limit_chats": limit_chats,
+        "per_chat": per_chat,
+    }
     if chat_type:
-        params += f"&type={chat_type}"
-    result = ipc_request("GET", f"/chat/catchup?{params}")
+        params["type"] = chat_type
+    result = ipc_request("GET", "/chat/catchup", params=params)
     fmt = ctx.obj.get("fmt", "human")
     if fmt == "json":
         emit(ctx.obj, result)
@@ -176,14 +182,14 @@ def chat_members(
 ) -> None:
     """List members of a group or channel."""
     acct = resolve_account(ctx, account)
-    params = f"chat={chat}&account={acct}"
+    params: dict[str, object] = {"chat": chat, "account": acct}
     if admins:
-        params += "&admins=1"
+        params["admins"] = 1
     if search:
-        params += f"&search={search}"
+        params["search"] = search
     if limit:
-        params += f"&limit={limit}"
-    result = ipc_request("GET", f"/chat/members?{params}")
+        params["limit"] = limit
+    result = ipc_request("GET", "/chat/members", params=params)
     fmt = ctx.obj.get("fmt", "human")
     if fmt == "json":
         emit(ctx.obj, result)
@@ -203,7 +209,7 @@ def chat_members(
 def chat_get(ctx: click.Context, chat: str, account: str | None) -> None:
     """Get chat info (members, permissions, etc.)."""
     acct = resolve_account(ctx, account)
-    result = ipc_request("GET", f"/chat/get?chat={chat}&account={acct}")
+    result = ipc_request("GET", "/chat/get", params={"chat": chat, "account": acct})
     emit(ctx.obj, result)
 
 
@@ -321,10 +327,10 @@ def chat_posters(
     hand-roll the walk. Exits 3 when nobody has posted.
     """
     acct = resolve_account(ctx, account)
-    params = f"chat={chat}&account={acct}&max_messages={max_messages}"
+    params: dict[str, object] = {"chat": chat, "account": acct, "max_messages": max_messages}
     if limit:
-        params += f"&limit={limit}"
-    result = ipc_request("GET", f"/chat/posters?{params}", timeout=600)
+        params["limit"] = limit
+    result = ipc_request("GET", "/chat/posters", params=params, timeout=600)
     fmt = ctx.obj.get("fmt", "human")
     if fmt == "json":
         emit(ctx.obj, result)

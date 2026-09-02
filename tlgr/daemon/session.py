@@ -190,6 +190,7 @@ class AccountSession:
         self._supervisor: asyncio.Task[None] | None = None
         self._tickers: list[asyncio.Task[None]] = []
         self._wrapper: Any = None
+        self._flood_budgets: list[int] = []
 
     # -- state -------------------------------------------------------------
 
@@ -506,6 +507,35 @@ class AccountSession:
                 + " — the daemon is reconnecting; retry in a few seconds"
             ) from exc
         return self.client
+
+    @contextlib.contextmanager
+    def flood_budget(self, seconds: int | None) -> Any:
+        """Bound how long *this* request may sleep off a flood wait (COR-15).
+
+        Telethon reads `flood_sleep_threshold` off the client at call time, so
+        a per-request value is inherently shared between concurrent requests
+        on one account. Rather than serialise every request to make the flag
+        exact, the active budgets are kept on a stack and the **smallest** one
+        is in force: a caller that asked for at most five seconds is never
+        held for a hundred and twenty because somebody else's request had a
+        larger budget. The cost is that a generous caller may return sooner
+        than it had to, which is the safe direction.
+        """
+        if seconds is None or self.client is None:
+            yield
+            return
+        self._flood_budgets.append(max(0, int(seconds)))
+        original = getattr(self.client, "flood_sleep_threshold", None)
+        try:
+            self.client.flood_sleep_threshold = min(self._flood_budgets)
+            yield
+        finally:
+            with contextlib.suppress(ValueError):
+                self._flood_budgets.remove(max(0, int(seconds)))
+            if self._flood_budgets:
+                self.client.flood_sleep_threshold = min(self._flood_budgets)
+            elif original is not None:
+                self.client.flood_sleep_threshold = original
 
     def note_update(self) -> None:
         self.last_update = time.time()

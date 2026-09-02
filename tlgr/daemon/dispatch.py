@@ -184,12 +184,16 @@ async def dispatch(daemon: Daemon, request: OpRequest) -> dict[str, Any]:
     else:
         session = None
 
+    budget: Any = None
+    if session is not None and context.limiter is not None:
+        budget = context.limiter.sleep_budget(request.flood_wait_max, float(spec.timeout_s))
     try:
         if spec.rate_class != "local" and context.limiter is not None:
             await context.limiter.acquire(spec.rate_class)
         if spec.min_interval_s:
             await asyncio.sleep(spec.min_interval_s)
-        result = await asyncio.wait_for(spec.impl(context, payload), timeout=spec.timeout_s)
+        with _budget(session, budget):
+            result = await asyncio.wait_for(spec.impl(context, payload), timeout=spec.timeout_s)
     except (TimeoutError, asyncio.TimeoutError) as exc:
         raise RetryableError(
             f"{spec.id} did not finish within {spec.timeout_s}s and was cancelled"
@@ -239,6 +243,16 @@ def _envelope(
             "total": body.get("total"),
         }
     return envelope
+
+
+@contextlib.contextmanager
+def _budget(session: Any, seconds: int | None) -> Any:
+    """`session.flood_budget`, but a no-op for a local operation."""
+    if session is None or seconds is None:
+        yield
+        return
+    with session.flood_budget(seconds):
+        yield
 
 
 @contextlib.contextmanager

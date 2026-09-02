@@ -81,6 +81,23 @@ class DaemonContext:
     def warn(self, message: str) -> None:
         self.warnings.append(message)
 
+    async def upload_file(self, path: Any, **kwargs: Any) -> Any:
+        """Upload a local file and return the `InputFile` handle.
+
+        The file pipeline lives in `daemon/files.py` and `ops/` may not import
+        `daemon/` (§2.2), so the daemon hands it over the same way it hands
+        over the resolver and the limiter: as a service on the context.
+        """
+        from pathlib import Path
+
+        from tlgr.daemon.files import UploadPlan, upload
+
+        return await upload(self.client, UploadPlan(source=Path(path), **kwargs))
+
+    def mark_already(self) -> None:
+        """Record that the world already looked the way the caller asked for."""
+        self.already = True
+
     def emit(self, event_type: str, payload: dict[str, Any], **kwargs: Any) -> None:
         """Echo an action tlgr itself performed onto the bus (§6.5).
 

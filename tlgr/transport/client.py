@@ -110,6 +110,7 @@ def _code_classes() -> dict[str, type[TlgrError]]:
         "DAEMON_NOT_RUNNING": errors.DaemonNotRunningError,
         "DAEMON_VERSION_MISMATCH": errors.DaemonVersionMismatchError,
         "INDETERMINATE": errors.IndeterminateError,
+        "NOT_SUPPORTED": errors.NotSupportedError,
         "IPC_ERROR": errors.IPCError,
     }
 

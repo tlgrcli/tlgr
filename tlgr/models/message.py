@@ -17,15 +17,42 @@ from tlgr.models.peer import Peer, Photo
 
 __all__ = [
     "Button",
+    "ComposeResult",
+    "DeleteResult",
+    "DiceCatalog",
+    "EditResult",
+    "Effect",
+    "EntityReport",
+    "FactCheck",
     "Forward",
+    "ForwardedMessage",
+    "GameInfo",
+    "GameScore",
+    "LinkResult",
     "MediaKind",
     "MediaSummary",
     "Message",
     "MessageEntity",
+    "PaidMessageSettings",
+    "PinResult",
+    "ReactResult",
     "ReactionSummary",
+    "ReadReceipts",
+    "ReadResult",
     "ReplyHeader",
     "ReplyMarkup",
+    "ReportResult",
+    "ScheduledSent",
     "ServiceAction",
+    "SponsoredHidden",
+    "SponsoredMessage",
+    "SuggestedPostState",
+    "SummaryResult",
+    "Tone",
+    "Transcription",
+    "Translation",
+    "ViewCount",
+    "WebPagePreview",
 ]
 
 MediaKind = Literal[
@@ -192,6 +219,291 @@ class ServiceAction(Model):
     payload: dict[str, Any] = {}
 
 
+class FactCheck(Model):
+    """A country-scoped fact-check attached to a message.
+
+    Readable by everyone; writable only by accounts Telegram has flagged as
+    independent fact-checkers for that country, which is why the write half
+    of `message fact-check set` usually fails with PERMISSION_DENIED.
+    """
+
+    msg_id: int | None = None
+    country: str | None = None
+    text: str = ""
+    entities: list[MessageEntity] = []
+    hash: int | None = None
+    need_check: bool = False
+
+
+class DeleteResult(Model):
+    chat_id: int
+    deleted: int = 0
+    ids: list[int] = []
+    pts: int | None = None
+    #: `messages.AffectedHistory.offset` loops: how many messages the server
+    #: reported as affected across every round trip.
+    affected: int | None = None
+    scheduled: bool = False
+
+
+class EditResult(Model):
+    """The edited message, or — with `--check` — whether it may be edited.
+
+    `can_edit` and `edit_time_limit` come from `messages.getMessageEditData`
+    and are the only honest answer to "can I still fix this?": the 48-hour
+    window does not apply to pinned, scheduled or Saved-Messages posts, so it
+    cannot be computed from the date on the client side.
+    """
+
+    id: int
+    chat_id: int
+    edit_date: str | None = None
+    text: str = ""
+    entities: list[MessageEntity] = []
+    can_edit: bool | None = None
+    edit_time_limit: int | None = None
+    caption: bool | None = None
+    already: bool = False
+
+
+class ForwardedMessage(Model):
+    id: int
+    chat_id: int
+    date: str = ""
+    date_unix: int = 0
+    from_chat_id: int | None = None
+    from_msg_id: int | None = None
+
+
+class PinResult(Model):
+    chat_id: int
+    msg_id: int | None = None
+    pinned: bool = False
+    #: `unpin --all` reports how many were unpinned; a single unpin reports 1.
+    unpinned: int | None = None
+    count: int | None = None
+    already: bool = False
+
+
+class ReadResult(Model):
+    chat_id: int
+    read_up_to: int | None = None
+    still_unread: int | None = None
+    mentions_read: int | None = None
+    reactions_read: int | None = None
+    contents_read: list[int] = []
+
+
+class ReadReceipts(Model):
+    """Who read it, and when.
+
+    `unavailable_reason` exists because Telegram refuses this in three
+    different ways — too many members, too long ago, either side hiding read
+    dates — and none of them is an error the caller can fix by retrying.
+    """
+
+    msg_id: int
+    readers: list[int] = []
+    users: list[Peer] = []
+    read_date: str | None = None
+    read_date_unix: int | None = None
+    expired: bool = False
+    unavailable_reason: str | None = None
+
+
+class ReactResult(Model):
+    chat_id: int
+    msg_id: int
+    emoji: str = ""
+    reacted: bool = False
+    already: bool = False
+    reactions: ReactionSummary | None = None
+
+
+class LinkResult(Model):
+    link: str
+    public: bool = False
+    thread: bool = False
+    chat_id: int = 0
+    msg_id: int = 0
+
+
+class ViewCount(Model):
+    msg_id: int
+    views: int | None = None
+    forwards: int | None = None
+    replies: int | None = None
+
+
+class Translation(Model):
+    msg_id: int | None = None
+    text: str = ""
+    entities: list[MessageEntity] = []
+    lang: str = ""
+
+
+class Transcription(Model):
+    msg_id: int
+    text: str = ""
+    pending: bool = False
+    transcription_id: int | None = None
+    rated: str | None = None
+
+
+class SummaryResult(Model):
+    msg_id: int
+    text: str = ""
+    entities: list[MessageEntity] = []
+    quota_left: int | None = None
+
+
+class ComposeResult(Model):
+    """An AI rewrite, plus the diff entities a proofread produces.
+
+    `diff_*` is only populated when proofreading is the sole mode: Telegram
+    emits `messageEntityDiffInsert/Delete/Replace` against the original text,
+    and mixing a translation into the same call makes the diff meaningless.
+    """
+
+    text: str = ""
+    entities: list[MessageEntity] = []
+    diff_text: str | None = None
+    diff_entities: list[MessageEntity] = []
+    quota_left: int | None = None
+    sent: Message | None = None
+
+
+class EntityReport(Model):
+    """What `--parse` did to a piece of text, in the units Telegram counts in."""
+
+    text: str = ""
+    entities: list[MessageEntity] = []
+    #: Entities the *server* re-derives (url, email, mention, hashtag,
+    #: cashtag, bot_command, phone, bank card). They must not be sent, which
+    #: is why they are reported separately rather than merged in.
+    auto_entities: list[MessageEntity] = []
+    length_utf16: int = 0
+    would_split: int = 1
+    rendered: str | None = None
+
+
+class Effect(Model):
+    id: int
+    emoticon: str = ""
+    premium_required: bool = False
+    static_icon_id: int | None = None
+    effect_animation_id: int | None = None
+    effect_sticker_id: int | None = None
+
+
+class DiceCatalog(Model):
+    """Which dice emoji exist and what counts as a win, read from appConfig.
+
+    Never hardcoded: `emojies_send_dice` and `emojies_send_dice_success` are
+    server-side, and a client that hardcodes them reports a new dice emoji as
+    "unsupported media" the day Telegram adds one.
+    """
+
+    emojis: list[str] = []
+    success_values: dict[str, int] = {}
+    stake: dict[str, Any] | None = None
+
+
+class WebPagePreview(Model):
+    url: str = ""
+    type: str | None = None
+    site_name: str | None = None
+    title: str | None = None
+    description: str | None = None
+    photo: Photo | None = None
+    document: MediaSummary | None = None
+    has_large_media: bool = False
+    cached_page: bool = False
+    pending: bool = False
+
+
+class ReportResult(Model):
+    """A report, or the next menu of options it wants.
+
+    `messages.report` is a state machine: the first call answers with a list
+    of options, and each `--option` walks one level deeper until the server
+    reports the report was accepted.
+    """
+
+    ok: bool = False
+    title: str | None = None
+    options: list[dict[str, Any]] = []
+    comment_required: bool = False
+    already: bool = False
+
+
+class ScheduledSent(Model):
+    id: int
+    chat_id: int
+    date: str = ""
+    date_unix: int = 0
+
+
+class PaidMessageSettings(Model):
+    user_id: int | None = None
+    exempt: bool | None = None
+    refunded_stars: int | None = None
+    revenue_stars: int | None = None
+    revenue_ton: int | None = None
+
+
+class SponsoredMessage(Model):
+    random_id: str
+    title: str | None = None
+    message: str = ""
+    entities: list[MessageEntity] = []
+    url: str | None = None
+    button_text: str | None = None
+    sponsor_info: str | None = None
+    additional_info: str | None = None
+    recommended: bool = False
+    can_report: bool = False
+    viewed: bool = False
+
+
+class SponsoredHidden(Model):
+    hidden: bool = False
+    chat_id: int | None = None
+    already: bool = False
+
+
+class SuggestedPostState(Model):
+    chat_id: int
+    msg_id: int
+    state: str = ""
+    publish_at: str | None = None
+    price: dict[str, Any] | None = None
+
+
+class Tone(Model):
+    slug: str
+    title: str = ""
+    prompt: str | None = None
+    emoji_id: int | None = None
+    installed: bool = False
+    author: str | None = None
+    examples: list[str] = []
+
+
+class GameScore(Model):
+    position: int | None = None
+    user_id: int | None = None
+    score: int = 0
+
+
+class GameInfo(Model):
+    title: str = ""
+    short_name: str = ""
+    description: str | None = None
+    url: str | None = None
+    scores: list[GameScore] = []
+
+
 class Message(Model):
     id: int
     chat_id: int
@@ -232,3 +544,22 @@ class Message(Model):
     edit_hide: bool = False
     restriction_reason: list[str] = []
     link: str | None = None
+    paid_stars: int | None = None
+    factcheck: FactCheck | None = None
+    # Only `message thread list` fills these: a comment lives in the linked
+    # discussion group, not in the channel the caller named, and saying so is
+    # the difference between "id 42" and "id 42 *of what*".
+    thread_root: int | None = None
+    discussion_chat_id: int | None = None
+    # `--with-reply` / `--context` hang the neighbouring messages off the one
+    # that was asked for, rather than making the caller issue three requests.
+    reply: Message | None = None
+    context: list[Message] = []
+    raw: dict[str, Any] | None = None
+    #: `--delivery`: sent / read, derived from the *dialog's*
+    #: `read_outbox_max_id` rather than from the message, which carries no
+    #: such field.
+    delivery: str | None = None
+    #: The sibling ids one send produced — album items, or the parts of a
+    #: `--split` text. Empty for the ordinary one-message send.
+    batch: list[int] = []

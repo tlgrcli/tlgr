@@ -29,6 +29,7 @@ __all__ = [
     "media_summary",
     "message_entities",
     "message_to_model",
+    "photo_summary",
     "reactions_summary",
     "service_action",
     "tl_snake",
@@ -120,6 +121,11 @@ def _photo(obj: Any) -> Photo | None:
         stripped_thumb_b64=base64.b64encode(stripped).decode() if stripped else None,
         dc_id=getattr(obj, "dc_id", None),
     )
+
+
+#: The photo shape, exported so an op can build one without reaching for a
+#: private name.
+photo_summary = _photo
 
 
 def entity_to_peer(entity: Any) -> Peer:

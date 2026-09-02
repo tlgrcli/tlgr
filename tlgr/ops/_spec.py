@@ -42,7 +42,11 @@ class OpContext(Protocol):
     """What an implementation is handed besides its request.
 
     Deliberately a Protocol: `ops/` must not import `daemon/`, and a test must
-    be able to build one without a socket or a Telethon client.
+    be able to build one without a socket or a Telethon client. The services
+    an implementation legitimately needs — the client, the per-account peer
+    resolver, the rate limiter, the file pipeline, the event bus — are
+    *injected* here rather than imported, which is what keeps the layering
+    rule from being a fiction.
     """
 
     account: str
@@ -51,6 +55,15 @@ class OpContext(Protocol):
 
     def warn(self, message: str) -> None:
         """Add a non-fatal advisory to `meta.warnings`."""
+        ...
+
+    def emit(self, event_type: str, payload: dict[str, Any], **kwargs: Any) -> None:
+        """Echo an action tlgr itself performed onto the event bus (§6.5).
+
+        Telethon dispatches no `NewMessage` for our own sends, so without this
+        a `tlgr watch` never shows what tlgr just did. A context with no bus
+        drops it, which is why the signature returns nothing.
+        """
         ...
 
 

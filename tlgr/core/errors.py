@@ -86,6 +86,13 @@ EXIT_CODE_MAP: dict[str, dict[str, Any]] = {
         "description": "Daemon speaks a different protocol version than this CLI",
     },
     "IPC_ERROR": {"code": EXIT_IPC, "description": "IPC communication error"},
+    "NOT_SUPPORTED": {
+        "code": EXIT_INDETERMINATE,
+        "description": (
+            "tlgr cannot perform this — the API layer or Telethon build lacks it, "
+            "not a failure of the request"
+        ),
+    },
     "INDETERMINATE": {
         "code": EXIT_INDETERMINATE,
         "description": (
@@ -238,6 +245,20 @@ class IndeterminateError(TlgrError):
     code = "INDETERMINATE"
     exit_code = EXIT_INDETERMINATE
     http = 200
+
+
+class NotSupportedError(TlgrError):
+    """tlgr cannot do this, and no retry will change that.
+
+    Shares exit 13 with INDETERMINATE because both mean "do not read this as
+    a no about the world": a feature Telethon's layer does not carry has not
+    been refused by Telegram, it was never asked. The code is distinct so an
+    agent can tell "unavailable in this build" from "could not establish".
+    """
+
+    code = "NOT_SUPPORTED"
+    exit_code = EXIT_INDETERMINATE
+    http = 501
 
 
 class DaemonError(TlgrError):

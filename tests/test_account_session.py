@@ -19,7 +19,8 @@ from fake_telethon import FakeTelegramClient, World
 from tlgr.core.errors import EXIT_AUTH, EXIT_RETRYABLE, RetryableError, SessionError, classify
 from tlgr.daemon.session import AccountSession, ClientOptions, SessionState, backoff_delays
 
-pytestmark = pytest.mark.asyncio
+# `asyncio_mode = "auto"` in pyproject collects the async tests; marking
+# them explicitly would also mark the synchronous ones in this module.
 
 
 def _session(tmp: Path, world: World, **kwargs) -> AccountSession:

@@ -11,12 +11,11 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
-
 from tlgr.daemon.stream import MAX_WALK_ITEMS, NdjsonResponse, walk_pages
 from tlgr.transport.ndjson import parse_frame
 
-pytestmark = pytest.mark.asyncio
+# `asyncio_mode = "auto"` in pyproject collects the async tests; marking
+# them explicitly would also mark the synchronous ones in this module.
 
 
 class _Recorder(NdjsonResponse):

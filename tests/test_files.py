@@ -29,7 +29,8 @@ from tlgr.daemon.files import (
     upload,
 )
 
-pytestmark = pytest.mark.asyncio
+# `asyncio_mode = "auto"` in pyproject collects the async tests; marking
+# them explicitly would also mark the synchronous ones in this module.
 
 
 class _Client:

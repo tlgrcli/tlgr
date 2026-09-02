@@ -186,7 +186,6 @@ class TestHandshake:
         assert "once" in str(caught.value)
 
 
-@pytest.mark.asyncio
 class TestShutdown:
     async def test_the_socket_and_state_file_are_removed(self, live_daemon):
         socket = live_daemon.paths.socket
@@ -224,7 +223,6 @@ class TestShutdown:
         await live_daemon.shutdown(drain=0.1)
 
 
-@pytest.mark.asyncio
 async def test_ready_is_false_before_the_accounts_connect(tlgr_home, stub_account, world):
     """§12.3 item 6: "process alive" and "daemon works" are different (COR-37)."""
     from fake_telethon import fake_client_factory

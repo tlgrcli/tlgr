@@ -25,7 +25,8 @@ from tlgr.core.errors import (
 )
 from tlgr.core.peers import CachedPeer, PeerCache, PeerResolver, channel_id_from_link
 
-pytestmark = pytest.mark.asyncio
+# `asyncio_mode = "auto"` in pyproject collects the async tests; marking
+# them explicitly would also mark the synchronous ones in this module.
 
 
 def _resolver(world: World, tmp: Path, **kwargs: Any) -> PeerResolver:

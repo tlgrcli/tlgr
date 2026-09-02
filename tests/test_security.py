@@ -173,7 +173,6 @@ class TestPermissionAudit:
         assert any("owned by uid" in p for p in problems)
 
 
-@pytest.mark.asyncio
 class TestSocket:
     async def test_the_socket_is_0600(self, live_daemon):
         mode = stat.S_IMODE(live_daemon.paths.socket.stat().st_mode)
@@ -199,7 +198,6 @@ class TestSocket:
         assert (await in_thread(client.status))["ok"] is True
 
 
-@pytest.mark.asyncio
 class TestToken:
     async def test_a_required_token_is_enforced(self, live_daemon, tlgr_home, in_thread):
         from tlgr.transport.client import DaemonClient
@@ -288,7 +286,6 @@ class TestRedaction:
         logging.getLogger().handlers.clear()
 
 
-@pytest.mark.asyncio
 async def test_the_access_log_is_off(live_daemon):
     """SEC-05: an access log records every request path, forever."""
     assert logging.getLogger("aiohttp.access").disabled is True

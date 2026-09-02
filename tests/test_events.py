@@ -17,7 +17,8 @@ import pytest
 from tlgr.daemon.events import EVENT_TYPES, EventBus, normalise
 from tlgr.models.event import EventEnvelope
 
-pytestmark = pytest.mark.asyncio
+# `asyncio_mode = "auto"` in pyproject collects the async tests; marking
+# them explicitly would also mark the synchronous ones in this module.
 
 
 @pytest.fixture
@@ -227,7 +228,6 @@ class TestSelfOrigin:
         assert events[-1].self_origin is True
 
 
-@pytest.mark.asyncio
 async def test_the_events_endpoint_delivers_replays_and_heartbeats(live_daemon, tlgr_home):
     """§12.3 item 11, end to end over the socket."""
     from tlgr.transport.client import DaemonClient
@@ -257,7 +257,6 @@ async def test_the_events_endpoint_delivers_replays_and_heartbeats(live_daemon, 
     assert [f["payload"]["id"] for f in replayed] == [1, 2]
 
 
-@pytest.mark.asyncio
 async def test_an_events_stream_counts_as_activity(live_daemon):
     """COR-08: an open watch is not idle, however quiet the chat is."""
     before = live_daemon.activity.event_streams

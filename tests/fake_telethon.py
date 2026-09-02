@@ -226,6 +226,27 @@ class FakeTelegramClient:
     async def catch_up(self) -> None:
         self.world.catch_ups += 1
 
+    # -- login -------------------------------------------------------------
+
+    async def send_code_request(self, phone: str, force_sms: bool = False) -> Any:
+        self.world.calls.append(("send_code_request", phone))
+        failure = self.world._fail_next.pop("send_code_request", None)
+        if failure is not None:
+            raise failure
+        return _SentCode(phone_code_hash=f"hash-{phone[-4:]}", timeout=60)
+
+    async def sign_in(self, phone: str = "", code: str = "", **kwargs: Any) -> Any:
+        self.world.calls.append(("sign_in", {"phone": phone, "code": code, **kwargs}))
+        failure = self.world._fail_next.pop("sign_in", None)
+        if failure is not None:
+            raise failure
+        self.world.authorized = True
+        return self.world.me
+
+    async def qr_login(self) -> Any:
+        self.world.calls.append(("qr_login", None))
+        return _QrLogin(self.world)
+
     async def log_out(self) -> bool:
         self.world.authorized = False
         await self.disconnect()
@@ -343,6 +364,30 @@ class _AsyncList:
             return next(self._iter)
         except StopIteration:
             raise StopAsyncIteration from None
+
+
+class _SentCode:
+    """What `auth.sendCode` returns, reduced to what the daemon reads."""
+
+    def __init__(self, phone_code_hash: str, timeout: int) -> None:
+        self.phone_code_hash = phone_code_hash
+        self.timeout = timeout
+        self.type = None
+        self.next_type = None
+
+
+class _QrLogin:
+    def __init__(self, world: World) -> None:
+        self.world = world
+        self.url = "tg://login?token=ZmFrZQ"
+        self.expires = None
+
+    async def wait(self, timeout: float | None = None) -> Any:
+        failure = self.world._fail_next.pop("qr_wait", None)
+        if failure is not None:
+            raise failure
+        self.world.authorized = True
+        return self.world.me
 
 
 class _FakeSession:

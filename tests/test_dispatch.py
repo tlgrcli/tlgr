@@ -26,7 +26,8 @@ from tlgr.models.envelope import OpRequest
 from tlgr.ops._spec import OperationSpec, Surface
 from tlgr.registry import ALIASES, REGISTRY
 
-pytestmark = pytest.mark.asyncio
+# `asyncio_mode = "auto"` in pyproject collects the async tests; marking
+# them explicitly would also mark the synchronous ones in this module.
 
 
 class Echo(Request):

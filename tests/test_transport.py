@@ -17,7 +17,8 @@ from tlgr.core.errors import DaemonNotRunningError, IPCError, RetryableError
 from tlgr.transport.client import DaemonClient, error_from_body
 from tlgr.transport.ndjson import dump_frame, iter_frames, parse_frame
 
-pytestmark = pytest.mark.asyncio
+# `asyncio_mode = "auto"` in pyproject collects the async tests; marking
+# them explicitly would also mark the synchronous ones in this module.
 
 TRICKY = "سلام #12 a+b @fish&chips  spaced"
 

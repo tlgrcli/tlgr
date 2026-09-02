@@ -45,7 +45,6 @@ class TestTokenBucket:
         time.sleep(0.02)
         assert bucket.tokens <= 3
 
-    @pytest.mark.asyncio
     async def test_take_paces_a_sequence(self):
         bucket = TokenBucket(rate=100, burst=1)
         started = time.monotonic()
@@ -183,7 +182,6 @@ class TestRateLimiter:
         assert snapshot["circuit"] == "closed"
         assert snapshot["flood_until"] is not None
 
-    @pytest.mark.asyncio
     async def test_acquire_paces_by_rate_class(self, tlgr_home: Path):
         limiter = self._limiter(tlgr_home)
         started = time.monotonic()
@@ -191,7 +189,6 @@ class TestRateLimiter:
         await limiter.acquire("send")
         assert time.monotonic() - started >= 0.5, "the send bucket did not pace"
 
-    @pytest.mark.asyncio
     async def test_reads_are_not_paced_like_sends(self, tlgr_home: Path):
         limiter = self._limiter(tlgr_home)
         started = time.monotonic()
@@ -199,14 +196,12 @@ class TestRateLimiter:
         assert time.monotonic() - started < 0.2
 
 
-@pytest.mark.asyncio
 async def test_the_daemon_gives_each_account_its_own_limiter(daemon, stub_account):
     first = daemon.sessions.limiter(stub_account)
     assert daemon.sessions.limiter(stub_account) is first
     assert daemon.sessions.limiter("other") is not first
 
 
-@pytest.mark.asyncio
 async def test_unfreeze_closes_the_breaker_over_the_socket(live_daemon, client, in_thread):
     live_daemon.sessions.limiter("work").trip("PeerFloodError")
     result = await in_thread(client.admin, "unfreeze", {"account": "work"})

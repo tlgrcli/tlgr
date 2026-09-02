@@ -23,7 +23,8 @@ from tlgr.core.config import WebhookConfig, WebhookRetryConfig
 from tlgr.daemon.webhook import WebhookPusher, sign_body
 from tlgr.models.event import EventEnvelope
 
-pytestmark = pytest.mark.asyncio
+# `asyncio_mode = "auto"` in pyproject collects the async tests; marking
+# them explicitly would also mark the synchronous ones in this module.
 
 
 @pytest.fixture

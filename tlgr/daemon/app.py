@@ -471,7 +471,7 @@ def _error_response(request: web.Request, exc: BaseException, *, op: str = "") -
 
 @web.middleware
 async def error_middleware(request: web.Request, handler: Any) -> web.StreamResponse:
-    daemon: Daemon = request.app["daemon"]
+    daemon: Daemon = request.app[DAEMON_KEY]
     try:
         return await handler(request)
     except web.HTTPException:
@@ -493,7 +493,7 @@ async def error_middleware(request: web.Request, handler: Any) -> web.StreamResp
 @web.middleware
 async def auth_middleware(request: web.Request, handler: Any) -> web.StreamResponse:
     """Peer uid, with a shared token as the fallback (SEC-01, §8.2)."""
-    daemon: Daemon = request.app["daemon"]
+    daemon: Daemon = request.app[DAEMON_KEY]
     security = daemon.config.security
     supplied = request.headers.get(HEADER_TOKEN)
 
@@ -580,7 +580,7 @@ async def flood_budget_middleware(request: web.Request, handler: Any) -> web.Str
     """
     if _is_v1(request):
         return await handler(request)
-    daemon: Daemon = request.app["daemon"]
+    daemon: Daemon = request.app[DAEMON_KEY]
     account, budget = await _requested_flood_budget(request)
     session = daemon.sessions.get(account) if account and budget is not None else None
     if session is None:
@@ -592,7 +592,7 @@ async def flood_budget_middleware(request: web.Request, handler: Any) -> web.Str
 @web.middleware
 async def activity_middleware(request: web.Request, handler: Any) -> web.StreamResponse:
     """Count the request, and refuse new work while shutting down (§6.11)."""
-    daemon: Daemon = request.app["daemon"]
+    daemon: Daemon = request.app[DAEMON_KEY]
     if daemon.shutting_down.is_set() and request.path != "/v1/status":
         return _error_response(
             request, RetryableError("the daemon is shutting down; retry in a moment")
@@ -610,7 +610,7 @@ async def activity_middleware(request: web.Request, handler: Any) -> web.StreamR
 
 
 async def handle_op(request: web.Request) -> web.StreamResponse:
-    daemon: Daemon = request.app["daemon"]
+    daemon: Daemon = request.app[DAEMON_KEY]
     raw = await request.read()
     op_request = dispatch_module.decode_request(raw)
     if op_request.stream or op_request.all:
@@ -651,7 +651,7 @@ async def _handle_op_stream(
 
 
 async def handle_events(request: web.Request) -> web.StreamResponse:
-    daemon: Daemon = request.app["daemon"]
+    daemon: Daemon = request.app[DAEMON_KEY]
     account = request.query.get("account", "").strip()
     if not account:
         return _error_response(
@@ -694,7 +694,7 @@ async def handle_events(request: web.Request) -> web.StreamResponse:
 
 
 async def handle_status(request: web.Request) -> web.Response:
-    daemon: Daemon = request.app["daemon"]
+    daemon: Daemon = request.app[DAEMON_KEY]
     return web.Response(
         body=json.dumps(daemon.v1_status(), ensure_ascii=False, default=str).encode("utf-8"),
         content_type="application/json",
@@ -711,7 +711,7 @@ _ADMIN_OPS = {
 
 
 async def handle_admin(request: web.Request) -> web.Response:
-    daemon: Daemon = request.app["daemon"]
+    daemon: Daemon = request.app[DAEMON_KEY]
     action = request.match_info["action"]
     if action not in _ADMIN_OPS:
         return _error_response(request, UsageError(f"unknown admin action {action!r}"))
@@ -798,6 +798,12 @@ async def _logout(daemon: Daemon, body: dict[str, Any]) -> dict[str, Any]:
     return {"account": alias, "logged_out": True}
 
 
+#: aiohttp deprecates bare string keys on `Application`; a typed key is also
+#: the difference between a missing dependency being a KeyError at request
+#: time and a type error at import time.
+DAEMON_KEY: web.AppKey[Daemon] = web.AppKey("daemon", Daemon)
+
+
 def build_app(daemon: Daemon) -> web.Application:
     """The application: the v2 routes, the v1 routes, one middleware chain."""
     app = web.Application(
@@ -809,7 +815,7 @@ def build_app(daemon: Daemon) -> web.Application:
             flood_budget_middleware,
         ]
     )
-    app["daemon"] = daemon
+    app[DAEMON_KEY] = daemon
     app.router.add_post("/v1/op", handle_op)
     app.router.add_get("/v1/events", handle_events)
     app.router.add_get("/v1/status", handle_status)

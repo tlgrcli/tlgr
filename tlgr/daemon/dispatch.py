@@ -61,6 +61,10 @@ class DaemonContext:
     dry_run: bool = False
     client: Any = None
     session: Any = None
+    #: The per-account entity resolver (§6.6). Every peer an implementation
+    #: touches goes through this, so the NOT_FOUND / INDETERMINATE
+    #: distinction is made in one place rather than per operation.
+    resolver: Any = None
     daemon: Any = None
     limiter: Any = None
     bus: Any = None
@@ -173,6 +177,9 @@ async def dispatch(daemon: Daemon, request: OpRequest) -> dict[str, Any]:
         context.session = session
         context.limiter = limiter
         context.client = await session.acquire(timeout=spec.timeout_s)
+        resolver = session.resolver
+        resolver.limiter = limiter
+        context.resolver = resolver
         session.in_flight += 1
     else:
         session = None

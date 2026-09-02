@@ -156,6 +156,8 @@ class AccountSession:
         state_save_interval: int = 60,
         presence: str = "off",
         resync_depth: int = 50,
+        peers_path: Path | None = None,
+        dialog_scan_max: int = 5000,
     ) -> None:
         self.alias = alias
         self.session_path = session_path
@@ -167,6 +169,9 @@ class AccountSession:
         self.state_save_interval = state_save_interval
         self.presence = presence
         self.resync_depth = resync_depth
+        self.peers_path = peers_path
+        self.dialog_scan_max = dialog_scan_max
+        self._resolver: Any = None
 
         self.client: Any = None
         self.me: Any = None
@@ -448,6 +453,25 @@ class AccountSession:
             raise
         except Exception as exc:
             log.debug("presence update failed for %s: %s", self.alias, exc)
+
+    @property
+    def resolver(self) -> Any:
+        """The account's entity resolver, built once the client exists.
+
+        One per account, never shared: an access hash minted for one account
+        is meaningless to another, and handing it over produces
+        `PEER_ID_INVALID` for a peer that plainly exists (§6.6).
+        """
+        from tlgr.core.peers import PeerCache, PeerResolver
+
+        if self._resolver is None or self._resolver.client is not self.client:
+            self._resolver = PeerResolver(
+                client=self.client,
+                account=self.alias,
+                cache=PeerCache(self.peers_path),
+                dialog_scan_max=self.dialog_scan_max,
+            )
+        return self._resolver
 
     # -- request gate ------------------------------------------------------
 

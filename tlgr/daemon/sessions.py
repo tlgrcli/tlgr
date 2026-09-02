@@ -136,6 +136,8 @@ class SessionManager:
             state_save_interval=self.config.daemon.state_save_interval,
             presence=self.config.presence.mode,
             resync_depth=self.config.daemon.resync_depth,
+            peers_path=self.paths.peers_db(alias),
+            dialog_scan_max=self.config.limits.dialog_scan_max,
         )
 
     # -- the one entry point -----------------------------------------------

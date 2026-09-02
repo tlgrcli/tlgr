@@ -1,7 +1,9 @@
-telethon>=1.36.0
+# Pinned to the minor in pyproject; tlgr reads a handful of Telethon
+# internals and a minor bump has moved them before.
+telethon~=1.44.0
 click>=8.0
 aiohttp>=3.9
 tomli>=2.0
 tomli-w>=1.0
-tqdm>=4.65
 pyyaml>=6.0
+msgspec>=0.18,<1.0

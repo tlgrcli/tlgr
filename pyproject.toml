@@ -37,7 +37,6 @@ dependencies = [
     "msgspec>=0.18,<1.0",
     "tomli>=2.0;python_version<'3.11'",
     "tomli-w>=1.0",
-    "tqdm>=4.65",
     "pyyaml>=6.0",
 ]
 

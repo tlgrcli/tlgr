@@ -87,6 +87,26 @@ def marked_id(raw_id: int, kind: str) -> int:
     return raw_id
 
 
+def peer_id_of(peer: Any) -> int | None:
+    """A `PeerUser`/`PeerChat`/`PeerChannel` as its marked id, or None.
+
+    The same arithmetic `utils.get_peer_id` does, kept here so a serialiser
+    can read a raw `from_id` without a client and without importing Telethon
+    (§2.2 keeps that import out of everything below `ops/`).
+    """
+    if peer is None:
+        return None
+    for attribute, kind in (
+        ("user_id", "user"),
+        ("chat_id", "group"),
+        ("channel_id", "channel"),
+    ):
+        value = getattr(peer, attribute, None)
+        if isinstance(value, int):
+            return marked_id(value, kind)
+    return None
+
+
 def _photo(obj: Any) -> Photo | None:
     if obj is None:
         return None
@@ -393,6 +413,37 @@ def _forward(message: Any) -> Any:
     )
 
 
+def _text_of(message: Any) -> str:
+    """The message body, whether or not the object is bound to a client.
+
+    Telethon's `Message.text` applies the client's parse mode and returns
+    `None` when there is no client — which is every message tlgr builds from
+    a raw `Updates` reply or receives through a fake. Falling back to
+    `raw_text`/`message` is the difference between `message send` reporting
+    the text it sent and reporting an empty string.
+    """
+    for attribute in ("text", "raw_text", "message"):
+        value = getattr(message, attribute, None)
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
+def _sender_of(message: Any) -> int | None:
+    """Who sent it, computed from `from_id` when Telethon has not.
+
+    `Message.sender_id` is filled in by `_finish_init`, which only runs for a
+    client-bound message. Every message tlgr builds from a raw `Updates` reply
+    therefore reports no sender unless it is derived here, and "who sent this"
+    is not an optional field.
+    """
+    known = getattr(message, "sender_id", None)
+    if isinstance(known, int):
+        return known
+    peer = getattr(message, "from_id", None) or getattr(message, "peer_id", None)
+    return peer_id_of(peer)
+
+
 def message_to_model(
     message: Any, *, chat_id: int | None = None, link: str | None = None
 ) -> Message:
@@ -406,10 +457,10 @@ def message_to_model(
         chat_id=chat_id,
         date=fmt_dt(date) or "",
         date_unix=to_unix(date) or 0,
-        text=getattr(message, "text", None) or "",
+        text=_text_of(message),
         out=bool(getattr(message, "out", False)),
         kind="service" if action is not None else "message",
-        sender_id=getattr(message, "sender_id", None),
+        sender_id=_sender_of(message),
         post_author=getattr(message, "post_author", None),
         via_bot_id=getattr(message, "via_bot_id", None),
         from_rank=getattr(message, "from_rank", None) if hasattr(message, "from_rank") else None,

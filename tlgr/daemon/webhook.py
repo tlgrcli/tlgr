@@ -151,9 +151,9 @@ class WebhookPusher:
 
     # -- the bus handler ---------------------------------------------------
 
-    async def on_event(self, event: EventEnvelope) -> None:
+    async def on_event(self, event: EventEnvelope, raw: Any = None) -> None:
         """The bus handler. Encodes, signs and enqueues; never sends inline."""
-        if not self.should_push(event.type, event.chat_id):
+        if not self.should_push(event.type, event.chat_id, raw):
             return
         self.enqueue(event)
 

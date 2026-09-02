@@ -149,7 +149,14 @@ class Daemon:
             if normalised is None:
                 return
             event_type, payload, chat_id, sender_id = normalised
-            self.bus.emit(alias, event_type, payload, chat_id=chat_id, sender_id=sender_id)
+            self.bus.emit(
+                alias,
+                event_type,
+                payload,
+                chat_id=chat_id,
+                sender_id=sender_id,
+                raw=event,
+            )
 
         try:
             from telethon import events as tl_events
@@ -245,7 +252,7 @@ class Daemon:
                 log.warning("job %r references unusable account %r", job_config.name, alias)
                 continue
             try:
-                job = self._job_runner.create_job(job_config, client, self.webhook)
+                job = self._job_runner.create_job(job_config, client, self.webhook, self.bus)
                 if job.enabled:
                     job.start()
             except Exception:

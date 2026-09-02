@@ -238,7 +238,12 @@ def _event_kind(event: Any) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-Handler = Callable[[EventEnvelope], Awaitable[None]]
+#: A handler is given the normalised envelope **and** the object it came from.
+#: The envelope is what leaves the process; the raw Telethon event is what the
+#: gateway's filters still read, and re-deriving it from the payload would be
+#: both lossy and a second source of truth. It is `None` for an event tlgr
+#: itself synthesised (a self-origin echo, a health event).
+Handler = Callable[[EventEnvelope, Any], Awaitable[None]]
 
 
 class EventBus:
@@ -258,7 +263,7 @@ class EventBus:
         self._buffers: dict[str, deque[EventEnvelope]] = {}
         self._subscribers: list[Subscriber] = []
         self._handlers: list[Handler] = []
-        self._lanes: list[asyncio.Queue[EventEnvelope]] = []
+        self._lanes: list[asyncio.Queue[tuple[EventEnvelope, Any]]] = []
         self._tasks: list[asyncio.Task[None]] = []
         self._flush_task: asyncio.Task[None] | None = None
         self._dirty: set[str] = set()
@@ -339,6 +344,7 @@ class EventBus:
         chat_id: int | None = None,
         sender_id: int | None = None,
         self_origin: bool = False,
+        raw: Any = None,
     ) -> EventEnvelope:
         """Build, number, buffer and fan out one event. Never blocks."""
         seq = self.load_seq(account) + 1
@@ -354,10 +360,10 @@ class EventBus:
             sender_id=sender_id,
             self_origin=self_origin,
         )
-        self.publish(envelope)
+        self.publish(envelope, raw)
         return envelope
 
-    def publish(self, envelope: EventEnvelope) -> None:
+    def publish(self, envelope: EventEnvelope, raw: Any = None) -> None:
         buffer = self._buffers.setdefault(envelope.account, deque(maxlen=self.buffer_size))
         buffer.append(envelope)
 
@@ -370,7 +376,7 @@ class EventBus:
         if self._lanes and self._handlers:
             lane = self._lane_for(envelope)
             try:
-                lane.put_nowait(envelope)
+                lane.put_nowait((envelope, raw))
             except asyncio.QueueFull:
                 # The lane is the *handlers'* backlog. Dropping the oldest
                 # keeps the update loop moving; the stream subscribers and the
@@ -382,19 +388,19 @@ class EventBus:
                     extra={"account": envelope.account, "seq": envelope.seq},
                 )
                 with contextlib.suppress(asyncio.QueueFull):
-                    lane.put_nowait(envelope)
+                    lane.put_nowait((envelope, raw))
 
-    def _lane_for(self, envelope: EventEnvelope) -> asyncio.Queue[EventEnvelope]:
+    def _lane_for(self, envelope: EventEnvelope) -> asyncio.Queue[tuple[EventEnvelope, Any]]:
         key = envelope.chat_id if envelope.chat_id is not None else hash(envelope.account)
         return self._lanes[abs(int(key)) % len(self._lanes)]
 
     async def _worker(self, index: int) -> None:
         lane = self._lanes[index]
         while True:
-            envelope = await lane.get()
+            envelope, raw = await lane.get()
             for handler in list(self._handlers):
                 try:
-                    await handler(envelope)
+                    await handler(envelope, raw)
                 except asyncio.CancelledError:
                     raise
                 except Exception:

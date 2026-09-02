@@ -129,7 +129,10 @@ def is_listening(socket_path: Path, timeout: float = 0.5) -> bool:
         # running: refusing loudly beats replacing it.
         return True
     except OSError as exc:
-        return exc.errno not in (errno.ECONNREFUSED, errno.ENOENT)
+        # ENOTSOCK is a leftover *file* at the socket path — a crash during
+        # bind, or a copied home directory. Anything else unexpected is
+        # treated as "running": refusing loudly beats replacing a live daemon.
+        return exc.errno not in (errno.ECONNREFUSED, errno.ENOENT, errno.ENOTSOCK)
     finally:
         sock.close()
 

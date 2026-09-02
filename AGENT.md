@@ -210,7 +210,20 @@ tlgr user get <user>
 tlgr user dialog-status <user> [--max-dialogs N]
 → {"ref": ..., "id": ..., "username": ..., "resolved": true, "has_dialog": true,
    "message_count": 12, "source": "peer_dialogs", "reason": null}
+
+tlgr user hide-stories <user> [--unhide]
+→ {"user_id": ..., "username": ..., "hidden": true, "already": false}
 ```
+
+`hide-stories` is Telegram's own "Hide Stories" menu item: the peer leaves the
+main stories bar for the collapsed Hidden list. Per-account and purely local —
+**the other side is never notified**, the chat, the contact entry and their
+access to you are untouched — so it is safe to apply in bulk to everyone an
+outreach campaign has contacted, which is what keeps a working account's story
+bar readable. Idempotent: it reads the fresh `stories_hidden` flag first and
+returns `already: true` without an RPC when there is nothing to do, so
+repeating a pass over hundreds of peers is nearly free. `tlgr user get` reports
+the same flag as `stories_hidden`, so the state can be audited without writing.
 
 `dialog-status` is the ONLY correct way to ask "does this account have prior
 history with this person?". Three outcomes, never conflated:

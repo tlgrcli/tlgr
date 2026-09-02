@@ -132,6 +132,7 @@ class IPCServer:
         # Users
         app.router.add_get("/user/get", self._user_get)
         app.router.add_get("/user/dialog-status", self._user_dialog_status)
+        app.router.add_post("/user/stories-hidden", self._user_stories_hidden)
 
         # Profile
         app.router.add_get("/profile/get", self._profile_get)
@@ -622,6 +623,20 @@ class IPCServer:
                 max_dialogs=int(q.get("max_dialogs", 5000)),
             )
             return _json_response(status)
+        except Exception as e:
+            return _handle_exception(e)
+
+    async def _user_stories_hidden(self, request: web.Request) -> web.Response:
+        body = await _get_body(request)
+        account = body.get("account", "")
+        client = await self.daemon.ensure_client(account)
+        if not client:
+            return _error_response("No client for account", 404)
+        try:
+            result = await client.set_stories_hidden(
+                _ref(body["user"]), hidden=bool(body.get("hidden", True))
+            )
+            return _json_response(result)
         except Exception as e:
             return _handle_exception(e)
 

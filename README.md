@@ -108,6 +108,7 @@ tlgr contact search <query>
 ```bash
 tlgr user get <user>
 tlgr user dialog-status <user>         # does THIS account have prior history with them?
+tlgr user hide-stories <user>          # archive their stories for this account (--unhide)
 ```
 
 `dialog-status` distinguishes "yes", "definitively no", and "cannot tell"

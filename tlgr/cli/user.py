@@ -23,7 +23,41 @@ def user_get(ctx: click.Context, user: str, account: str | None) -> None:
     """Get detailed info about a user."""
     acct = resolve_account(ctx, account)
     result = ipc_request("GET", f"/user/get?user={user}&account={acct}")
-    emit(ctx.obj, result, columns=["id", "first_name", "username", "bio", "is_bot", "status"])
+    emit(
+        ctx.obj,
+        result,
+        columns=["id", "first_name", "username", "bio", "is_bot", "status",
+                 "stories_hidden"],
+    )
+
+
+@user_group.command("hide-stories")
+@click.argument("user")
+@click.option("--unhide", is_flag=True, default=False,
+              help="Put them back in the main stories bar instead.")
+@click.option("--account", "-a", default=None)
+@click.pass_context
+def user_hide_stories(
+    ctx: click.Context, user: str, unhide: bool, account: str | None
+) -> None:
+    """Archive USER's stories for this account ("Hide Stories").
+
+    The same thing as the "Hide Stories" item in Telegram's own story
+    context menu: they drop out of the main stories bar into the collapsed
+    Hidden list. Per-account and purely local — the other side is never
+    told, and nothing about the chat, the contact or their access changes.
+
+    Idempotent: `already: true` means the flag was already set and no RPC
+    was sent, so bulk passes are cheap to repeat. `tlgr user get` reports
+    the current value as `stories_hidden`.
+    """
+    acct = resolve_account(ctx, account)
+    result = ipc_request(
+        "POST",
+        "/user/stories-hidden",
+        body={"user": user, "hidden": not unhide, "account": acct},
+    )
+    emit(ctx.obj, result, columns=["user_id", "username", "hidden", "already"])
 
 
 @user_group.command("dialog-status")

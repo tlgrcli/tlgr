@@ -972,6 +972,48 @@ class ClientWrapper:
             # an account that blocked you (or an abandoned account)
             "has_photo": getattr(user, "photo", None) is not None,
             "deleted": getattr(user, "deleted", False),
+            # Whether THIS account has archived their stories (Telegram's own
+            # "Hide Stories" menu item). Read-only here; set it with
+            # set_stories_hidden(). Reported so the state is checkable without
+            # a write — a toggle you can only set is a toggle you cannot audit.
+            "stories_hidden": bool(getattr(user, "stories_hidden", False)),
+        }
+
+    async def set_stories_hidden(
+        self, user_ref: int | str, hidden: bool = True
+    ) -> dict[str, Any]:
+        """Archive (or unarchive) a peer's stories for this account.
+
+        Exactly Telegram's own "Hide Stories" context-menu item: the peer moves
+        out of the main stories bar into the collapsed "Hidden" list. It is a
+        purely local, per-account preference — the other side is not notified
+        and nothing about the chat changes — which is why it is safe to apply
+        in bulk to people an outreach campaign has contacted.
+
+        Reports `already` when the flag was already in the requested state, so
+        a bulk pass over hundreds of peers costs one RPC each on the first run
+        and none on every run after. `stories_hidden` comes from the fresh User
+        the resolve returns, not from the session cache.
+        """
+        from telethon.tl.functions.stories import TogglePeerStoriesHiddenRequest
+
+        entity = await self.client.get_entity(user_ref)
+        if not isinstance(entity, User):
+            raise TlgrError(f"'{user_ref}' is not a user")
+        was = bool(getattr(entity, "stories_hidden", False))
+        if was == hidden:
+            return {
+                "user_id": entity.id,
+                "username": entity.username,
+                "hidden": hidden,
+                "already": True,
+            }
+        await self.client(TogglePeerStoriesHiddenRequest(peer=entity, hidden=hidden))
+        return {
+            "user_id": entity.id,
+            "username": entity.username,
+            "hidden": hidden,
+            "already": False,
         }
 
     # ------------------------------------------------------------------

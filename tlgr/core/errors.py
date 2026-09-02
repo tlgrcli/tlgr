@@ -439,7 +439,10 @@ ERROR_MAP: dict[str, ErrorRule] = {
 #: particular arrives as a bare RPCError.
 _MESSAGE_RULES: tuple[tuple[re.Pattern[str], ErrorRule], ...] = (
     (
-        re.compile(r"^FROZEN_"),
+        # Anywhere in the message, not only at the start: Telethon renders an
+        # unknown RPC error as "RPCError None: FROZEN_METHOD_INVALID (caused
+        # by …)", so anchoring this pattern made it match only the bare code.
+        re.compile(r"\bFROZEN_[A-Z_]+"),
         ErrorRule("ACCOUNT_FROZEN", EXIT_SPAM_FLAGGED, 403, False, "Account is frozen by Telegram"),
     ),
     (re.compile(r"^FLOOD_WAIT_\d+$"), _RATE),
@@ -546,6 +549,18 @@ def classify(exc: BaseException, *, account: str | None = None, request_id: str 
         body.reason = reason
 
     return body
+
+
+#: The codes that mean "this session will never work again without a human".
+#: Distinguished from a transport failure because the supervisor must stop
+#: reconnecting rather than back off — retrying an unregistered auth key is
+#: how v1 span forever while reporting "degraded".
+FATAL_AUTH_CODES = frozenset({"SESSION_ERROR", "AUTH_ERROR", "AUTH_PASSWORD_REQUIRED"})
+
+
+def is_fatal_auth(exc: BaseException) -> bool:
+    """True when *exc* means the account needs a human to log in again."""
+    return rule_for(exc).code in FATAL_AUTH_CODES
 
 
 def http_status_for(exc: BaseException) -> int:

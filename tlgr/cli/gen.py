@@ -11,6 +11,7 @@ ignoring it in 12 (COR-17).
 from __future__ import annotations
 
 import asyncio
+import types
 import typing
 import uuid
 from collections.abc import Callable, Sequence
@@ -150,7 +151,7 @@ def _unwrap(annotation: Any) -> tuple[Any, bool, bool]:
     origin = typing.get_origin(annotation)
     if origin is typing.Annotated:
         return _unwrap(typing.get_args(annotation)[0])
-    if origin is typing.Union or str(origin) == "types.UnionType":
+    if origin is typing.Union or origin is types.UnionType:
         args = list(typing.get_args(annotation))
         if type(None) in args:
             optional = True
@@ -228,7 +229,8 @@ def _fields(request: type[msgspec.Struct]) -> list[_Field]:
             base = args[0] if args else str
         default = spec_field.default
         if default is msgspec.NODEFAULT:
-            default = spec_field.default_factory() if spec_field.default_factory else None
+            factory = spec_field.default_factory
+            default = factory() if factory is not msgspec.NODEFAULT else None
         out.append(
             _Field(
                 name=spec_field.name,
@@ -268,10 +270,15 @@ def _parameter(f: _Field) -> click.Parameter:
     if f.base is bool and not f.cli.get("count"):
         # False default → a plain flag. True or tri-state → a paired flag,
         # because "leave it alone" and "turn it off" are different requests.
+        # A default of True, or a tri-state, needs the negative half: "leave
+        # it alone" and "turn it off" are different requests, and only a
+        # paired flag can say both.
+        paired = f.default is True or (f.optional and f.default is None)
+        negative = f"--no-{f.name.replace('_', '-')}"
         if not flags:
-            paired = f.default is True or (f.optional and f.default is None)
-            name = _flag_name(f.name)
-            flags = [f"{name}/--no-{f.name.replace('_', '-')}"] if paired else [name]
+            flags = [_flag_name(f.name)]
+        if paired and not any("/" in flag for flag in flags):
+            flags = [f"{flags[0]}/{negative}", *flags[1:]]
         return click.Option(
             [*flags, f.name],
             is_flag=True,
@@ -383,9 +390,17 @@ def _build_request(spec: OperationSpec, fields: list[_Field], values: dict[str, 
             value = list(value) if f.container is not tuple else tuple(value)
         kwargs[f.name] = value
     try:
-        return spec.request(**kwargs)
+        request = spec.request(**kwargs)
+        # Constructing a Struct does not run msgspec's constraints (ge, le,
+        # pattern, min_length) — only decoding does. Round-tripping is what
+        # makes `--limit-hint 500` fail in the CLI instead of in the daemon.
+        return msgspec.convert(msgspec.to_builtins(request), type=spec.request)
     except (msgspec.ValidationError, TypeError, ValueError) as exc:
-        raise UsageError(str(exc)) from exc
+        field = None
+        message = str(exc)
+        if " - at `$." in message:
+            field = message.split(" - at `$.", 1)[1].rstrip("`")
+        raise UsageError(message, field=field) from exc
 
 
 def build_command(

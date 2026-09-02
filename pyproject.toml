@@ -87,7 +87,7 @@ ignore = [
 # on 3.10, so typing.Union is the only form that works there.
 "tlgr/models/*" = ["RUF012", "UP007"]
 "tlgr/ops/*" = ["RUF012"]
-"tests/*" = ["B011", "SIM117", "RUF059"]
+"tests/*" = ["B011", "SIM117", "RUF059", "RUF012"]
 "tlgr/cli/__init__.py" = ["SIM102"]
 "tlgr/cli/legacy/*" = ["SIM102", "SIM105", "F401", "F841", "B904"]
 "tlgr/cli/account.py" = ["SIM105", "F841"]

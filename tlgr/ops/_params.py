@@ -55,6 +55,12 @@ _CONSTRAINTS = (
 )
 
 
+#: Keys whose falsy value carries meaning. `required=False` is the whole
+#: point of an optional positional, and dropping it would default it back to
+#: True; `pos=0` survives the filter only because 0 != "" and 0 is not False.
+_ALWAYS = frozenset({"pos", "required"})
+
+
 def _is_empty(value: Any) -> bool:
     """Drop defaults from the stored metadata, without confusing 0 with False."""
     if value is None or value == "":
@@ -68,8 +74,7 @@ def _meta(cli: dict[str, Any], help: str, constraints: dict[str, Any]) -> msgspe
         raise TypeError(f"unknown constraint(s) for a request field: {sorted(unknown)}")
     return msgspec.Meta(
         description=help or None,
-        # `v not in ("", None, False)` would drop `pos=0`, because 0 == False.
-        extra={CLI_KEY: {k: v for k, v in cli.items() if not _is_empty(v)}},
+        extra={CLI_KEY: {k: v for k, v in cli.items() if k in _ALWAYS or not _is_empty(v)}},
         **constraints,
     )
 

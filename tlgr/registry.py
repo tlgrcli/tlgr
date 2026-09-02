@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import inspect
 import re
+import types
 import typing
 from typing import Any
 
@@ -267,7 +268,7 @@ def _unwrap(annotation: Any) -> Any:
     origin = typing.get_origin(annotation)
     if origin is typing.Annotated:
         return _unwrap(typing.get_args(annotation)[0])
-    if origin is typing.Union or str(origin) == "types.UnionType":
+    if origin is typing.Union or origin is types.UnionType:
         args = [a for a in typing.get_args(annotation) if a is not type(None)]
         return _unwrap(args[0]) if args else annotation
     return annotation

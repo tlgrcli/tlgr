@@ -224,6 +224,7 @@ def cli(
 # ---------------------------------------------------------------------------
 
 from tlgr.cli.gen import build_click_tree  # noqa: E402
+from tlgr.cli.legacy import agent as legacy_agent  # noqa: E402
 from tlgr.cli.legacy.account import account_group  # noqa: E402
 from tlgr.cli.legacy.chat import chat_group  # noqa: E402
 from tlgr.cli.legacy.completion import completion_group  # noqa: E402
@@ -408,13 +409,23 @@ def shortcut_upload(ctx: click.Context, chat: str, path: str, caption: str) -> N
 # ---------------------------------------------------------------------------
 
 
+#: Commands that still live in `cli/legacy` *inside* a group the registry now
+#: generates. Each entry is a promise to delete: `agent whoami` needs the
+#: account manager, so it migrates with the account group (PR-2).
+LEGACY_EXTRAS: dict[str, list[click.Command]] = {
+    "agent": [legacy_agent.agent_whoami],
+}
+
+
 def build_cli() -> click.Group:
     """Compose the generated command tree with the v1 groups still hand-written.
 
     A group must be defined in exactly one of the two places. Being defined in
     both would mean a migration half-landed — one path generated, one path
     still hand-written, silently disagreeing — so it fails the import rather
-    than the user's next command (§12.4).
+    than the user's next command (§12.4). The one sanctioned overlap is
+    LEGACY_EXTRAS, which is an explicit, enumerated list rather than an
+    accident.
     """
     import tlgr.ops  # noqa: F401  — importing it is what populates the registry
 
@@ -426,6 +437,9 @@ def build_cli() -> click.Group:
             f"tlgr/cli/legacy: {clash}. Delete the legacy module."
         )
     for name, command in generated.items():
+        for extra in LEGACY_EXTRAS.get(name, []):
+            if isinstance(command, click.Group):
+                command.add_command(extra, extra.name)
         cli.add_command(command, name)
     return cli
 

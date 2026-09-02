@@ -428,6 +428,13 @@ def build_cli() -> click.Group:
     accident.
     """
     import tlgr.ops  # noqa: F401  — importing it is what populates the registry
+    from tlgr.cli.gen import set_dispatcher
+    from tlgr.transport import make_dispatcher
+
+    # Installing the transport here, rather than importing it in `gen.py`, is
+    # what keeps `cli/gen.py` testable with a fake dispatcher and keeps the
+    # daemon out of the CLI's import graph.
+    set_dispatcher(make_dispatcher())
 
     generated = build_click_tree()
     clash = sorted(set(generated) & set(cli.commands))

@@ -53,6 +53,12 @@ GLOBAL_FLAG_NAMES = frozenset(
         "columns",
         "wide",
         "no_header",
+        # Pagination is transport-level, not part of any request struct
+        # (registry lint L5 forbids those field names), so the generated
+        # flags land here and travel to the daemon beside the request.
+        "limit",
+        "cursor",
+        "fetch_all",
     }
 )
 
@@ -76,6 +82,9 @@ class CliState:
     columns: str | None = None
     wide: bool = False
     no_header: bool = False
+    limit: int | None = None
+    cursor: str | None = None
+    fetch_all: bool = False
     warnings: list[str] = field(default_factory=list)
 
     @property
@@ -202,6 +211,9 @@ def state_from(ctx: click.Context, params: dict[str, Any] | None = None) -> CliS
         columns=merged.get("columns"),
         wide=bool(merged.get("wide")),
         no_header=bool(merged.get("no_header")),
+        limit=merged.get("limit"),
+        cursor=merged.get("cursor"),
+        fetch_all=bool(merged.get("fetch_all")),
     )
 
 

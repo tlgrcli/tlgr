@@ -266,3 +266,36 @@ def test_the_daemon_module_alias_still_exists():
 
     assert DaemonServer is Daemon
     assert callable(main)
+
+
+def test_the_cli_starts_a_real_daemon_and_stops_it(tlgr_home: Path):
+    """The whole start path, in a real process: §12.3 items 6, 19 and 20.
+
+    Everything the in-process fixtures cannot cover happens here — the double
+    fork, the umask, the singleton lock across the fork, the permission audit,
+    the log file, and the socket's mode as the OS actually created it.
+    """
+    from tlgr.transport.client import DaemonClient
+
+    client = DaemonClient(tlgr_home, auto_start=True)
+    status = client.status()
+
+    assert status["daemon"]["ready"] is True
+    assert status["daemon"]["protocol"] == 2
+    assert status["daemon"]["pid"] != os.getpid(), "the daemon did not fork"
+
+    # The controls, as the running process left them on disk.
+    assert (tlgr_home / "daemon.sock").stat().st_mode & 0o777 == 0o600
+    assert (tlgr_home / "logs" / "daemon.log").stat().st_mode & 0o777 == 0o600
+    assert (tlgr_home / "daemon.state").exists()
+
+    # A second start finds the running one rather than forking another.
+    second = DaemonClient(tlgr_home, auto_start=True).status()
+    assert second["daemon"]["pid"] == status["daemon"]["pid"]
+
+    client.admin("stop", {"drain_s": 1})
+    for _ in range(100):
+        if not (tlgr_home / "daemon.sock").exists():
+            break
+        time.sleep(0.05)
+    assert not (tlgr_home / "daemon.sock").exists(), "the socket outlived the daemon"

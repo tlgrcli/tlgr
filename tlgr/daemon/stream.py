@@ -103,9 +103,9 @@ async def walk_pages(
     started = time.monotonic()
     count = 0
     async for page in pages:
-        items = getattr(page, "items", None)
-        if items is None and isinstance(page, dict):
-            items = page.get("items")
+        # `_attr` checks the dict case first: `getattr({}, "items")` is the
+        # dict *method*, which iterates into a very confusing TypeError.
+        items = _attr(page, "items")
         for item in items or ():
             count += 1
             await stream.write({"type": "item", "seq": count, "data": to_builtins(item)})

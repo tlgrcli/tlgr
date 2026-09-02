@@ -47,6 +47,7 @@ from tlgr.daemon.idle import ActivityTracker, effective_idle_timeout
 from tlgr.daemon.jobs import JobRunner
 from tlgr.daemon.peercred import current_uid, peer_of, token_matches
 from tlgr.daemon.policy import Policy
+from tlgr.daemon.preauth import PreAuthService
 from tlgr.daemon.sessions import SessionManager
 from tlgr.daemon.stream import NdjsonResponse, pump_events
 from tlgr.daemon.webhook import WebhookPusher
@@ -98,6 +99,11 @@ class Daemon:
         self.webhook_config = load_webhook_config(self.paths.base)
         self.webhook = WebhookPusher(self.webhook_config, self.paths.base)
         self._job_runner = JobRunner()
+        # Login runs in the daemon because the daemon owns the session files
+        # (§6.8); a pending login holds one, so it counts as activity and the
+        # idle monitor cannot stop the daemon out from under a half-finished
+        # sign-in.
+        self.preauth = PreAuthService(self.sessions)
         self.managed_by = managed_by
         self.ready = False
         self.shutting_down = asyncio.Event()
@@ -312,7 +318,7 @@ class Daemon:
             "jobs": self._job_runner.list_jobs(),
             "webhook": self.webhook.snapshot(),
             "activity": {
-                **self.activity.snapshot(),
+                **{**self.activity.snapshot(), "pending_logins": self.preauth.pending_count},
                 "last_request": _stamp(self.activity.last_request_at),
             },
         }
@@ -384,6 +390,7 @@ class Daemon:
             await asyncio.sleep(5)
             if self.idle_timeout <= 0:
                 continue
+            self.activity.pending_logins = self.preauth.pending_count
             if self.activity.may_stop(self.idle_timeout):
                 log.info(
                     "idle for %ds with nothing in flight — stopping",

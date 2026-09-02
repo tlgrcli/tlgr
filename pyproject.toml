@@ -112,6 +112,10 @@ quote-style = "double"
 python_version = "3.10"
 warn_unused_configs = true
 ignore_missing_imports = true
+# Errors are reported for the files named on the command line only. The v1
+# modules the strict set imports are type-checked for their signatures but
+# not held to strict rules they were never written for.
+follow_imports = "silent"
 
 [[tool.mypy.overrides]]
 module = [

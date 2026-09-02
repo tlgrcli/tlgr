@@ -47,6 +47,13 @@ class Defaults:
     delete_after: bool = False
     output: str = "human"
     require_account: bool = False
+    # v2 emits RFC-3339; `legacy_dates` restores v1's str(datetime) spelling
+    # for the one minor release the migration note in §12.4 covers.
+    legacy_dates: bool = False
+    # v1 defaulted to markdown, which silently ate _, * and backticks in
+    # ordinary text (COR-21). v2 defaults to no formatting; --parse md is
+    # explicit, and this key restores the old behaviour.
+    parse_mode: str = "none"
 
 
 @dataclass
@@ -215,6 +222,8 @@ def load_app_config(base: Path | None = None) -> AppConfig:
         delete_after=defaults_raw.get("delete_after", False),
         output=defaults_raw.get("output", "human"),
         require_account=defaults_raw.get("require_account", False),
+        legacy_dates=defaults_raw.get("legacy_dates", False),
+        parse_mode=defaults_raw.get("parse_mode", "none"),
     )
 
     daemon_raw = raw.get("daemon", {})

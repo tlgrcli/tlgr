@@ -204,8 +204,8 @@ async def test_legacy_requests_go_through_the_same_transport(live_daemon, tlgr_h
         await in_thread(
             ipc_request,
             "GET",
-            "/message/list",
-            params={"chat": TRICKY, "account": "nope"},
+            "/chat/list",
+            params={"search": TRICKY, "account": "nope"},
             base=tlgr_home,
         )
     # Classified, not the flat 404/IPC_ERROR v1 returned for every reason a

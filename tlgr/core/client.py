@@ -368,40 +368,6 @@ class ClientWrapper:
         entity = await self.client.get_entity(chat_id)
         return self._entity_to_dict(entity)
 
-    async def send_message(
-        self,
-        chat_id: int | str,
-        text: str,
-        *,
-        reply_to: int | None = None,
-        silent: bool = False,
-        file: str | None = None,
-        caption: str | None = None,
-        typing_s: float = 0.0,
-    ) -> dict[str, Any]:
-        if typing_s > 0:
-            try:
-                async with self.client.action(chat_id, "typing"):
-                    await asyncio.sleep(min(typing_s, 60))
-            except Exception:
-                await asyncio.sleep(min(typing_s, 60))
-        if file:
-            msg = await self.client.send_file(
-                chat_id,
-                file,
-                caption=caption or text,
-                reply_to=reply_to,
-                silent=silent,
-            )
-        else:
-            msg = await self.client.send_message(
-                chat_id,
-                text,
-                reply_to=reply_to,
-                silent=silent,
-            )
-        return {"id": msg.id, "chat_id": chat_id, "date": str(msg.date)}
-
     @staticmethod
     def _reactions_summary(msg: Any) -> dict[str, Any] | None:
         """Compact reaction state, including whether WE already reacted.
@@ -567,56 +533,6 @@ class ClientWrapper:
             d["forward"] = True
         return d
 
-    async def delete_messages(self, chat_id: int | str, msg_ids: list[int]) -> int:
-        result = await self.client.delete_messages(chat_id, msg_ids, revoke=True)
-        return getattr(result, "pts_count", len(msg_ids))
-
-    async def search_messages(
-        self,
-        chat_id: int | str,
-        query: str,
-        *,
-        limit: int = 20,
-        local: bool = False,
-        regex: str | None = None,
-    ) -> list[dict[str, Any]]:
-        import re as re_mod
-
-        result: list[dict[str, Any]] = []
-        if local:
-            compiled = (
-                re_mod.compile(regex or query, re_mod.IGNORECASE) if (regex or query) else None
-            )
-            async for msg in self.client.iter_messages(chat_id, limit=limit * 10):
-                text = msg.text or ""
-                if compiled and not compiled.search(text):
-                    continue
-                result.append(
-                    {
-                        "id": msg.id,
-                        "date": str(msg.date),
-                        "text": text,
-                        "out": bool(getattr(msg, "out", False)),
-                    }
-                )
-                if len(result) >= limit:
-                    break
-        else:
-            async for msg in self.client.iter_messages(chat_id, search=query, limit=limit):
-                result.append(
-                    {
-                        "id": msg.id,
-                        "date": str(msg.date),
-                        "text": msg.text or "",
-                        "out": bool(getattr(msg, "out", False)),
-                    }
-                )
-        return result
-
-    async def pin_message(self, chat_id: int | str, msg_id: int) -> dict[str, Any]:
-        await self.client.pin_message(chat_id, msg_id)
-        return {"pinned": True, "msg_id": msg_id}
-
     async def react_to_message(self, chat_id: int | str, msg_id: int, emoji: str) -> dict[str, Any]:
         from telethon.tl.functions.messages import SendReactionRequest
         from telethon.tl.types import ReactionEmoji
@@ -638,77 +554,6 @@ class ClientWrapper:
                 raise
             return {"reacted": True, "msg_id": msg_id, "emoji": emoji, "already": True}
         return {"reacted": True, "msg_id": msg_id, "emoji": emoji, "already": False}
-
-    async def edit_message(
-        self,
-        chat_id: int | str,
-        msg_id: int,
-        text: str,
-        typing_s: float = 0.0,
-    ) -> dict[str, Any]:
-        if typing_s > 0:
-            try:
-                async with self.client.action(chat_id, "typing"):
-                    await asyncio.sleep(min(typing_s, 60))
-            except Exception:
-                await asyncio.sleep(min(typing_s, 60))
-        msg = await self.client.edit_message(chat_id, msg_id, text)
-        return {
-            "edited": True,
-            "id": msg.id,
-            "chat_id": chat_id,
-            "date": str(msg.edit_date or msg.date),
-        }
-
-    async def forward_messages(
-        self,
-        from_chat: int | str,
-        msg_ids: list[int],
-        to_chat: int | str,
-    ) -> dict[str, Any]:
-        msgs = await self.client.forward_messages(to_chat, msg_ids, from_chat)
-        if not isinstance(msgs, list):
-            msgs = [msgs]
-        return {"forwarded": len(msgs), "ids": [m.id for m in msgs if m is not None]}
-
-    async def set_draft(
-        self,
-        chat_id: int | str,
-        text: str,
-        reply_to: int | None = None,
-    ) -> dict[str, Any]:
-        from telethon.tl.functions.messages import SaveDraftRequest
-        from telethon.tl.types import InputReplyToMessage
-
-        entity = await self.client.get_input_entity(chat_id)
-        kwargs: dict[str, Any] = {"peer": entity, "message": text}
-        if reply_to:
-            kwargs["reply_to"] = InputReplyToMessage(reply_to_msg_id=reply_to)
-        await self.client(SaveDraftRequest(**kwargs))
-        return {"draft": bool(text), "chat_id": chat_id, "text": text}
-
-    async def list_drafts(self) -> list[dict[str, Any]]:
-        drafts: list[dict[str, Any]] = []
-        async for draft in self.client.iter_drafts():
-            if draft.is_empty:
-                continue
-            entity = None
-            try:
-                entity = await draft.get_entity()
-            except Exception:
-                pass
-            info = self._entity_to_dict(entity) if entity is not None else {"id": None, "name": "?"}
-            drafts.append(
-                {
-                    "chat_id": info.get("id"),
-                    "chat_name": info.get("name"),
-                    "chat_username": info.get("username"),
-                    "text": draft.text or "",
-                    "date": str(draft.date) if draft.date else None,
-                    "reply_to": getattr(draft, "reply_to_msg_id", None),
-                }
-            )
-        return drafts
 
     async def list_participants(
         self,
@@ -985,14 +830,6 @@ class ClientWrapper:
     ) -> dict[str, Any]:
         msg = await self.client.send_file(chat_id, file_path, caption=caption)
         return {"id": msg.id, "chat_id": chat_id}
-
-    async def mark_read(self, chat_id: int | str, up_to: int | None = None) -> dict[str, Any]:
-        """Mark messages as read up to the latest (or a specific msg id)."""
-        if up_to:
-            await self.client.send_read_acknowledge(chat_id, max_id=up_to)
-        else:
-            await self.client.send_read_acknowledge(chat_id)
-        return {"read": True, "chat_id": chat_id}
 
     async def send_typing(self, chat_id: int | str, duration: float = 5.0) -> dict[str, Any]:
         """Send typing indicator for *duration* seconds."""

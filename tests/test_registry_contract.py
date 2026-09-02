@@ -7,6 +7,8 @@ COR-17, COR-33, SEC-04 and UX-01 cannot be reintroduced one command at a time.
 
 from __future__ import annotations
 
+import shlex
+
 import msgspec
 import pytest
 from click.testing import CliRunner
@@ -61,7 +63,7 @@ class TestOperationContract:
     @pytest.mark.parametrize("spec", SPECS, ids=IDS)
     def test_example_args_parse(self, spec, runner):
         """`example_args` must actually be an invocation of this command."""
-        result = runner.invoke(cli, [*spec.example_args.split(), "--help"])
+        result = runner.invoke(cli, [*shlex.split(spec.example_args), "--help"])
         assert result.exit_code == 0, result.output
 
     @pytest.mark.parametrize("spec", SPECS, ids=IDS)
@@ -97,19 +99,22 @@ class TestOperationContract:
             assert short and "--limit" in flags
 
     @pytest.mark.parametrize("spec", SPECS, ids=IDS)
-    def test_dry_run_never_reaches_a_mutating_impl(self, spec, runner, monkeypatch):
+    def test_dry_run_never_reaches_a_mutating_impl(self, spec, runner):
+        """COR-17: the short-circuit is in `run_op`, above every implementation.
+
+        Asserted through the CLI rather than by patching the spec (which is
+        frozen, deliberately): no dispatcher is installed in this test
+        process, so an operation that actually tried to run would fail with a
+        daemon error instead of reporting the dry run.
+        """
         if not spec.mutating:
             return
-        called = False
-
-        async def explode(ctx, req):
-            nonlocal called
-            called = True
-            raise AssertionError("the implementation ran under --dry-run")
-
-        monkeypatch.setattr(spec, "impl", explode, raising=False)
-        runner.invoke(cli, [*spec.example_args.split(), "--dry-run", "--yes"])
-        assert not called
+        result = runner.invoke(
+            cli, [*shlex.split(spec.example_args), "--dry-run", "--yes", "--json"]
+        )
+        assert result.exit_code == 0, result.output
+        assert '"dry_run": true' in result.output.replace(" ", " ")
+        assert f'"would": "{spec.id}"' in result.output
 
     @pytest.mark.parametrize("spec", SPECS, ids=IDS)
     def test_policy_blocks_by_canonical_id(self, spec):

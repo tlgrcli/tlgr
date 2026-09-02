@@ -62,7 +62,11 @@ class TestDocument:
         assert set(filtered["ops"]) == {"agent.schema"}
 
     def test_filtering_by_group(self):
-        assert set(build_schema(path=("agent",))["ops"]) == set(REGISTRY)
+        """`schema message` documents the message ops and nothing else."""
+        agent = set(build_schema(path=("agent",))["ops"])
+        assert agent == {op for op in REGISTRY if op.startswith("agent.")}
+        assert set(build_schema()["ops"]) == set(REGISTRY)
+        assert set(build_schema(path=("message", "send"))["ops"]) == {"message.send"}
 
     def test_command_tree_is_optional(self, document):
         assert "command" not in document

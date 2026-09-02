@@ -237,20 +237,15 @@ from tlgr.cli.legacy.completion import completion_group  # noqa: E402
 from tlgr.cli.legacy.config_cmd import config_group  # noqa: E402
 from tlgr.cli.legacy.contact import contact_group  # noqa: E402
 from tlgr.cli.legacy.daemon_cmd import daemon_group  # noqa: E402
-from tlgr.cli.legacy.draft import draft_group  # noqa: E402
 from tlgr.cli.legacy.job import job_group  # noqa: E402
 from tlgr.cli.legacy.media import media_group  # noqa: E402
-from tlgr.cli.legacy.message import message_group  # noqa: E402
 from tlgr.cli.legacy.profile import profile_group  # noqa: E402
 from tlgr.cli.legacy.user import user_group  # noqa: E402
 from tlgr.cli.legacy.watch import watch_command  # noqa: E402
 
 cli.add_command(account_group, "account")
-cli.add_command(message_group, "message")
-cli.add_command(message_group, "msg")
 cli.add_command(chat_group, "chat")
 cli.add_command(contact_group, "contact")
-cli.add_command(draft_group, "draft")
 cli.add_command(profile_group, "profile")
 cli.add_command(media_group, "media")
 cli.add_command(daemon_group, "daemon")
@@ -264,36 +259,6 @@ cli.add_command(watch_command, "watch")
 # ---------------------------------------------------------------------------
 # Top-level action shortcuts (desire paths)
 # ---------------------------------------------------------------------------
-
-
-@cli.command("send")
-@click.argument("chat")
-@click.argument("text", required=False, default="")
-@click.option("--file", "file_path", default=None, help="File to attach.")
-@click.option("--caption", default=None, help="Caption for file.")
-@click.option("--reply-to", type=int, default=None, help="Reply to message ID.")
-@click.option("--silent", is_flag=True, help="Send without notification.")
-@click.pass_context
-def shortcut_send(
-    ctx: click.Context,
-    chat: str,
-    text: str,
-    file_path: str | None,
-    caption: str | None,
-    reply_to: int | None,
-    silent: bool,
-) -> None:
-    """Send a message (shortcut for 'message send')."""
-    ctx.invoke(
-        message_group.commands["send"],
-        chat=chat,
-        text=text,
-        file_path=file_path,
-        caption=caption,
-        reply_to=reply_to,
-        silent=silent,
-        account=ctx.obj.get("account"),
-    )
 
 
 @cli.command("login")

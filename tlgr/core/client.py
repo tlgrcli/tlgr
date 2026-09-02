@@ -284,6 +284,42 @@ class ClientWrapper:
             )
         return {"id": msg.id, "chat_id": chat_id, "date": str(msg.date)}
 
+    @staticmethod
+    def _reactions_summary(msg: Any) -> dict[str, Any] | None:
+        """Compact reaction state, including whether WE already reacted.
+
+        Returns None when the message carries no reactions, so the field only
+        appears where it means something. Shape:
+
+            {"counts": {"❤": 2, "👍": 1}, "mine": ["❤"]}
+
+        `mine` is the part that matters to a caller deciding whether to react:
+        Telegram answers a duplicate reaction with MESSAGE_NOT_MODIFIED, which
+        surfaces as a generic error, so without this field the only way to learn
+        that a reaction is already there is to send one and read the failure.
+        It is derived from ReactionCount.chosen_order, which Telegram sets only
+        on the reactions this account made.
+        """
+        r = getattr(msg, "reactions", None)
+        if not r:
+            return None
+        counts: dict[str, int] = {}
+        mine: list[str] = []
+        for rc in getattr(r, "results", None) or []:
+            reaction = getattr(rc, "reaction", None)
+            # Emoji reactions carry .emoticon; custom (premium) ones carry only
+            # a document id, so name them rather than dropping them silently.
+            emoji = getattr(reaction, "emoticon", None)
+            if emoji is None:
+                doc = getattr(reaction, "document_id", None)
+                emoji = f"custom:{doc}" if doc is not None else "?"
+            counts[emoji] = counts.get(emoji, 0) + int(getattr(rc, "count", 0) or 0)
+            if getattr(rc, "chosen_order", None) is not None:
+                mine.append(emoji)
+        if not counts:
+            return None
+        return {"counts": counts, "mine": mine}
+
     async def get_messages(
         self,
         chat_id: int | str,
@@ -320,8 +356,14 @@ class ClientWrapper:
                     "type": type(msg.media).__name__,
                     "has_file": hasattr(msg.media, "document") or hasattr(msg.media, "photo"),
                 }
-            if include_reactions and hasattr(msg, "reactions") and msg.reactions:
-                d["reactions"] = str(msg.reactions)
+            # Always present when the message has reactions: a caller cannot
+            # opt into a field it does not know to ask for, and "have we already
+            # reacted?" is not an optional detail for anything that reacts.
+            summary = self._reactions_summary(msg)
+            if summary is not None:
+                d["reactions"] = summary
+            if include_reactions and getattr(msg, "reactions", None):
+                d["reactions_raw"] = str(msg.reactions)
             if include_entities and msg.entities:
                 d["entities"] = [
                     {"type": type(e).__name__, "offset": e.offset, "length": e.length}
@@ -380,6 +422,9 @@ class ClientWrapper:
             d["service"] = type(action).__name__
         if getattr(msg, "media", None) is not None:
             d["media_type"] = type(msg.media).__name__
+        summary = self._reactions_summary(msg)
+        if summary is not None:
+            d["reactions"] = summary
         if msg.sender:
             d["sender"] = {
                 "id": msg.sender_id,
@@ -395,8 +440,8 @@ class ClientWrapper:
                 {"type": type(e).__name__, "offset": e.offset, "length": e.length}
                 for e in msg.entities
             ]
-        if hasattr(msg, "reactions") and msg.reactions:
-            d["reactions"] = str(msg.reactions)
+        if getattr(msg, "reactions", None):
+            d["reactions_raw"] = str(msg.reactions)
         if msg.reply_to:
             d["reply_to_msg_id"] = msg.reply_to.reply_to_msg_id
         if msg.forward:
@@ -443,12 +488,21 @@ class ClientWrapper:
         from telethon.tl.functions.messages import SendReactionRequest
         from telethon.tl.types import ReactionEmoji
 
-        await self.client(SendReactionRequest(
-            peer=chat_id,
-            msg_id=msg_id,
-            reaction=[ReactionEmoji(emoticon=emoji)],
-        ))
-        return {"reacted": True, "msg_id": msg_id, "emoji": emoji}
+        try:
+            await self.client(SendReactionRequest(
+                peer=chat_id,
+                msg_id=msg_id,
+                reaction=[ReactionEmoji(emoticon=emoji)],
+            ))
+        except Exception as e:
+            # Telegram answers a reaction that is already there with
+            # MESSAGE_NOT_MODIFIED. That is the desired end state, not a
+            # failure — reporting it as a generic error made the only way to
+            # ask "did we already react?" look like a broken send.
+            if "not modified" not in str(e).lower():
+                raise
+            return {"reacted": True, "msg_id": msg_id, "emoji": emoji, "already": True}
+        return {"reacted": True, "msg_id": msg_id, "emoji": emoji, "already": False}
 
     async def edit_message(
         self,

@@ -129,6 +129,21 @@ module = [
     "tlgr.core.errors",
     "tlgr.core.timefmt",
     "tlgr.core.pagination",
+    "tlgr.core.config",
+    "tlgr.core.paths",
+    "tlgr.core.peers",
+    "tlgr.core.logging",
+    "tlgr.core.identity",
+    "tlgr.transport.*",
+    "tlgr.daemon.session",
+    "tlgr.daemon.sessions",
+    "tlgr.daemon.events",
+    "tlgr.daemon.ratelimit",
+    "tlgr.daemon.policy",
+    "tlgr.daemon.idle",
+    "tlgr.daemon.singleton",
+    "tlgr.daemon.peercred",
+    "tlgr.version",
 ]
 strict = true
 

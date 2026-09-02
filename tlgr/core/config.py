@@ -17,7 +17,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import msgspec
 
@@ -30,7 +30,7 @@ else:  # pragma: no cover - 3.10 only
     try:
         import tomllib
     except ModuleNotFoundError:
-        import tomli as tomllib  # type: ignore[no-redef]
+        import tomli as tomllib
 
 try:
     import tomli_w
@@ -249,7 +249,8 @@ def _load_toml(path: Path) -> dict[str, Any]:
         return {}
     try:
         with open(path, "rb") as handle:
-            return tomllib.load(handle)
+            loaded: dict[str, Any] = tomllib.load(handle)
+        return loaded
     except tomllib.TOMLDecodeError as exc:
         raise ConfigurationError(f"{path} is not valid TOML: {exc}") from exc
 
@@ -260,9 +261,13 @@ def _save_toml(path: Path, data: dict[str, Any]) -> None:
     write_private(path, tomli_w.dumps(data).encode("utf-8"))
 
 
-def _decode(raw: dict[str, Any], type_: type[Any], what: str) -> Any:
+_T = TypeVar("_T")
+
+
+def _decode(raw: dict[str, Any], type_: type[_T], what: str) -> _T:
     try:
-        return msgspec.convert(raw, type=type_, strict=False)
+        decoded: _T = msgspec.convert(raw, type=type_, strict=False)
+        return decoded
     except msgspec.ValidationError as exc:
         raise ConfigurationError(f"{what}: {exc}") from exc
 
@@ -276,7 +281,7 @@ def load_app_config(base: Path | None = None) -> AppConfig:
     """
     paths = TlgrPaths(base)
     raw = _load_toml(paths.config)
-    config: AppConfig = _decode(raw, AppConfig, f"{paths.config}")
+    config = _decode(raw, AppConfig, f"{paths.config}")
     if not config.rate:
         config.rate = dict(_DEFAULT_RATES)
     else:
@@ -311,14 +316,13 @@ def load_webhook_config(base: Path | None = None) -> WebhookConfig:
     extra = {k: v for k, v in filters_raw.items() if k != "raw"}
     raw = dict(raw)
     raw["filters"] = {"chats": chats, "raw": extra}
-    config: WebhookConfig = _decode(raw, WebhookConfig, f"{paths.webhook}")
-    return config
+    return _decode(raw, WebhookConfig, f"{paths.webhook}")
 
 
 def save_webhook_config(config: WebhookConfig, base: Path | None = None) -> None:
     paths = TlgrPaths(base)
-    body = msgspec.to_builtins(config)
-    filters = body.pop("filters", {}) or {}
+    body: dict[str, Any] = msgspec.to_builtins(config)
+    filters: dict[str, Any] = body.pop("filters", {}) or {}
     merged: dict[str, Any] = {k: v for k, v in filters.items() if k != "raw"}
     merged.update(filters.get("raw", {}) or {})
     body["filters"] = merged

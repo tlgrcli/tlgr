@@ -183,10 +183,12 @@ class PeerResolver:
                 return await self._by_id(found[0], allow_network=allow_network)
 
         if kind == "username":
-            return await self._by_username(parsed.value, allow_network=allow_network, want=want)
+            return await self._by_username(
+                str(parsed.value), allow_network=allow_network, want=want
+            )
 
         if kind == "phone":
-            return await self._by_phone(parsed.value, allow_network=allow_network)
+            return await self._by_phone(str(parsed.value), allow_network=allow_network)
 
         if kind == "id":
             return await self._by_id(int(parsed.value), allow_network=allow_network)

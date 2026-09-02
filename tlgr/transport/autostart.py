@@ -36,6 +36,7 @@ import socket
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -162,11 +163,14 @@ def spawn_daemon(base: Path, *, python: str | None = None) -> subprocess.Popen[b
     )
 
 
+#: `() -> status dict | None`. A probe returns None while nothing answers.
+StatusProbe = Callable[[], "dict[str, Any] | None"]
+
+
 def wait_ready(
-    probe: Any,
+    probe: StatusProbe,
     *,
     timeout: float,
-    deadline_message: str = "",
 ) -> dict[str, Any] | None:
     """Poll *probe* (a zero-argument callable returning the status dict or None).
 
@@ -223,7 +227,7 @@ class SpawnLock:
 
 def ensure_running(
     paths: TlgrPaths,
-    status_probe: Any,
+    status_probe: StatusProbe,
     *,
     auto_start: bool,
     start_timeout: float,

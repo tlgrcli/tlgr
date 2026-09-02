@@ -614,7 +614,8 @@ def _decode(raw: bytes, status_code: int) -> Any:
 
     body: dict[str, Any] = {}
     if isinstance(decoded, dict):
-        body = decoded.get("error") if isinstance(decoded.get("error"), dict) else decoded
+        inner = decoded.get("error")
+        body = inner if isinstance(inner, dict) else decoded
     raise error_from_body(body, status_code=status_code)
 
 

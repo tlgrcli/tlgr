@@ -22,6 +22,86 @@ from tlgr.core.errors import (
 DEFAULT_FLOOD_WAIT_MAX = 120
 
 
+def media_details(media: Any) -> dict[str, Any]:
+    """What a media message actually IS, from the attributes it already carries.
+
+    `media_type` says only `MessageMediaDocument`, which is the same label for
+    a thumbs-up sticker, a voice note, a video note, a GIF and a PDF — and a
+    caption-less one of those is the whole message. For anything judging an
+    empty `text` ("did they react, or are they talking to us?") those are
+    opposite facts wearing one shape, the same gap `media_type` itself was
+    added to close for text-vs-media. The document's own attributes answer it;
+    nothing here downloads a byte.
+
+    Returns `{"kind": ...}` plus whatever the attributes make free: a
+    sticker's `alt` emoji (which IS its content), an audio/video `duration`,
+    a file's `file_name`, and the document `mime_type`.
+    """
+    out: dict[str, Any] = {}
+    if media is None:
+        return out
+    name = type(media).__name__
+    if hasattr(media, "photo") and getattr(media, "photo", None) is not None:
+        out["kind"] = "photo"
+        return out
+    doc = getattr(media, "document", None)
+    if doc is None:
+        # webpage previews, geo, contacts, polls… — the class name is the
+        # only honest answer, minus the MessageMedia prefix.
+        out["kind"] = name[len("MessageMedia") :].lower() if name.startswith("MessageMedia") else name
+        return out
+
+    mime = getattr(doc, "mime_type", None)
+    if mime:
+        out["mime_type"] = mime
+
+    # Collect first, decide after: a GIF carries Video AND Animated, and a
+    # video sticker carries Video AND Sticker, so "first attribute wins" gets
+    # both of them wrong.
+    sticker = voice = audio = video = video_note = animated = False
+    for attr in getattr(doc, "attributes", None) or []:
+        a = type(attr).__name__
+        if a == "DocumentAttributeSticker":
+            sticker = True
+            alt = getattr(attr, "alt", None)
+            if alt:
+                out["alt"] = alt
+        elif a == "DocumentAttributeAudio":
+            voice = bool(getattr(attr, "voice", False))
+            audio = not voice
+            dur = getattr(attr, "duration", None)
+            if dur is not None:
+                out["duration"] = dur
+        elif a == "DocumentAttributeVideo":
+            video_note = bool(getattr(attr, "round_message", False))
+            video = not video_note
+            dur = getattr(attr, "duration", None)
+            if dur is not None:
+                out["duration"] = dur
+        elif a == "DocumentAttributeAnimated":
+            animated = True
+        elif a == "DocumentAttributeFilename":
+            fn = getattr(attr, "file_name", None)
+            if fn:
+                out["file_name"] = fn
+
+    if sticker:
+        out["kind"] = "sticker"
+    elif voice:
+        out["kind"] = "voice"
+    elif video_note:
+        out["kind"] = "video_note"
+    elif animated or mime == "image/gif":
+        out["kind"] = "gif"
+    elif video:
+        out["kind"] = "video"
+    elif audio:
+        out["kind"] = "audio"
+    else:
+        out["kind"] = "file"
+    return out
+
+
 def create_client(
     session_path: Path,
     api_id: int,
@@ -205,6 +285,9 @@ class ClientWrapper:
                 extras["last_message"]["service"] = type(action).__name__
             if getattr(msg, "media", None) is not None:
                 extras["last_message"]["media_type"] = type(msg.media).__name__
+                extras["last_message"].update(
+                    {"media_" + k: v for k, v in media_details(msg.media).items()}
+                )
         return extras
 
     def _entity_to_dict(self, entity: Any, dialog: Any = None) -> dict[str, Any]:
@@ -345,6 +428,7 @@ class ClientWrapper:
                 d["service"] = type(action).__name__
             if getattr(msg, "media", None) is not None:
                 d["media_type"] = type(msg.media).__name__
+                d.update({"media_" + k: v for k, v in media_details(msg.media).items()})
             if include_sender and msg.sender:
                 d["sender"] = {
                     "id": msg.sender_id,
@@ -355,6 +439,7 @@ class ClientWrapper:
                 d["media"] = {
                     "type": type(msg.media).__name__,
                     "has_file": hasattr(msg.media, "document") or hasattr(msg.media, "photo"),
+                    **media_details(msg.media),
                 }
             # Always present when the message has reactions: a caller cannot
             # opt into a field it does not know to ask for, and "have we already
@@ -422,6 +507,7 @@ class ClientWrapper:
             d["service"] = type(action).__name__
         if getattr(msg, "media", None) is not None:
             d["media_type"] = type(msg.media).__name__
+            d.update({"media_" + k: v for k, v in media_details(msg.media).items()})
         summary = self._reactions_summary(msg)
         if summary is not None:
             d["reactions"] = summary
@@ -434,6 +520,7 @@ class ClientWrapper:
         if msg.media:
             d["media"] = {
                 "type": type(msg.media).__name__,
+                **media_details(msg.media),
             }
         if msg.entities:
             d["entities"] = [

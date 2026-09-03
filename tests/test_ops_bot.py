@@ -1592,6 +1592,25 @@ class TestBotReportAndAds:
         assert bots.called("ViewSponsoredMessageRequest")[0].random_id == b"ad1"
         assert bots.called("ClickSponsoredMessageRequest")
 
+    async def test_sponsored_chats_in_search_share_the_ad_shape(
+        self, live_daemon, client, in_thread, bots
+    ):
+        bots.sponsored_peers = [GROUP]
+        page = await result(client, in_thread, "bot.ad.list", {"search": "team"})
+        assert page["items"][0]["title"] == "Team"
+        assert page["items"][0]["sponsor_info"] == "Example Ltd"
+        assert bots.called("GetSponsoredPeersRequest")[0].q == "team"
+
+    async def test_an_empty_sponsored_search_is_an_empty_page(
+        self, live_daemon, client, in_thread, bots
+    ):
+        page = await result(client, in_thread, "bot.ad.list", {"search": "nothing"})
+        assert page.get("items", []) == []
+
+    async def test_listing_ads_needs_a_bot_or_a_search(self, live_daemon, client, in_thread, bots):
+        error = await fails(client, in_thread, "bot.ad.list", {})
+        assert error.exit_code == EXIT_USAGE
+
     async def test_reporting_an_ad_walks_the_same_tree(self, live_daemon, client, in_thread, bots):
         outcome = await result(client, in_thread, "bot.ad.report", {"random_id": "str:ad1"})
         assert outcome["result"] == "reported"

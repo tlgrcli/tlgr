@@ -804,6 +804,7 @@ class World:
     bot_apps: dict[str, Any] = field(default_factory=dict)
     download_allowed: bool = True
     prepared_peer_types: list[Any] = field(default_factory=list)
+    sponsored_peers: list[int] = field(default_factory=list)
     payment_form: Any = None
     saved_credentials: bool = True
     saved_order_info: Any = None
@@ -6297,6 +6298,24 @@ class FakeTelegramClient:
 
     def _raw_SetInlineGameScoreRequest(self, request: Any) -> Any:
         return True
+
+    def _raw_GetSponsoredPeersRequest(self, request: Any) -> Any:
+        if not self.world.sponsored_peers:
+            return types.contacts.SponsoredPeersEmpty()
+        return types.contacts.SponsoredPeers(
+            peers=[
+                types.SponsoredPeer(
+                    peer=types.PeerChannel(channel_id=chat_id),
+                    random_id=f"sp{chat_id}".encode(),
+                    sponsor_info="Example Ltd",
+                )
+                for chat_id in self.world.sponsored_peers
+            ],
+            chats=[
+                self.world.chats[c] for c in self.world.sponsored_peers if c in self.world.chats
+            ],
+            users=[],
+        )
 
     def _raw_ViewSponsoredMessageRequest(self, request: Any) -> Any:
         return True

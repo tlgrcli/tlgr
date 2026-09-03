@@ -2682,6 +2682,15 @@ async def notify_set(ctx: OpContext, req: NotifySetReq) -> NotifyView:
 
     kwargs: dict[str, Any] = {}
     if not req.reset:
+        # Read-modify-write: the request replaces the whole exception, so the
+        # fields nobody asked about have to be sent back as they were.
+        current = await client(fn.GetNotifySettingsRequest(peer=notify_peer))
+        for name in ("show_previews", "silent", "stories_muted", "stories_hide_sender"):
+            value = getattr(current, name, None)
+            if value is not None:
+                kwargs[name] = value
+        if getattr(current, "mute_until", None) is not None:
+            kwargs["mute_until"] = current.mute_until
         _tri(kwargs, "show_previews", req.preview)
         _tri(kwargs, "silent", req.silent)
         _tri(kwargs, "stories_muted", req.stories_mute)
@@ -2693,7 +2702,7 @@ async def notify_set(ctx: OpContext, req: NotifySetReq) -> NotifyView:
         await client(
             pfn.ToggleChatStarGiftNotificationsRequest(peer=peer, enabled=req.gifts == "on")
         )
-    if kwargs or req.reset:
+    if req.gifts is None or kwargs or req.reset:
         await client(
             fn.UpdateNotifySettingsRequest(
                 peer=notify_peer, settings=types.InputPeerNotifySettings(**kwargs)
@@ -2704,8 +2713,11 @@ async def notify_set(ctx: OpContext, req: NotifySetReq) -> NotifyView:
 
 
 def _tri(kwargs: dict[str, Any], name: str, value: str | None) -> None:
-    """`on`/`off` set the field; `default` and absence leave it unset."""
-    if value in (None, "default"):
+    """`on`/`off` set the field; `default` drops it back to inheriting."""
+    if value is None:
+        return
+    if value == "default":
+        kwargs.pop(name, None)
         return
     kwargs[name] = value == "on"
 
@@ -3403,13 +3415,15 @@ async def promo_list(ctx: OpContext, req: PromoListReq) -> Promo:
     from telethon.tl.functions import help as fn
 
     client = _client(ctx)
-    config = _json_object(getattr(await client(fn.GetAppConfigRequest(hash=0)), "config", None))
-    promo = Promo(
-        pending_suggestions=[str(v) for v in (config.get("pending_suggestions") or [])],
-        dismissed_suggestions=[str(v) for v in (config.get("dismissed_suggestions") or [])],
-    )
-
+    # `help.promoData` carries the suggestion lists *and* the promoted dialog,
+    # so one call answers both halves of this command.
     data = await client(fn.GetPromoDataRequest())
+    promo = Promo(
+        pending_suggestions=[str(v) for v in (getattr(data, "pending_suggestions", None) or [])],
+        dismissed_suggestions=[
+            str(v) for v in (getattr(data, "dismissed_suggestions", None) or [])
+        ],
+    )
     peer = getattr(data, "peer", None)
     if peer is not None:
         promo.promo_peer = peer_id_of(peer)

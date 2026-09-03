@@ -819,7 +819,7 @@ async def delete(ctx: OpContext, req: DeleteReq) -> FolderDeleted:
     if shared:
         await _client(ctx)(cfn.LeaveChatlistRequest(chatlist=_chatlist(filter_id), peers=leaving))
     else:
-        if leaving:
+        if choice_ not in ("", "none"):
             raise UsageError(
                 "--leave-chats only applies to a shared folder you joined; a "
                 "folder you made is just a filter, so deleting it leaves no chats",
@@ -973,6 +973,7 @@ SPEC_SUGGESTED_LIST = OperationSpec(
     response=Page[SuggestedFolder],
     impl=suggested_list,
     summary="List the chat folders Telegram suggests, and add one",
+    paginated=PageKind.LOCAL,
     mutating=True,
     idempotent=True,
     columns=("title", "description"),

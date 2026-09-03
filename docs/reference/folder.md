@@ -374,11 +374,13 @@ List the chat folders Telegram suggests, and add one.
 tlgr folder suggested list [OPTIONS]
 ```
 
-**mutating · idempotent (reports `already`) · returns `Page[SuggestedFolder]`**
+**mutating · paginated (`LOCAL` cursor) · idempotent (reports `already`) · returns `Page[SuggestedFolder]`**
 
 | Flag | Type | Default | Meaning |
 |---|---|---|---|
 | `--add` | text |  | Add the suggested folder with this title. |
+
+Pagination is transport-level: `--limit/-n`, `--cursor TOKEN`, `--all` (walked inside the daemon, paced by the account's own rate limiter).
 
 ```console
 $ tlgr folder suggested list --json

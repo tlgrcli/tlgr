@@ -23,11 +23,6 @@ pr = 2
 reason = "auth, account, session, security and password land together in PR-2."
 
 [[domain]]
-name = "dialogs_chats"
-pr = 3
-reason = "chat, folder and the dialog list land in PR-3."
-
-[[domain]]
 name = "updates_sync_network"
 pr = 4
 reason = "events, watch, daemon, sync, proxy and export land in PR-4."
@@ -77,6 +72,192 @@ reason = "profile, privacy, notify, settings, business, premium, gift and stars 
 # matter: each is a decision, not a backlog entry.
 # ---------------------------------------------------------------------------
 
+# The dialogs_chats ids PR-3 does not own. Each names the group that does.
+[[id]]
+id = "dialogs.actionbar-add-contact"
+pr = 5
+reason = "The bar's Add-contact button is `contact add` (PR-5)."
+
+[[id]]
+id = "dialogs.actionbar-share-phone"
+pr = 5
+reason = "Sharing my number is `contact share-phone` (PR-5)."
+
+[[id]]
+id = "dialogs.block-stories"
+pr = 5
+reason = "The story blocklist is a privacy surface on the user group (PR-5)."
+
+[[id]]
+id = "dialogs.block-user"
+pr = 5
+reason = "Blocking is `user block` (PR-5); `chat report --block` calls it."
+
+[[id]]
+id = "dialogs.blocked-set-bulk"
+pr = 5
+reason = "Replacing the whole blocklist is `user block --from-file` (PR-5)."
+
+[[id]]
+id = "dialogs.bot-stop-restart"
+pr = 10
+reason = "Stopping and restarting a bot is the bot group (PR-10)."
+
+[[id]]
+id = "dialogs.business-bot-bar"
+pr = 12
+reason = "The connected-business-bot bar is a business setting (PR-12)."
+
+[[id]]
+id = "dialogs.business-link-create"
+pr = 12
+reason = "Business chat links are a business setting (PR-12)."
+
+[[id]]
+id = "dialogs.business-link-delete"
+pr = 12
+reason = "Business chat links are a business setting (PR-12)."
+
+[[id]]
+id = "dialogs.business-link-edit"
+pr = 12
+reason = "Business chat links are a business setting (PR-12)."
+
+[[id]]
+id = "dialogs.business-link-list"
+pr = 12
+reason = "Business chat links are a business setting (PR-12)."
+
+[[id]]
+id = "dialogs.business-link-resolve"
+pr = 12
+reason = "Resolving a t.me/m/<slug> link is a business surface (PR-12)."
+
+[[id]]
+id = "dialogs.channel-autotranslation"
+pr = 7
+reason = "Channel-wide auto-translation is a channel admin setting (PR-7)."
+
+[[id]]
+id = "dialogs.community-collapse"
+pr = 7
+reason = "Community grouping is a channel/community surface (PR-7)."
+
+[[id]]
+id = "dialogs.community-join-requests"
+pr = 7
+reason = "Community join requests are moderation (PR-7)."
+
+[[id]]
+id = "dialogs.contact-signup-notify"
+pr = 12
+reason = "The contact-joined notification is a notify setting (PR-12)."
+
+[[id]]
+id = "dialogs.dialog-exists"
+pr = 5
+reason = "`user dialog-status` answers this and migrates with the user group (PR-5)."
+
+[[id]]
+id = "dialogs.forum-tabs-mode"
+pr = 7
+reason = "Forum tabs are a forum admin setting (PR-7)."
+
+[[id]]
+id = "dialogs.frozen-account"
+pr = 12
+reason = "The frozen-account state is reported by the account surface (PR-12)."
+
+[[id]]
+id = "dialogs.hide-stories-peer"
+pr = 8
+reason = "Hiding a peer's stories is the story strip (PR-8)."
+
+[[id]]
+id = "dialogs.new-chats-privacy"
+pr = 12
+reason = "Who may start a chat with me is a privacy key (PR-12)."
+
+[[id]]
+id = "dialogs.notify-community"
+pr = 12
+reason = "Community notification settings are the notify surface (PR-12)."
+
+[[id]]
+id = "dialogs.notify-exceptions"
+pr = 12
+reason = "The exceptions *list* is `notify exceptions` (PR-12); one chat's exception is `chat notify`."
+
+[[id]]
+id = "dialogs.notify-scope-defaults"
+pr = 12
+reason = "Scope-wide defaults are `notify set` (PR-12)."
+
+[[id]]
+id = "dialogs.personal-channel-preview"
+pr = 5
+reason = "A profile's personal-channel card is the user group (PR-5)."
+
+[[id]]
+id = "dialogs.presence-watch"
+pr = 4
+reason = "Online/last-seen is an update stream (PR-4)."
+
+[[id]]
+id = "dialogs.reactions-notify"
+pr = 12
+reason = "Reaction notification settings are the notify surface (PR-12)."
+
+[[id]]
+id = "dialogs.recent-searches"
+pr = 5
+reason = "The recent-search list is search state on the contact group (PR-5)."
+
+[[id]]
+id = "dialogs.recommended-channels"
+pr = 5
+reason = "Similar-channel suggestions are a discovery surface (PR-5)."
+
+[[id]]
+id = "dialogs.resolve-peer"
+pr = 5
+reason = "Turning a @username, a phone number or a t.me link into a chat is `resolve` (PR-5); the chat group consumes the resolver rather than exposing it."
+
+[[id]]
+id = "dialogs.saved-tags"
+pr = 9
+reason = "Saved-Messages reaction tags are reactions (PR-9)."
+
+[[id]]
+id = "dialogs.sponsored-search-peers"
+pr = 10
+reason = "Sponsored peers in search are the ads surface (PR-10)."
+
+[[id]]
+id = "dialogs.top-peers-toggle"
+pr = 5
+reason = "Frequent-contact suggestions are the contact group (PR-5)."
+
+[[id]]
+id = "dialogs.typing-watch"
+pr = 4
+reason = "Watching who is typing is an update stream (PR-4); sending one is `chat typing`."
+
+[[id]]
+id = "dialogs.unblock-user"
+pr = 5
+reason = "Unblocking is `user unblock` (PR-5)."
+
+[[id]]
+id = "dialogs.wallpaper-gallery"
+pr = 6
+reason = "The global wallpaper gallery is the media group (PR-6); the per-chat one is `chat wallpaper`."
+
+[[id]]
+id = "dialogs.watch-dialog-events"
+pr = 4
+reason = "Live dialog events are the event bus (PR-4)."
+
 [[id]]
 id = "messages-core.search-global"
 pr = 3
@@ -113,31 +294,6 @@ pr = 3
 reason = "Recently-sent media is a global search index (PR-3)."
 
 [[id]]
-id = "messages-core.chat-mark-unread"
-pr = 3
-reason = "`chat unread` already exists in v1 and migrates with the chat group (PR-3)."
-
-[[id]]
-id = "messages-core.history-clear"
-pr = 3
-reason = "Clearing a history is a chat operation, not a message one (PR-3)."
-
-[[id]]
-id = "messages-core.history-clear-date-range"
-pr = 3
-reason = "Same surface as history-clear (PR-3)."
-
-[[id]]
-id = "messages-core.history-clear-topic"
-pr = 3
-reason = "Clearing a topic's history belongs to `chat topic` (PR-7 via PR-3's chat group)."
-
-[[id]]
-id = "messages-core.history-delete-conversation"
-pr = 3
-reason = "Deleting a conversation is `chat delete` (PR-3)."
-
-[[id]]
 id = "messages-core.delete-call-history"
 pr = 3
 reason = "The call log is a chat-level history (PR-3)."
@@ -153,24 +309,9 @@ pr = 3
 reason = "The default auto-delete timer is an account-wide chat setting (PR-3)."
 
 [[id]]
-id = "messages-core.translate-chat-toggle"
-pr = 3
-reason = "The per-chat translation bar is a chat setting; per-message translation is `message translate` (PR-3)."
-
-[[id]]
 id = "messages-core.translate-channel-autotranslation"
 pr = 3
 reason = "Channel auto-translation is a channel setting (PR-3)."
-
-[[id]]
-id = "messages-core.saved-dialog-delete"
-pr = 3
-reason = "Deleting a saved dialog is a dialog operation (PR-3)."
-
-[[id]]
-id = "messages-core.typing-action"
-pr = 3
-reason = "`chat typing` exists in v1 and migrates with the chat group; `message send --typing` uses it (PR-3)."
 
 [[id]]
 id = "messages-core.message-watch-events"

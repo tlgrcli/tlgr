@@ -621,4 +621,6 @@ class ImportState(Model):
     started: bool = False
     messages: int = 0
     media: int = 0
-    state: str = "checked"
+    #: `checked` | `started`. Defaulted to the empty string so the field a
+    #: caller branches on is always present in the JSON.
+    state: str = ""

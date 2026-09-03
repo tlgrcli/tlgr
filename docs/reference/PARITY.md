@@ -85,30 +85,30 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 
 | Catalog id | Priority | Feature | Closed by |
 |---|---|---|---|
-| `dialogs.block-user` | P0 | Block user | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.resolve-peer` | P0 | Resolve @username / phone / t.me link to a chat | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.unblock-user` | P0 | Unblock user | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.block-user` | P0 | Block user | waived until PR-5: Blocking is `user block` (PR-5); `chat report --block` calls it. |
+| `dialogs.resolve-peer` | P0 | Resolve @username / phone / t.me link to a chat | waived until PR-5: Turning a @username, a phone number or a t.me link into a chat is `resolve` (PR-5); the chat group consumes the resolver rather than exposing it. |
+| `dialogs.unblock-user` | P0 | Unblock user | waived until PR-5: Unblocking is `user unblock` (PR-5). |
 | `messages-core.search-global` | P0 | Global message search across all chats | waived until PR-3: Global search spans the dialog list, so it is the `search` group's surface in PR-3; `message search` is scoped to one chat by design. |
-| `dialogs.actionbar-add-contact` | P1 | Add to contacts from the action bar | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.block-stories` | P1 | Hide my stories from a user (story blocklist) | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.dialog-exists` | P1 | Does a dialog with this peer exist | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.notify-exceptions` | P1 | List notification exceptions | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.actionbar-add-contact` | P1 | Add to contacts from the action bar | waived until PR-5: The bar's Add-contact button is `contact add` (PR-5). |
+| `dialogs.block-stories` | P1 | Hide my stories from a user (story blocklist) | waived until PR-5: The story blocklist is a privacy surface on the user group (PR-5). |
+| `dialogs.dialog-exists` | P1 | Does a dialog with this peer exist | waived until PR-5: `user dialog-status` answers this and migrates with the user group (PR-5). |
+| `dialogs.notify-exceptions` | P1 | List notification exceptions | waived until PR-12: The exceptions *list* is `notify exceptions` (PR-12); one chat's exception is `chat notify`. |
 | `messages-core.checklist-append-tasks` | P1 | Add tasks to an existing checklist | waived until PR-9: Checklists are the `todo` group (PR-9). |
 | `messages-core.delete-call-history` | P1 | Delete call-log messages | waived until PR-3: The call log is a chat-level history (PR-3). |
 | `messages-core.message-watch-events` | P1 | Live stream of new / edited / deleted messages and read receipts | waived until PR-4: The live message stream is the event bus surface (PR-4). |
 | `messages-core.search-global-media-tabs` | P1 | Global media / links / files / music / voice tabs | waived until PR-3: The global media/links/files tabs are the global search surface (PR-3). |
 | `messages-core.search-hashtag-public-posts` | P1 | Global hashtag search in public channel posts | waived until PR-3: Global hashtag search is global search (PR-3); the in-chat form is `message search --hashtag`. |
-| `dialogs.actionbar-share-phone` | P2 | Share my phone number | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.bot-stop-restart` | P2 | Stop and block bot / Restart bot | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.business-bot-bar` | P2 | Manage connected business bot in a chat | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.business-link-create` | P2 | Create a business 'link to chat' | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.business-link-list` | P2 | List business chat links (with view counters) | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.frozen-account` | P2 | Frozen account state | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.hide-stories-peer` | P2 | Hide a peer's stories from the strip | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.notify-scope-defaults` | P2 | Default notification settings per chat type | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.presence-watch` | P2 | Peer online status / last seen | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.typing-watch` | P2 | See who is typing | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.watch-dialog-events` | P2 | Live dialog-level events | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.actionbar-share-phone` | P2 | Share my phone number | waived until PR-5: Sharing my number is `contact share-phone` (PR-5). |
+| `dialogs.bot-stop-restart` | P2 | Stop and block bot / Restart bot | waived until PR-10: Stopping and restarting a bot is the bot group (PR-10). |
+| `dialogs.business-bot-bar` | P2 | Manage connected business bot in a chat | waived until PR-12: The connected-business-bot bar is a business setting (PR-12). |
+| `dialogs.business-link-create` | P2 | Create a business 'link to chat' | waived until PR-12: Business chat links are a business setting (PR-12). |
+| `dialogs.business-link-list` | P2 | List business chat links (with view counters) | waived until PR-12: Business chat links are a business setting (PR-12). |
+| `dialogs.frozen-account` | P2 | Frozen account state | waived until PR-12: The frozen-account state is reported by the account surface (PR-12). |
+| `dialogs.hide-stories-peer` | P2 | Hide a peer's stories from the strip | waived until PR-8: Hiding a peer's stories is the story strip (PR-8). |
+| `dialogs.notify-scope-defaults` | P2 | Default notification settings per chat type | waived until PR-12: Scope-wide defaults are `notify set` (PR-12). |
+| `dialogs.presence-watch` | P2 | Peer online status / last seen | waived until PR-4: Online/last-seen is an update stream (PR-4). |
+| `dialogs.typing-watch` | P2 | See who is typing | waived until PR-4: Watching who is typing is an update stream (PR-4); sending one is `chat typing`. |
+| `dialogs.watch-dialog-events` | P2 | Live dialog-level events | waived until PR-4: Live dialog events are the event bus (PR-4). |
 | `messages-core.checklist-create` | P2 | Send a checklist / to-do list | waived until PR-9: Checklists are the `todo` group (PR-9). |
 | `messages-core.checklist-toggle-task` | P2 | Tick / untick a checklist task | waived until PR-9: Checklists are the `todo` group (PR-9); the rich-body form also needs layer 229. |
 | `messages-core.message-statistics` | P2 | Post statistics and public forwards (channel admins) | waived until PR-4: Post statistics and public forwards are the `stats` surface (PR-4). |
@@ -122,25 +122,25 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `messages-core.search-public-posts-fulltext` | P2 | Full-text search in all public channel posts (paid after free quota) | waived until PR-3: Full-text search over all public posts is a global surface with its own quota (PR-3). |
 | `messages-core.translate-channel-autotranslation` | P2 | Automatic translation of a channel's posts | waived until PR-3: Channel auto-translation is a channel setting (PR-3). |
 | `messages-core.ttl-default-new-chats` | P2 | Default auto-delete timer for new chats | waived until PR-3: The default auto-delete timer is an account-wide chat setting (PR-3). |
-| `dialogs.blocked-set-bulk` | P3 | Replace the whole blocklist | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.business-link-delete` | P3 | Delete a business chat link | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.business-link-edit` | P3 | Edit a business chat link | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.business-link-resolve` | P3 | Open a business chat link (t.me/m/<slug>) | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.channel-autotranslation` | P3 | Channel auto-translation for all subscribers | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.community-collapse` | P3 | Community: group / ungroup chats in the list | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.community-join-requests` | P3 | Community pending peer-link requests | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.contact-signup-notify` | P3 | Notify when a contact joins Telegram | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.forum-tabs-mode` | P3 | Forum topics as tabs or list (admin) | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.new-chats-privacy` | P3 | Who can start a chat with me (Premium-only / paid messages) | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.notify-community` | P3 | Community-level notification settings | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.personal-channel-preview` | P3 | Personal channel preview on a profile | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.reactions-notify` | P3 | Reaction / poll-vote notification settings | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.recent-searches` | P3 | Recent searches list | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.recommended-channels` | P3 | Similar / recommended channels and bots | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.saved-tags` | P3 | Saved Messages reaction tags | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.sponsored-search-peers` | P3 | Sponsored chats in search results | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.top-peers-toggle` | P3 | Enable / disable frequent-contact suggestions | waived until PR-3: chat, folder and the dialog list land in PR-3. |
-| `dialogs.wallpaper-gallery` | P3 | Global wallpaper gallery (saved / installed) | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.blocked-set-bulk` | P3 | Replace the whole blocklist | waived until PR-5: Replacing the whole blocklist is `user block --from-file` (PR-5). |
+| `dialogs.business-link-delete` | P3 | Delete a business chat link | waived until PR-12: Business chat links are a business setting (PR-12). |
+| `dialogs.business-link-edit` | P3 | Edit a business chat link | waived until PR-12: Business chat links are a business setting (PR-12). |
+| `dialogs.business-link-resolve` | P3 | Open a business chat link (t.me/m/<slug>) | waived until PR-12: Resolving a t.me/m/<slug> link is a business surface (PR-12). |
+| `dialogs.channel-autotranslation` | P3 | Channel auto-translation for all subscribers | waived until PR-7: Channel-wide auto-translation is a channel admin setting (PR-7). |
+| `dialogs.community-collapse` | P3 | Community: group / ungroup chats in the list | waived until PR-7: Community grouping is a channel/community surface (PR-7). |
+| `dialogs.community-join-requests` | P3 | Community pending peer-link requests | waived until PR-7: Community join requests are moderation (PR-7). |
+| `dialogs.contact-signup-notify` | P3 | Notify when a contact joins Telegram | waived until PR-12: The contact-joined notification is a notify setting (PR-12). |
+| `dialogs.forum-tabs-mode` | P3 | Forum topics as tabs or list (admin) | waived until PR-7: Forum tabs are a forum admin setting (PR-7). |
+| `dialogs.new-chats-privacy` | P3 | Who can start a chat with me (Premium-only / paid messages) | waived until PR-12: Who may start a chat with me is a privacy key (PR-12). |
+| `dialogs.notify-community` | P3 | Community-level notification settings | waived until PR-12: Community notification settings are the notify surface (PR-12). |
+| `dialogs.personal-channel-preview` | P3 | Personal channel preview on a profile | waived until PR-5: A profile's personal-channel card is the user group (PR-5). |
+| `dialogs.reactions-notify` | P3 | Reaction / poll-vote notification settings | waived until PR-12: Reaction notification settings are the notify surface (PR-12). |
+| `dialogs.recent-searches` | P3 | Recent searches list | waived until PR-5: The recent-search list is search state on the contact group (PR-5). |
+| `dialogs.recommended-channels` | P3 | Similar / recommended channels and bots | waived until PR-5: Similar-channel suggestions are a discovery surface (PR-5). |
+| `dialogs.saved-tags` | P3 | Saved Messages reaction tags | waived until PR-9: Saved-Messages reaction tags are reactions (PR-9). |
+| `dialogs.sponsored-search-peers` | P3 | Sponsored chats in search results | waived until PR-10: Sponsored peers in search are the ads surface (PR-10). |
+| `dialogs.top-peers-toggle` | P3 | Enable / disable frequent-contact suggestions | waived until PR-5: Frequent-contact suggestions are the contact group (PR-5). |
+| `dialogs.wallpaper-gallery` | P3 | Global wallpaper gallery (saved / installed) | waived until PR-6: The global wallpaper gallery is the media group (PR-6); the per-chat one is `chat wallpaper`. |
 | `messages-core.chat-welcome-messages` | P3 | Chat welcome messages (empty-chat cards) | waived until PR-3: Empty-chat welcome cards are a chat setting (PR-3). |
 | `messages-core.checklist-edit` | P3 | Edit a checklist (title and items) | waived until PR-9: Checklists are the `todo` group (PR-9). |
 | `messages-core.paid-messages-group-price` | P3 | Charge Stars per message in a supergroup / channel direct messages | waived until PR-7: The per-group Star price is a supergroup setting (PR-7). |

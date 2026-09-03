@@ -537,7 +537,10 @@ def notify_settings(raw: Any) -> NotifySettings | None:
         mute_until_unix=unix,
         silent=getattr(raw, "silent", None),
         show_previews=getattr(raw, "show_previews", None),
-        sound=_sound(getattr(raw, "sound", None)),
+        # `peerNotifySettings` splits the sound three ways (iOS, Android,
+        # other); `other_sound` is the desktop/API one and the only sensible
+        # single answer for a CLI.
+        sound=_sound(getattr(raw, "other_sound", None) or getattr(raw, "sound", None)),
         stories_muted=getattr(raw, "stories_muted", None),
         stories_hide_sender=getattr(raw, "stories_hide_sender", None),
         stories_sound=_sound(getattr(raw, "stories_sound", None)),

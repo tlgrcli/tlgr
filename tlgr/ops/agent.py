@@ -173,6 +173,12 @@ class SchemaDoc(Model):
     ops: dict[str, Any] = {}
 
 
+#: What `tlgr schema <what>` can print. `commands` is the default because it
+#: is what the word meant in v1 and a documented spelling does not change
+#: meaning underneath its callers (§12.4).
+_SCHEMA_KINDS = ("commands", "events", "config", "errors", "exit-codes", "all")
+
+
 class SchemaReq(Request):
     path: Annotated[
         tuple[str, ...],
@@ -181,7 +187,10 @@ class SchemaReq(Request):
             metavar="PATH",
             required=False,
             variadic=True,
-            help="Limit the document to one command path, e.g. `schema message send`.",
+            help=(
+                "A schema kind (commands, events, config, errors, exit-codes, all), "
+                "or a command path to limit the document to, e.g. `schema message send`."
+            ),
         ),
     ] = ()
     include_hidden: Annotated[
@@ -193,15 +202,63 @@ class SchemaReq(Request):
 async def schema(ctx: OpContext, req: SchemaReq) -> dict[str, Any]:
     """Build the machine-readable schema document.
 
+    The first positional does double duty, because v1's `tlgr schema message`
+    meant "the message commands" and `tlgr schema events` has to mean "the
+    event taxonomy". A kind name wins; anything else is a command path. The
+    two vocabularies do not overlap — no command group is called `errors` or
+    `exit-codes` — and `schema commands` still narrows the way v1 did.
+
     The Click command tree is handed in through the context rather than
     imported: `ops/` must not import `cli/` (§2.2), and the tree is a CLI
     concern that only the CLI can describe.
     """
     from tlgr.schema import build_schema
 
+    kind = req.path[0] if req.path and req.path[0] in _SCHEMA_KINDS else ""
+    path = req.path[1:] if kind else req.path
+
+    if kind in ("events", "config", "errors", "exit-codes"):
+        return {"schema_version": 2, kind.replace("-", "_"): _schema_section(kind)}
+
     provider = getattr(ctx, "command_tree", None)
-    command = provider(req.path, req.include_hidden) if callable(provider) else None
-    return build_schema(path=req.path, command=command, include_hidden=req.include_hidden)
+    command = provider(path, req.include_hidden) if callable(provider) else None
+    document = build_schema(path=path, command=command, include_hidden=req.include_hidden)
+    if kind == "all":
+        for section in ("events", "config", "errors", "exit-codes"):
+            document[section.replace("-", "_")] = _schema_section(section)
+    return document
+
+
+def _schema_section(kind: str) -> Any:
+    """One non-command schema section, from the module that owns it."""
+    from tlgr.models.base import to_builtins
+
+    if kind == "events":
+        from tlgr.core import eventtypes
+
+        return [
+            {
+                "type": name,
+                "group": spec.group,
+                "box": spec.box,
+                "summary": spec.summary,
+                "sources": list(eventtypes.constructors_for(name)),
+                "bot_only": spec.bot_only,
+                "since_layer": spec.since_layer,
+                "payload": dict(spec.payload),
+            }
+            for name, spec in sorted(eventtypes.TYPES.items())
+        ]
+    if kind == "config":
+        from tlgr.ops.config import KEYS
+
+        return [to_builtins(key) for key in sorted(KEYS.values(), key=lambda k: k.key)]
+    if kind == "errors":
+        return [to_builtins(row) for row in _error_table()]
+    return {
+        name: {"code": int(info["code"]), "description": str(info["description"])}
+        for name, info in EXIT_CODE_MAP.items()
+    }
 
 
 SPEC_SCHEMA = OperationSpec(
@@ -209,11 +266,14 @@ SPEC_SCHEMA = OperationSpec(
     request=SchemaReq,
     response=dict,
     impl=schema,
-    summary="Print the machine-readable schema of the CLI",
+    summary="Print machine-readable schemas: commands, events, config keys, errors",
     description=(
         "One JSON document: the command tree, and for every registered "
         "operation its request and response JSON Schema plus a validated "
-        "example. Draft 2020-12."
+        "example. Draft 2020-12. `tlgr schema events`, `schema config`, "
+        "`schema errors` and `schema exit-codes` print the other four "
+        "vocabularies an agent has to know, and `schema all` prints "
+        "everything."
     ),
     legacy_paths=("schema",),
     needs_account=False,
@@ -223,7 +283,9 @@ SPEC_SCHEMA = OperationSpec(
     rate_class="local",
     timeout_s=30,
     example={"schema_version": 2, "build": "2.0.0", "ops": {}},
-    example_args="schema message",
+    covers_partial=("updates.stream-event-types",),
+    coverage_note="prints the taxonomy; `events list` is its first-class surface.",
+    example_args="schema events",
     tags=frozenset({"infrastructure", "agent-safe", "json-only"}),
 )
 

@@ -10,7 +10,7 @@
 | [`agent completion`](#tlgr-agent-completion) | Print the shell completion script for bash, zsh or fish |
 | [`agent exit-codes`](#tlgr-agent-exit-codes) | Print the stable exit codes, and the RPC error to exit-code mapping |
 | [`agent parity`](#tlgr-agent-parity) | Report feature-parity coverage against the Telegram catalog |
-| [`agent schema`](#tlgr-agent-schema) | Print the machine-readable schema of the CLI |
+| [`agent schema`](#tlgr-agent-schema) | Print machine-readable schemas: commands, events, config keys, errors |
 | [`agent status`](#tlgr-agent-status) | One-screen health summary: account, connection, sync lag, daemon, floods |
 | [`agent whoami`](#tlgr-agent-whoami) | Report the active account, daemon health and client identity |
 
@@ -117,9 +117,9 @@ $ tlgr agent parity --json
 
 ### `agent schema`
 
-Print the machine-readable schema of the CLI.
+Print machine-readable schemas: commands, events, config keys, errors.
 
-One JSON document: the command tree, and for every registered operation its request and response JSON Schema plus a validated example. Draft 2020-12.
+One JSON document: the command tree, and for every registered operation its request and response JSON Schema plus a validated example. Draft 2020-12. `tlgr schema events`, `schema config`, `schema errors` and `schema exit-codes` print the other four vocabularies an agent has to know, and `schema all` prints everything.
 
 ```
 tlgr agent schema [PATH]... [OPTIONS]
@@ -129,7 +129,7 @@ tlgr agent schema [PATH]... [OPTIONS]
 
 | Argument | Type | Required | Meaning |
 |---|---|---|---|
-| `PATH` | text | any number | Limit the document to one command path, e.g. `schema message send`. |
+| `PATH` | text | any number | A schema kind (commands, events, config, errors, exit-codes, all), or a command path to limit the document to, e.g. `schema message send`. |
 
 | Flag | Type | Default | Meaning |
 |---|---|---|---|
@@ -138,8 +138,16 @@ tlgr agent schema [PATH]... [OPTIONS]
 Also invocable as: `tlgr schema`
 
 ```console
-$ tlgr schema message --json
+$ tlgr schema events --json
 ```
+
+<details><summary>Catalog coverage (0 full, 1 partial)</summary>
+
+Partial: `updates.stream-event-types`
+
+prints the taxonomy; `events list` is its first-class surface.
+
+</details>
 
 ### `agent status`
 

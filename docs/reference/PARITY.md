@@ -21,7 +21,7 @@ messages_core                     159    167   95.2%  100.0%  54
 polls_reactions_content           117    174   67.2%  100.0%  57
 profile_settings_privacy           25    178   14.0%  100.0%  24
 stories                            12    120   10.0%  100.0%  9
-updates_sync_network              188    189   99.5%  100.0%  66
+updates_sync_network              188    189   99.5%  100.0%  67
 
 priority                      covered    req       %   acct%
 P0                                116    178   65.2%  100.0%
@@ -49,7 +49,7 @@ uncovered: 787 (787 waived with a PR number)
 | `polls_reactions_content` | 117 | 174 | 67.2% | 100.0% | 57 |
 | `profile_settings_privacy` | 25 | 178 | 14.0% | 100.0% | 24 |
 | `stories` | 12 | 120 | 10.0% | 100.0% | 9 |
-| `updates_sync_network` | 188 | 189 | 99.5% | 100.0% | 66 |
+| `updates_sync_network` | 188 | 189 | 99.5% | 100.0% | 67 |
 
 ## By priority
 
@@ -226,4 +226,4 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `ringtone.set-for-chat` | P3 | Set notification sound for a chat or chat category | waived until PR-12: Per-chat notification sounds are the `notify` group (PR-12). |
 | `stars.topup-options` | P3 | Star purchase packages | waived until PR-12: the Star balance and top-up packages are the `stars` surface (PR-12). |
 | `theme.cloud-themes` | P3 | Cloud themes (list, install, create, update, upload theme file) | waived until PR-12: Cloud themes are the `settings` group (PR-12). |
-| `updates.invoke-business-connection` | P3 | Act on behalf of a connected business account | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.invoke-business-connection` | P3 | Act on behalf of a connected business account | waived until PR-12: Acting on behalf of a connected business account is the business surface (PR-12). |

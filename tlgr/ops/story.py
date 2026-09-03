@@ -662,7 +662,7 @@ async def _check(ctx: OpContext, peer: Any) -> tuple[Any, str, int | None]:
 
 async def _preflight(ctx: OpContext, peer: Any) -> None:
     """`stories.canSendStory`, translated into a refusal a human can act on."""
-    _result, reason, number = await _check(ctx, peer)
+    _count, reason, number = await _check(ctx, peer)
     if not reason:
         return
     detail = f" ({number})" if number is not None else ""
@@ -990,18 +990,23 @@ async def list_stories(ctx: OpContext, req: ListReq) -> Page[Story]:
     if req.translate:
         await _translate_captions(ctx, items, req.translate)
 
-    if req.album is not None:
-        next_state = {"offset": offset + len(items)}
-    else:
-        next_state = {"offset": items[-1].id if items else offset}
+    # Only three of the four RPCs page at all; `getPeerStories` hands back the
+    # peer's whole active set in one shot, so guessing "there may be more" from
+    # a full page would hand out a cursor that returns nothing.
+    server_paged = req.album is not None or req.archive or req.profile
+    next_state = (
+        {"offset": offset + len(items)}
+        if req.album is not None
+        else {"offset": items[-1].id if items else offset}
+    )
     return build_page(
         items,
         op="story.list",
         kind=PageKind.HISTORY,
         state=next_state,
         account=ctx.account,
-        limit=limit if not (req.album is None and not req.archive and not req.profile) else None,
-        has_more=None if (req.album is not None or req.archive or req.profile) else False,
+        limit=limit if server_paged else None,
+        has_more=None if server_paged else False,
         total=getattr(result, "count", None),
     )
 
@@ -3105,7 +3110,7 @@ async def _export_media(ctx: OpContext, item: Any, directory: Path, story_id: in
         size=int(getattr(document, "size", 0) or 0),
         dc_id=int(getattr(document, "dc_id", 0) or 0),
     )
-    return str(getattr(path, "path", path))
+    return str(path)
 
 
 SPEC_EXPORT = OperationSpec(

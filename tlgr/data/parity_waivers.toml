@@ -18,11 +18,6 @@ final_pr = 12
 # ---------------------------------------------------------------------------
 
 [[domain]]
-name = "contacts_users"
-pr = 5
-reason = "contact, user and blocking land in PR-5."
-
-[[domain]]
 name = "groups_channels_admin"
 pr = 7
 reason = "chat member/admin/invite/topic/permission land in PR-7."
@@ -48,31 +43,6 @@ reason = "profile, privacy, notify, settings, business, premium, gift and stars 
 # ---------------------------------------------------------------------------
 
 # The dialogs_chats ids PR-3 does not own. Each names the group that does.
-[[id]]
-id = "dialogs.actionbar-add-contact"
-pr = 5
-reason = "The bar's Add-contact button is `contact add` (PR-5)."
-
-[[id]]
-id = "dialogs.actionbar-share-phone"
-pr = 5
-reason = "Sharing my number is `contact share-phone` (PR-5)."
-
-[[id]]
-id = "dialogs.block-stories"
-pr = 5
-reason = "The story blocklist is a privacy surface on the user group (PR-5)."
-
-[[id]]
-id = "dialogs.block-user"
-pr = 5
-reason = "Blocking is `user block` (PR-5); `chat report --block` calls it."
-
-[[id]]
-id = "dialogs.blocked-set-bulk"
-pr = 5
-reason = "Replacing the whole blocklist is `user block --from-file` (PR-5)."
-
 [[id]]
 id = "dialogs.bot-stop-restart"
 pr = 10
@@ -104,11 +74,6 @@ pr = 12
 reason = "Business chat links are a business setting (PR-12)."
 
 [[id]]
-id = "dialogs.business-link-resolve"
-pr = 12
-reason = "Resolving a t.me/m/<slug> link is a business surface (PR-12)."
-
-[[id]]
 id = "dialogs.channel-autotranslation"
 pr = 7
 reason = "Channel-wide auto-translation is a channel admin setting (PR-7)."
@@ -124,16 +89,6 @@ pr = 7
 reason = "Community join requests are moderation (PR-7)."
 
 [[id]]
-id = "dialogs.contact-signup-notify"
-pr = 12
-reason = "The contact-joined notification is a notify setting (PR-12)."
-
-[[id]]
-id = "dialogs.dialog-exists"
-pr = 5
-reason = "`user dialog-status` answers this and migrates with the user group (PR-5)."
-
-[[id]]
 id = "dialogs.forum-tabs-mode"
 pr = 7
 reason = "Forum tabs are a forum admin setting (PR-7)."
@@ -142,11 +97,6 @@ reason = "Forum tabs are a forum admin setting (PR-7)."
 id = "dialogs.frozen-account"
 pr = 12
 reason = "The frozen-account state is reported by the account surface (PR-12)."
-
-[[id]]
-id = "dialogs.hide-stories-peer"
-pr = 8
-reason = "Hiding a peer's stories is the story strip (PR-8)."
 
 [[id]]
 id = "dialogs.new-chats-privacy"
@@ -169,34 +119,14 @@ pr = 12
 reason = "Scope-wide defaults are `notify set` (PR-12)."
 
 [[id]]
-id = "dialogs.personal-channel-preview"
-pr = 5
-reason = "A profile's personal-channel card is the user group (PR-5)."
-
-[[id]]
-id = "dialogs.presence-watch"
-pr = 4
-reason = "Online/last-seen is an update stream (PR-4)."
-
-[[id]]
 id = "dialogs.reactions-notify"
 pr = 12
 reason = "Reaction notification settings are the notify surface (PR-12)."
 
 [[id]]
-id = "dialogs.recent-searches"
-pr = 5
-reason = "The recent-search list is search state on the contact group (PR-5)."
-
-[[id]]
 id = "dialogs.recommended-channels"
-pr = 5
-reason = "Similar-channel suggestions are a discovery surface (PR-5)."
-
-[[id]]
-id = "dialogs.resolve-peer"
-pr = 5
-reason = "Turning a @username, a phone number or a t.me link into a chat is `resolve` (PR-5); the chat group consumes the resolver rather than exposing it."
+pr = 7
+reason = "Similar-channel suggestions are `channels.getChannelRecommendations`, a channel surface (PR-7)."
 
 [[id]]
 id = "dialogs.saved-tags"
@@ -204,24 +134,9 @@ pr = 9
 reason = "Saved-Messages reaction tags are reactions (PR-9)."
 
 [[id]]
-id = "dialogs.sponsored-search-peers"
-pr = 10
-reason = "Sponsored peers in search are the ads surface (PR-10)."
-
-[[id]]
-id = "dialogs.top-peers-toggle"
-pr = 5
-reason = "Frequent-contact suggestions are the contact group (PR-5)."
-
-[[id]]
 id = "dialogs.typing-watch"
 pr = 4
 reason = "Watching who is typing is an update stream (PR-4); sending one is `chat typing`."
-
-[[id]]
-id = "dialogs.unblock-user"
-pr = 5
-reason = "Unblocking is `user unblock` (PR-5)."
 
 [[id]]
 id = "dialogs.wallpaper-gallery"
@@ -846,3 +761,117 @@ reason = "contacts.resetTopPeerRating is the same surface as top-callers (PR-5).
 id = "groupcall.speaking-indicator"
 pr = 3
 reason = "speakingInGroupCallAction is broadcast with messages.setTyping, i.e. the chat-action surface `chat typing` (PR-3) — and tlgr has no microphone behind it in any case."
+# ---------------------------------------------------------------------------
+# The contacts_users ids PR-5 does not own. The domain-wide waiver is gone,
+# so each of these names the group that does own it.
+# ---------------------------------------------------------------------------
+
+[[id]]
+id = "contacts-users.privacy-about"
+pr = 12
+reason = "Privacy keys are the `privacy` group (PR-12)."
+
+[[id]]
+id = "contacts-users.privacy-added-by-phone"
+pr = 12
+reason = "Privacy keys are the `privacy` group (PR-12); `contact add --share-phone` is the per-user exception."
+
+[[id]]
+id = "contacts-users.privacy-chat-invite"
+pr = 12
+reason = "Privacy keys are the `privacy` group (PR-12)."
+
+[[id]]
+id = "contacts-users.privacy-exception-lists"
+pr = 12
+reason = "Always/Never lists are privacy rules (PR-12); the close-friends list is `contact close-friends`."
+
+[[id]]
+id = "contacts-users.privacy-forwards"
+pr = 12
+reason = "Privacy keys are the `privacy` group (PR-12)."
+
+[[id]]
+id = "contacts-users.privacy-gifts"
+pr = 12
+reason = "Gift privacy is the `privacy` group (PR-12)."
+
+[[id]]
+id = "contacts-users.privacy-global"
+pr = 12
+reason = "`privacy global set` is the account-wide privacy surface (PR-12)."
+
+[[id]]
+id = "contacts-users.privacy-no-paid-messages"
+pr = 12
+reason = "Paid-message privacy is a privacy key (PR-12); reading the price is `user can-message`."
+
+[[id]]
+id = "contacts-users.privacy-phone-number"
+pr = 12
+reason = "Privacy keys are the `privacy` group (PR-12)."
+
+[[id]]
+id = "contacts-users.privacy-voice-messages"
+pr = 12
+reason = "Privacy keys are the `privacy` group (PR-12)."
+
+[[id]]
+id = "contacts-users.user-status-reveal"
+pr = 12
+reason = "Revealing my own last-seen to see theirs is a privacy setting (PR-12); `contact status list` reports the by_me flag that explains it."
+
+[[id]]
+id = "contacts-users.user-business-greeting-away"
+pr = 12
+reason = "Business greeting and away messages are the `business` group (PR-12)."
+
+[[id]]
+id = "contacts-users.user-support"
+pr = 12
+reason = "Contacting Telegram support is a settings surface (PR-12)."
+
+[[id]]
+id = "contacts-users.user-support-info"
+pr = 12
+reason = "Support-account info is a settings surface (PR-12)."
+
+[[id]]
+id = "contacts-users.user-status-watch"
+pr = 4
+reason = "Live presence is an update stream (PR-4); `contact status list` is the cold-start snapshot."
+
+[[id]]
+id = "contacts-users.user-stories"
+pr = 8
+reason = "A user's stories are the `story` group (PR-8); hiding them is `user hide-stories`."
+
+[[id]]
+id = "contacts-users.nearby-publish"
+pr = 9
+reason = "People Nearby is geolocation, the `location` group (PR-9)."
+
+[[id]]
+id = "contacts-users.nearby-stop"
+pr = 9
+reason = "People Nearby is geolocation, the `location` group (PR-9)."
+
+[[id]]
+id = "contacts-users.people-you-may-know"
+pr = 7
+reason = "Suggested peers come from channels.getChannelRecommendations, a channel surface (PR-7)."
+
+[[id]]
+id = "contacts-users.search-hashtag-history"
+pr = 9
+reason = "The recent-hashtag list is the `search` group (PR-9); `contact search --recent` is the peer half."
+
+[[id]]
+id = "contacts-users.search-public-posts"
+pr = 9
+reason = "Public post search is the `search` group (PR-9) and has its own paid quota."
+
+[[id]]
+id = "contacts-users.url-auth-login"
+pr = 10
+reason = "URL authorization is a bot surface (PR-10); `resolve link` classifies the link and delegates."

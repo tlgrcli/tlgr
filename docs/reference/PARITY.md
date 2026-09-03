@@ -99,21 +99,21 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `profile.photo-set` | P0 | Set profile photo | waived until PR-12: Setting your profile photo is `profile photo set` (PR-12). |
 | `calls.privacy-p2p` | P1 | Privacy: peer-to-peer calls | waived until PR-12: inputPrivacyKeyPhoneP2P is the same account.setPrivacy surface as every other privacy key (PR-12). |
 | `chat.photo-set` | P1 | Set group / channel photo (photo, video or emoji/sticker avatar) | waived until PR-7: A group or channel photo is `chat photo set` (PR-7). |
-| `contacts-users.privacy-added-by-phone` | P1 | Privacy: who can find me by my phone number | waived until PR-5: contact, user and blocking land in PR-5. |
-| `contacts-users.privacy-global` | P1 | Global privacy settings | waived until PR-5: contact, user and blocking land in PR-5. |
-| `contacts-users.privacy-phone-number` | P1 | Privacy: who can see my phone number | waived until PR-5: contact, user and blocking land in PR-5. |
-| `contacts-users.url-auth-login` | P1 | Log in to a website with Telegram (URL authorization) | waived until PR-5: contact, user and blocking land in PR-5. |
+| `contacts-users.privacy-added-by-phone` | P1 | Privacy: who can find me by my phone number | waived until PR-12: Privacy keys are the `privacy` group (PR-12); `contact add --share-phone` is the per-user exception. |
+| `contacts-users.privacy-global` | P1 | Global privacy settings | waived until PR-12: `privacy global set` is the account-wide privacy surface (PR-12). |
+| `contacts-users.privacy-phone-number` | P1 | Privacy: who can see my phone number | waived until PR-12: Privacy keys are the `privacy` group (PR-12). |
+| `contacts-users.url-auth-login` | P1 | Log in to a website with Telegram (URL authorization) | waived until PR-10: URL authorization is a bot surface (PR-10); `resolve link` classifies the link and delegates. |
 | `dialogs.notify-exceptions` | P1 | List notification exceptions | waived until PR-12: The exceptions *list* is `notify exceptions` (PR-12); one chat's exception is `chat notify`. |
 | `profile.photos-list-history` | P1 | View own / another user's profile photo history | waived until PR-12: Profile photo history is the `profile` group (PR-12). |
 | `stars.balance` | P1 | Telegram Stars balance | waived until PR-12: the Star balance and top-up packages are the `stars` surface (PR-12). |
 | `attach.menu-bots` | P2 | Attachment-menu / side-menu mini-app bots: list, info, add, remove | waived until PR-10: Attachment-menu bots are the `bot` group (PR-10). |
 | `auth.url-auth-bot-button` | P2 | Log in to a website via a bot's login button (Seamless Telegram Login) | waived until PR-10: Seamless Telegram Login is a bot keyboard button (messages.requestUrlAuth / acceptUrlAuth); it lands with the bots group in PR-10. |
-| `contacts-users.privacy-about` | P2 | Privacy: bio | waived until PR-5: contact, user and blocking land in PR-5. |
-| `contacts-users.privacy-chat-invite` | P2 | Privacy: who can add me to groups | waived until PR-5: contact, user and blocking land in PR-5. |
-| `contacts-users.privacy-exception-lists` | P2 | Always/Never allow exception lists | waived until PR-5: contact, user and blocking land in PR-5. |
-| `contacts-users.privacy-forwards` | P2 | Privacy: forwarded messages link back to me | waived until PR-5: contact, user and blocking land in PR-5. |
-| `contacts-users.user-status-reveal` | P2 | Show My Last Seen to reveal theirs | waived until PR-5: contact, user and blocking land in PR-5. |
-| `contacts-users.user-stories` | P2 | A user's stories on their profile | waived until PR-5: contact, user and blocking land in PR-5. |
+| `contacts-users.privacy-about` | P2 | Privacy: bio | waived until PR-12: Privacy keys are the `privacy` group (PR-12). |
+| `contacts-users.privacy-chat-invite` | P2 | Privacy: who can add me to groups | waived until PR-12: Privacy keys are the `privacy` group (PR-12). |
+| `contacts-users.privacy-exception-lists` | P2 | Always/Never allow exception lists | waived until PR-12: Always/Never lists are privacy rules (PR-12); the close-friends list is `contact close-friends`. |
+| `contacts-users.privacy-forwards` | P2 | Privacy: forwarded messages link back to me | waived until PR-12: Privacy keys are the `privacy` group (PR-12). |
+| `contacts-users.user-status-reveal` | P2 | Show My Last Seen to reveal theirs | waived until PR-12: Revealing my own last-seen to see theirs is a privacy setting (PR-12); `contact status list` reports the by_me flag that explains it. |
+| `contacts-users.user-stories` | P2 | A user's stories on their profile | waived until PR-8: A user's stories are the `story` group (PR-8); hiding them is `user hide-stories`. |
 | `content.limits` | P2 | Server limits for polls, reactions, checklists and gifts | waived until PR-12: the app-config limit table is read through the settings surface (PR-12). |
 | `dialogs.business-bot-bar` | P2 | Manage connected business bot in a chat | waived until PR-12: The connected-business-bot bar is a business setting (PR-12). |
 | `dialogs.business-link-create` | P2 | Create a business 'link to chat' | waived until PR-12: Business chat links are a business setting (PR-12). |
@@ -156,11 +156,11 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `auth.oauth-deep-link` | P3 | Authorize an OAuth login request from a website/app (tg://oauth deep link) | waived until PR-10: A tg://oauth request is a bot authorization flow (messages.requestUrlAuth); it lands with the bots group in PR-10. |
 | `bot.media-previews` | P3 | Manage a bot's Mini App media previews (owned bots) | waived until PR-10: A bot's Mini App previews are the `bot` group (PR-10). |
 | `bot.profile-photo-set` | P3 | Set profile photo of an owned bot | waived until PR-10: Setting an owned bot's photo is the `bot` group (PR-10). |
-| `contacts-users.people-you-may-know` | P3 | Suggested / recommended peers | waived until PR-5: contact, user and blocking land in PR-5. |
-| `contacts-users.privacy-gifts` | P3 | Privacy: who can see / send me gifts | waived until PR-5: contact, user and blocking land in PR-5. |
-| `contacts-users.privacy-no-paid-messages` | P3 | Privacy: who may message me without paying | waived until PR-5: contact, user and blocking land in PR-5. |
-| `contacts-users.privacy-voice-messages` | P3 | Privacy: who can send me voice messages | waived until PR-5: contact, user and blocking land in PR-5. |
-| `contacts-users.user-business-greeting-away` | P3 | Business greeting / away messages | waived until PR-5: contact, user and blocking land in PR-5. |
+| `contacts-users.people-you-may-know` | P3 | Suggested / recommended peers | waived until PR-7: Suggested peers come from channels.getChannelRecommendations, a channel surface (PR-7). |
+| `contacts-users.privacy-gifts` | P3 | Privacy: who can see / send me gifts | waived until PR-12: Gift privacy is the `privacy` group (PR-12). |
+| `contacts-users.privacy-no-paid-messages` | P3 | Privacy: who may message me without paying | waived until PR-12: Paid-message privacy is a privacy key (PR-12); reading the price is `user can-message`. |
+| `contacts-users.privacy-voice-messages` | P3 | Privacy: who can send me voice messages | waived until PR-12: Privacy keys are the `privacy` group (PR-12). |
+| `contacts-users.user-business-greeting-away` | P3 | Business greeting / away messages | waived until PR-12: Business greeting and away messages are the `business` group (PR-12). |
 | `dialogs.business-link-delete` | P3 | Delete a business chat link | waived until PR-12: Business chat links are a business setting (PR-12). |
 | `dialogs.business-link-edit` | P3 | Edit a business chat link | waived until PR-12: Business chat links are a business setting (PR-12). |
 | `dialogs.channel-autotranslation` | P3 | Channel auto-translation for all subscribers | waived until PR-7: Channel-wide auto-translation is a channel admin setting (PR-7). |
@@ -170,7 +170,7 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `dialogs.new-chats-privacy` | P3 | Who can start a chat with me (Premium-only / paid messages) | waived until PR-12: Who may start a chat with me is a privacy key (PR-12). |
 | `dialogs.notify-community` | P3 | Community-level notification settings | waived until PR-12: Community notification settings are the notify surface (PR-12). |
 | `dialogs.reactions-notify` | P3 | Reaction / poll-vote notification settings | waived until PR-12: Reaction notification settings are the notify surface (PR-12). |
-| `dialogs.recommended-channels` | P3 | Similar / recommended channels and bots | waived until PR-5: Similar-channel suggestions are a discovery surface (PR-5). |
+| `dialogs.recommended-channels` | P3 | Similar / recommended channels and bots | waived until PR-7: Similar-channel suggestions are `channels.getChannelRecommendations`, a channel surface (PR-7). |
 | `emoji.status-channel` | P3 | Channel / group emoji status (boost-gated) | waived until PR-12: A channel emoji status is a profile setting (PR-12). |
 | `emoji.status-lists` | P3 | Emoji status suggestions: default, recent, collectible, themed; clear recent | waived until PR-12: Emoji status suggestions belong to `profile status` (PR-12). |
 | `gift.as-emoji-status` | P3 | Wear a collectible gift as your emoji status | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |

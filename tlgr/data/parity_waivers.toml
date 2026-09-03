@@ -827,49 +827,14 @@ pr = 12
 reason = "Business greeting and away messages are the `business` group (PR-12)."
 
 [[id]]
-id = "contacts-users.user-support"
-pr = 12
-reason = "Contacting Telegram support is a settings surface (PR-12)."
-
-[[id]]
-id = "contacts-users.user-support-info"
-pr = 12
-reason = "Support-account info is a settings surface (PR-12)."
-
-[[id]]
-id = "contacts-users.user-status-watch"
-pr = 4
-reason = "Live presence is an update stream (PR-4); `contact status list` is the cold-start snapshot."
-
-[[id]]
 id = "contacts-users.user-stories"
 pr = 8
 reason = "A user's stories are the `story` group (PR-8); hiding them is `user hide-stories`."
 
 [[id]]
-id = "contacts-users.nearby-publish"
-pr = 9
-reason = "People Nearby is geolocation, the `location` group (PR-9)."
-
-[[id]]
-id = "contacts-users.nearby-stop"
-pr = 9
-reason = "People Nearby is geolocation, the `location` group (PR-9)."
-
-[[id]]
 id = "contacts-users.people-you-may-know"
 pr = 7
 reason = "Suggested peers come from channels.getChannelRecommendations, a channel surface (PR-7)."
-
-[[id]]
-id = "contacts-users.search-hashtag-history"
-pr = 9
-reason = "The recent-hashtag list is the `search` group (PR-9); `contact search --recent` is the peer half."
-
-[[id]]
-id = "contacts-users.search-public-posts"
-pr = 9
-reason = "Public post search is the `search` group (PR-9) and has its own paid quota."
 
 [[id]]
 id = "contacts-users.url-auth-login"

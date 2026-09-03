@@ -912,3 +912,105 @@ the CLI in-process, and any embedding program) silently read the real
 the `.production` marker turned the bug into a hard failure rather than a
 quiet one. Both now call `paths.default_base()` at call time. `CONFIG_DIR`
 survives for the legacy modules that will be deleted with their groups.
+
+## 2026-09-03 — a result can be indeterminate *and* still be a result
+
+`user dialog-status` has to answer three ways and AGENT.md freezes all three,
+including `resolved=false, has_dialog=null` with exit 13. Raising
+`IndeterminateError` would have satisfied the exit code and thrown away the
+body — and the body is where `reason` and `scanned_dialogs` live, which is
+what a caller needs to decide what to do next. (It would not even have
+produced exit 13 over IPC: `IndeterminateError.http` is 200, so the transport
+reads it as success.) The context therefore grew `mark_indeterminate(reason)`,
+the daemon puts `meta.indeterminate` on the envelope, and the CLI exits 13
+after rendering. `contact top list` on an account with the feature turned off
+and `resolve phone` on an unoccupied number use the same mechanism, for the
+same reason: an empty list and a "not found" would both be claims nobody
+established.
+
+## 2026-09-03 — `contact` and `user` models emit their falses
+
+`Model` sets `omit_defaults=True`, so "absent" can mean "not applicable". For
+this group the opposite is true: `already: false`, `added: false`,
+`hidden: false`, `resolved: false` and `has_dialog: null` *are* the answer,
+and v1 printed every one of them. `ContactModel` therefore sets
+`omit_defaults=False` and every contact/user shape inherits it. `ResolvedLink`
+is the exception and stays compact — a null for each of thirty link kinds is
+noise — with `kind` made a required field so the one thing that must never be
+missing cannot be.
+
+## 2026-09-03 — `user get` is single-target, and has no `--field`
+
+The work list had `user get <user>...` variadic. A spec has one response type,
+so a variadic `user get` would have had to return `Page[UserProfile]` — and
+AGENT.md documents `tlgr user get <user>` returning a bare object with `id`,
+`first_name`, `username`, `bio`, `is_bot`. Keeping the documented shape won;
+several users at once is `resolve peer` (which is variadic) or a loop.
+`--field` went the same way: the global `--select bio --results-only` already
+projects any field of any op, and a second, per-command spelling of one idea
+is what STYLE §1 exists to prevent. `--refresh` went with it — tlgr keeps no
+`userFull` cache to bypass; the 60 s one is the server's.
+
+## 2026-09-03 — `user hide-stories` is variadic without changing its shape
+
+v1 took one peer and returned `{user_id, username, hidden, already}`; the
+whole point of the command is bulk passes over hundreds of peers, which a
+loop of one-peer calls makes needlessly expensive to write. It now accepts
+several, and a single peer still answers with exactly v1's four keys — extra
+peers appear in `peers` — so nothing that reads the documented shape has to
+change.
+
+## 2026-09-03 — a two-segment alias cannot shadow a three-segment group
+
+`contact saved`, `contact joined`, `user music`, `user personal-channel` and
+`resolve cache` were all going to be short aliases for their `… list`/`… get`
+operation. The Click tree builder places a command at a path, so each of them
+would have *replaced* the group of the same name and taken its subcommand with
+it. They were dropped rather than teaching the builder to be a command and a
+group at once; the pluralised aliases that collide with nothing
+(`contact statuses`, `contact birthdays`, `user photos`, `user blocked`) stay.
+
+## 2026-09-03 — `contact list --export` writes a file, and only a file
+
+The implementation runs in the daemon, so `--out -` would write to the
+daemon's stdout, not the caller's. `--export` therefore requires `--out PATH`
+and refuses `-` with a sentence saying why; `--json`/`--plain` already give
+machine-readable output on the caller's stdout. The same rule makes
+`contact import -` and `contact sync -` refusals rather than silent reads of
+the wrong stdin. Exported phonebooks are written 0600: a contact list is
+exactly the kind of file that should not become world-readable because a
+shell redirect was convenient.
+
+## 2026-09-03 — `resolve link` classifies, and never acts
+
+Twenty-odd link kinds, one command, because the human pasting a link does not
+know which kind it is — that is the question. Following one is always a
+different, confirmed verb (`chat join`, `bot start`, `gift redeem`,
+`proxy add`), and `delegated_to` names it. `--open` is the one concession and
+it performs a *read* only. The single ambiguity worth spelling out is
+`t.me/+X`: it is a phone number when X parses as one and an invite hash
+otherwise, and guessing wrong turns a lookup into joining a group.
+
+## 2026-09-03 — `user chat list --leave-all` honours `--dry-run` itself
+
+Listing shared groups is a read and must stay dry-runnable, so the op is not
+`mutating`; but `--leave-all` writes. Declaring the op mutating would make
+every plain listing print a dry-run stub, and declaring it destructive would
+prompt on every listing. It follows `folder list --tags` instead: the write
+branch checks `ctx.dry_run` and says what it would do, and the help says
+plainly that it leaves immediately.
+
+## 2026-09-03 — `link.py` folded into `resolve.py`
+
+PR-5's scope names a `link` module, but the work list contains no `link.*`
+operation: the two link commands are `resolve link` (classify a t.me/tg:// URL)
+and `user link` (build one). They live with the group whose noun they carry
+rather than in a module that would hold one function and a docstring.
+
+## 2026-09-03 — `resolve peer`, `resolve phone` and `resolve username` are verbs
+
+STYLE §1's verb list has no entry for these, and the registry lints the last
+path segment against it. COMMANDS.md's conventions already carve out
+verb-first nouns (`resolve <kind>`, `search <scope>`), so `peer`, `phone` and
+`username` were added to `VERBS` with a comment saying which rule they arrive
+under — rather than bending the paths into `resolve peer get`.

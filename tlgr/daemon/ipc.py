@@ -121,16 +121,8 @@ class LegacyRoutes:
         app.router.add_get("/chat/members", self._chat_members)
 
         # Contacts
-        app.router.add_get("/contact/list", self._contact_list)
-        app.router.add_post("/contact/add", self._contact_add)
-        app.router.add_post("/contact/remove", self._contact_remove)
-        app.router.add_get("/contact/search", self._contact_search)
-        app.router.add_post("/contact/rename", self._contact_rename)
 
         # Users
-        app.router.add_get("/user/get", self._user_get)
-        app.router.add_get("/user/dialog-status", self._user_dialog_status)
-        app.router.add_post("/user/stories-hidden", self._user_stories_hidden)
 
         # Profile
         app.router.add_get("/profile/get", self._profile_get)
@@ -170,113 +162,6 @@ class LegacyRoutes:
                 search=q.get("search"),
             )
             return _json_response({"members": members})
-        except Exception as e:
-            return _handle_exception(e)
-
-    async def _contact_list(self, request: web.Request) -> web.Response:
-        q = request.query
-        account = q.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _no_client(account)
-        try:
-            contacts = await client.list_contacts()
-            return _json_response({"contacts": contacts})
-        except Exception as e:
-            return _handle_exception(e)
-
-    async def _contact_add(self, request: web.Request) -> web.Response:
-        body = await _get_body(request)
-        account = body.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _no_client(account)
-        try:
-            result = await client.add_contact(body["phone"], body.get("name", ""))
-            return _json_response(result)
-        except Exception as e:
-            return _handle_exception(e)
-
-    async def _contact_remove(self, request: web.Request) -> web.Response:
-        body = await _get_body(request)
-        account = body.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _no_client(account)
-        try:
-            result = await client.remove_contact(_ref(body["user"]))
-            return _json_response(result)
-        except Exception as e:
-            return _handle_exception(e)
-
-    async def _contact_rename(self, request: web.Request) -> web.Response:
-        body = await _get_body(request)
-        account = body.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _no_client(account)
-        try:
-            result = await client.rename_contact(
-                _ref(body["user"]),
-                first_name=body.get("first_name"),
-                last_name=body.get("last_name"),
-            )
-            return _json_response(result)
-        except Exception as e:
-            return _handle_exception(e)
-
-    async def _contact_search(self, request: web.Request) -> web.Response:
-        q = request.query
-        account = q.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _no_client(account)
-        try:
-            contacts = await client.search_contacts(q.get("query", ""))
-            return _json_response({"contacts": contacts})
-        except Exception as e:
-            return _handle_exception(e)
-
-    # -- Users --
-
-    async def _user_get(self, request: web.Request) -> web.Response:
-        q = request.query
-        account = q.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _no_client(account)
-        try:
-            info = await client.get_user_info(_ref(q["user"]))
-            return _json_response(info)
-        except Exception as e:
-            return _handle_exception(e)
-
-    async def _user_dialog_status(self, request: web.Request) -> web.Response:
-        q = request.query
-        account = q.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _no_client(account)
-        try:
-            status = await client.dialog_status(
-                _ref(q["user"]),
-                max_dialogs=int(q.get("max_dialogs", 5000)),
-            )
-            return _json_response(status)
-        except Exception as e:
-            return _handle_exception(e)
-
-    async def _user_stories_hidden(self, request: web.Request) -> web.Response:
-        body = await _get_body(request)
-        account = body.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _no_client(account)
-        try:
-            result = await client.set_stories_hidden(
-                _ref(body["user"]), hidden=bool(body.get("hidden", True))
-            )
-            return _json_response(result)
         except Exception as e:
             return _handle_exception(e)
 

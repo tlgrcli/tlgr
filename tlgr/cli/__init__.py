@@ -231,25 +231,9 @@ def cli(
 
 from tlgr.cli.gen import build_click_tree  # noqa: E402
 from tlgr.cli.legacy.chat import chat_create, chat_members  # noqa: E402
-from tlgr.cli.legacy.contact import contact_group  # noqa: E402
 from tlgr.cli.legacy.profile import profile_group  # noqa: E402
-from tlgr.cli.legacy.user import user_group  # noqa: E402
 
-cli.add_command(contact_group, "contact")
 cli.add_command(profile_group, "profile")
-cli.add_command(user_group, "user")
-
-
-# ---------------------------------------------------------------------------
-# Top-level action shortcuts (desire paths)
-# ---------------------------------------------------------------------------
-
-
-@cli.command("contacts")
-@click.pass_context
-def shortcut_contacts(ctx: click.Context) -> None:
-    """List all contacts (shortcut for 'contact list')."""
-    ctx.invoke(contact_group.commands["list"], account=ctx.obj.get("account"))
 
 
 # ---------------------------------------------------------------------------

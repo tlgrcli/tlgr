@@ -77,22 +77,6 @@ DH_PRIME = base64.b64decode(
 DH_G = 2
 
 
-class _FullUser:
-    """`users.getFullUser`, reduced to the three call-availability flags."""
-
-    def __init__(self, available: bool, users: list[Any]) -> None:
-        self.full_user = _FullUserInner(available)
-        self.users = users
-        self.chats: list[Any] = []
-
-
-class _FullUserInner:
-    def __init__(self, available: bool) -> None:
-        self.phone_calls_available = available
-        self.video_calls_available = available
-        self.phone_calls_private = not available
-
-
 def _json_object(mapping: dict[str, Any]) -> Any:
     return types.JsonObject(
         value=[types.JsonObjectValue(key=key, value=_json_value(v)) for key, v in mapping.items()]
@@ -119,6 +103,20 @@ def make_user(user_id: int, *, username: str | None = None, first: str = "Test")
         username=username,
         access_hash=user_id * 7,
     )
+
+
+def _e164(phone: str) -> str:
+    digits = "".join(c for c in str(phone or "") if c.isdigit())
+    return f"+{digits}" if digits else ""
+
+
+def _peer_for(marked: int) -> Any:
+    """`types.Peer*` for a marked id, which is what a contacts reply carries."""
+    if marked < -1000000000000:
+        return types.PeerChannel(channel_id=-1000000000000 - marked)
+    if marked < 0:
+        return types.PeerChat(chat_id=-marked)
+    return types.PeerUser(user_id=marked)
 
 
 def make_channel(
@@ -496,6 +494,54 @@ class World:
     #: The `peerSettings` action bar, per chat.
     peer_settings: dict[int, Any] = field(default_factory=dict)
     global_privacy: Any = None
+
+    # -- the contact world -------------------------------------------------
+    #
+    # Stage E. The address book is a *world* too: adding a contact really
+    # flips `user.contact`, blocking really puts the peer on the list
+    # `contacts.getBlocked` answers with, and hiding stories really sets
+    # `stories_hidden` — so the idempotent second pass can be asserted
+    # against state that moved rather than against a canned reply.
+
+    #: user id → mutual. Membership of the server-side contact list.
+    contacts: dict[int, bool] = field(default_factory=dict)
+    #: user id → the date it was blocked, per list.
+    blocked: dict[int, datetime] = field(default_factory=dict)
+    blocked_stories: dict[int, datetime] = field(default_factory=dict)
+    #: user id → the private note attached to the contact.
+    contact_notes: dict[int, str] = field(default_factory=dict)
+    #: user id → `types.Birthday`, as birthday privacy lets us see it.
+    birthdays: dict[int, Any] = field(default_factory=dict)
+    #: Phone numbers this account ever uploaded (`contacts.getSaved`).
+    saved_contacts: list[Any] = field(default_factory=list)
+    #: phone (E.164) → the user id it imports to. A missing number is the
+    #: ambiguous case: no account, or a privacy refusal.
+    phonebook: dict[str, int] = field(default_factory=dict)
+    #: category name → [(user id, rating)].
+    top_peers: dict[str, list[tuple[int, float]]] = field(default_factory=dict)
+    top_peers_enabled: bool = True
+    #: `users.getRequirementsToContact`: user id → free | premium | paid:N.
+    contact_requirements: dict[int, str] = field(default_factory=dict)
+    #: user id → profile photo history, newest first.
+    user_photos: dict[int, list[Any]] = field(default_factory=dict)
+    #: user id → the documents pinned to their profile.
+    saved_music: dict[int, list[Any]] = field(default_factory=dict)
+    #: user id → `userFull` overrides, merged over the defaults.
+    user_full: dict[int, dict[str, Any]] = field(default_factory=dict)
+    #: The "X joined Telegram" notification switch (silent=True means off).
+    contact_signup_silent: bool = False
+    #: Peers `contacts.search` answers with, split the way the server does.
+    search_mine: list[int] = field(default_factory=list)
+    search_global: list[int] = field(default_factory=list)
+    sponsored_peers: list[int] = field(default_factory=list)
+    #: The story read marks `stories.getAllReadPeerStories` reports.
+    stories_read: dict[int, int] = field(default_factory=dict)
+    #: `contacts.exportContactToken`.
+    contact_token: str = "AbCdEfToken"
+    #: `help.getDeepLinkInfo` for an unknown tg:// path.
+    deep_link_message: str = "Update your app to open this link."
+    all_stories_hidden: bool = False
+
     #: request type name → callable(request) -> result, or a plain value.
     raw: dict[str, Any] = field(default_factory=dict)
     calls: list[tuple[str, Any]] = field(default_factory=list)
@@ -794,6 +840,34 @@ class World:
     def notify_of(self, chat_id: int) -> types.PeerNotifySettings:
         row = self.dialog(chat_id)
         return types.PeerNotifySettings(mute_until=row.mute_until, silent=row.silent)
+
+    # -- the contact world -------------------------------------------------
+
+    def add_contact(self, user: types.User, *, mutual: bool = False, **flags: Any) -> types.User:
+        """Put a user in the address book, with the flags a contact carries."""
+        self.add_user(user)
+        user.contact = True
+        user.mutual_contact = mutual
+        for name, value in flags.items():
+            setattr(user, name, value)
+        self.contacts[int(user.id)] = mutual
+        if getattr(user, "phone", None):
+            self.phonebook.setdefault(_e164(user.phone), int(user.id))
+        return user
+
+    def block(self, user_id: int, *, stories: bool = False) -> None:
+        target = self.blocked_stories if stories else self.blocked
+        target[int(user_id)] = datetime.now(timezone.utc)
+
+    def add_saved_contact(self, phone: str, first: str = "", last: str = "") -> Any:
+        entry = types.SavedPhoneContact(
+            phone=_e164(phone),
+            first_name=first,
+            last_name=last,
+            date=datetime.now(timezone.utc),
+        )
+        self.saved_contacts.append(entry)
+        return entry
 
     def add_folder(self, folder_id: int, title: str, **kwargs: Any) -> Any:
         """A `dialogFilter` in the world, addressed by id or by title."""
@@ -1340,8 +1414,33 @@ class FakeTelegramClient:
         return True
 
     def _raw_GetFullUserRequest(self, request: Any) -> Any:
+        user = self._user_of(request.id)
+        if user is None:
+            from telethon.errors import RPCError
+
+            raise RPCError(request, "USER_ID_INVALID", 400)
+        uid = int(user.id)
+        overrides = dict(self.world.user_full.get(uid, {}))
+        note = self.world.contact_notes.get(uid)
         available = self.world.calls_available
-        return _FullUser(available, list(self.world.users.values())[:1])
+        full = types.UserFull(
+            id=uid,
+            settings=self.world.peer_settings.get(uid) or types.PeerSettings(),
+            notify_settings=types.PeerNotifySettings(),
+            common_chats_count=overrides.pop("common_chats_count", 0),
+            about=overrides.pop("about", None),
+            blocked=uid in self.world.blocked or None,
+            blocked_my_stories_from=uid in self.world.blocked_stories or None,
+            birthday=self.world.birthdays.get(uid),
+            note=types.TextWithEntities(text=note, entities=[]) if note else None,
+            phone_calls_available=available,
+            video_calls_available=available,
+            phone_calls_private=not available,
+            **overrides,
+        )
+        return types.users.UserFull(
+            full_user=full, chats=list(self.world.chats.values()), users=[user]
+        )
 
     # -- group calls -------------------------------------------------------
 
@@ -2091,6 +2190,11 @@ class FakeTelegramClient:
         return self._slice(found[: int(request.limit)])
 
     def _raw_SearchRequest(self, request: Any) -> Any:
+        # `messages.search` and `contacts.search` share a class name, and the
+        # fake dispatches on that name alone. The peer is what tells them
+        # apart: a contact search has none.
+        if getattr(request, "peer", None) is None:
+            return self._contacts_search(request)
         if type(getattr(request, "filter", None)).__name__ == "InputMessagesFilterPhoneCalls":
             return self._call_log_search(request)
         chat_id = self._chat_id(request.peer)
@@ -2536,6 +2640,8 @@ class FakeTelegramClient:
         return True
 
     def _raw_BlockRequest(self, request: Any) -> bool:
+        marked = self._chat_id(request.id)
+        self._blocked_target(request)[abs(marked)] = datetime.now(timezone.utc)
         return True
 
     # passkeys -------------------------------------------------------------
@@ -2899,6 +3005,13 @@ class FakeTelegramClient:
                     default_name="Spain",
                     country_codes=[types.help.CountryCode(country_code="34")],
                 ),
+                types.help.Country(
+                    iso2="US",
+                    default_name="United States",
+                    country_codes=[
+                        types.help.CountryCode(country_code="1", patterns=["XXX XXX XXXX"])
+                    ],
+                ),
             ],
             hash=0,
         )
@@ -2928,7 +3041,439 @@ class FakeTelegramClient:
         self.world.takeout_calls.append(type(request.query).__name__)
         return await self(request.query)
 
-    # -- entities ----------------------------------------------------------
+    # -- the contact world -------------------------------------------------
+    #
+    # Every one of these moves the world: `contacts.addContact` really flips
+    # `user.contact`, `contacts.block` really lands the peer on the list
+    # `getBlocked` answers with, and `stories.togglePeerStoriesHidden` really
+    # sets the flag `user get` reads back. That is what makes the idempotent
+    # second pass — `already: true`, no RPC — assertable at all.
+
+    def _user_of(self, ref: Any) -> Any:
+        for attribute in ("user_id", "id"):
+            value = getattr(ref, attribute, None)
+            if isinstance(value, int):
+                found = self.world.users.get(value)
+                if found is not None:
+                    return found
+        if type(ref).__name__ in ("InputUserSelf", "InputPeerSelf"):
+            return self.world.me
+        return None
+
+    def _contact_users(self) -> list[types.User]:
+        return [self.world.users[uid] for uid in self.world.contacts if uid in self.world.users]
+
+    def _raw_GetContactsRequest(self, request: Any) -> Any:
+        return types.contacts.Contacts(
+            contacts=[
+                types.Contact(user_id=uid, mutual=mutual)
+                for uid, mutual in self.world.contacts.items()
+            ],
+            saved_count=len(self.world.saved_contacts) or len(self.world.contacts),
+            users=self._contact_users(),
+        )
+
+    def _raw_GetContactIDsRequest(self, request: Any) -> list[int]:
+        return sorted(self.world.contacts)
+
+    def _raw_GetStatusesRequest(self, request: Any) -> list[Any]:
+        return [
+            types.ContactStatus(user_id=uid, status=user.status)
+            for uid, user in self.world.users.items()
+            if uid in self.world.contacts and getattr(user, "status", None) is not None
+        ]
+
+    def _raw_AddContactRequest(self, request: Any) -> types.Updates:
+        user = self._user_of(request.id)
+        if user is None:
+            from telethon.errors import RPCError
+
+            raise RPCError(request, "CONTACT_ID_INVALID", 400)
+        if not request.first_name:
+            from telethon.errors import RPCError
+
+            raise RPCError(request, "CONTACT_NAME_EMPTY", 400)
+        user.first_name = request.first_name
+        user.last_name = request.last_name
+        user.contact = True
+        self.world.contacts.setdefault(int(user.id), False)
+        note = getattr(request, "note", None)
+        if note is not None:
+            self.world.contact_notes[int(user.id)] = getattr(note, "text", "") or ""
+        return self._updates()
+
+    def _raw_ImportContactsRequest(self, request: Any) -> Any:
+        imported, retry, popular = [], [], []
+        for item in request.contacts:
+            phone = _e164(item.phone)
+            user_id = self.world.phonebook.get(phone)
+            if user_id is None:
+                # Neither imported nor retried: the ambiguous answer.
+                continue
+            if user_id < 0:  # a test asking for the retry branch
+                retry.append(int(item.client_id))
+                continue
+            imported.append(types.ImportedContact(user_id=user_id, client_id=int(item.client_id)))
+            self.world.contacts.setdefault(user_id, False)
+            user = self.world.users.get(user_id)
+            if user is not None:
+                user.contact = True
+            popular.append(types.PopularContact(client_id=int(item.client_id), importers=3))
+        return types.contacts.ImportedContacts(
+            imported=imported,
+            popular_invites=popular,
+            retry_contacts=retry,
+            users=[self.world.users[i.user_id] for i in imported if i.user_id in self.world.users],
+        )
+
+    def _raw_DeleteContactsRequest(self, request: Any) -> types.Updates:
+        removed = []
+        for ref in request.id:
+            user = self._user_of(ref)
+            if user is None:
+                continue
+            self.world.contacts.pop(int(user.id), None)
+            user.contact = False
+            removed.append(user)
+        return types.Updates(
+            updates=[], users=removed, chats=[], date=datetime.now(timezone.utc), seq=0
+        )
+
+    def _raw_DeleteByPhonesRequest(self, request: Any) -> bool:
+        for phone in request.phones:
+            self.world.saved_contacts = [
+                entry for entry in self.world.saved_contacts if entry.phone != _e164(phone)
+            ]
+            user_id = self.world.phonebook.pop(_e164(phone), None)
+            if user_id is not None:
+                self.world.contacts.pop(user_id, None)
+        return True
+
+    def _raw_UpdateContactNoteRequest(self, request: Any) -> types.Updates:
+        user = self._user_of(request.id)
+        if user is None or int(user.id) not in self.world.contacts:
+            from telethon.errors import RPCError
+
+            raise RPCError(request, "CONTACT_MISSING", 400)
+        text = getattr(request.note, "text", "") or ""
+        if text:
+            self.world.contact_notes[int(user.id)] = text
+        else:
+            self.world.contact_notes.pop(int(user.id), None)
+        return self._updates()
+
+    def _raw_AcceptContactRequest(self, request: Any) -> types.Updates:
+        return self._updates()
+
+    def _contacts_search(self, request: Any) -> Any:
+        query = (request.q or "").lower()
+
+        def matches(uid: int) -> bool:
+            entity = self.world.entity_for(uid) or self.world.users.get(uid)
+            if entity is None:
+                return False
+            haystack = " ".join(
+                str(getattr(entity, key, "") or "")
+                for key in ("first_name", "last_name", "title", "username")
+            ).lower()
+            return query in haystack
+
+        mine = [uid for uid in self.world.search_mine if matches(uid)]
+        found = [uid for uid in self.world.search_global if matches(uid)]
+        entities = {uid: self.world.entity_for(uid) for uid in mine + found}
+        return types.contacts.Found(
+            my_results=[_peer_for(uid) for uid in mine],
+            results=[_peer_for(uid) for uid in found],
+            chats=[e for e in entities.values() if e is not None and not isinstance(e, types.User)],
+            users=[e for e in entities.values() if isinstance(e, types.User)],
+        )
+
+    def _raw_GetSponsoredPeersRequest(self, request: Any) -> Any:
+        if not self.world.sponsored_peers:
+            return types.contacts.SponsoredPeersEmpty()
+        return types.contacts.SponsoredPeers(
+            peers=[
+                types.SponsoredPeer(peer=_peer_for(uid), random_id=b"\x01\x02")
+                for uid in self.world.sponsored_peers
+            ],
+            chats=[],
+            users=[
+                self.world.users[uid]
+                for uid in self.world.sponsored_peers
+                if uid in self.world.users
+            ],
+        )
+
+    def _raw_GetRecentMeUrlsRequest(self, request: Any) -> Any:
+        return types.help.RecentMeUrls(urls=[], chats=[], users=[])
+
+    # -- blocking ----------------------------------------------------------
+
+    def _raw_GetBlockedRequest(self, request: Any) -> Any:
+        source = (
+            self.world.blocked_stories
+            if getattr(request, "my_stories_from", None)
+            else self.world.blocked
+        )
+        rows = sorted(source.items())
+        window = rows[request.offset : request.offset + request.limit]
+        return types.contacts.BlockedSlice(
+            count=len(rows),
+            blocked=[types.PeerBlocked(peer_id=_peer_for(uid), date=date) for uid, date in window],
+            chats=[],
+            users=[self.world.users[uid] for uid, _ in window if uid in self.world.users],
+        )
+
+    def _blocked_target(self, request: Any) -> dict[int, Any]:
+        return (
+            self.world.blocked_stories
+            if getattr(request, "my_stories_from", None)
+            else self.world.blocked
+        )
+
+    def _raw_UnblockRequest(self, request: Any) -> bool:
+        marked = abs(self._chat_id(request.id))
+        return self._blocked_target(request).pop(marked, None) is not None
+
+    def _raw_SetBlockedRequest(self, request: Any) -> bool:
+        target = self._blocked_target(request)
+        target.clear()
+        for peer in request.id:
+            target[abs(self._chat_id(peer))] = datetime.now(timezone.utc)
+        return True
+
+    def _raw_BlockFromRepliesRequest(self, request: Any) -> types.Updates:
+        return self._updates()
+
+    # -- close friends, birthdays, top peers -------------------------------
+
+    def _raw_EditCloseFriendsRequest(self, request: Any) -> bool:
+        wanted = {int(i) for i in request.id}
+        for uid, user in self.world.users.items():
+            user.close_friend = uid in wanted
+        return True
+
+    def _raw_GetBirthdaysRequest(self, request: Any) -> Any:
+        return types.contacts.ContactBirthdays(
+            contacts=[
+                types.ContactBirthday(contact_id=uid, birthday=birthday)
+                for uid, birthday in self.world.birthdays.items()
+            ],
+            users=[
+                self.world.users[uid] for uid in self.world.birthdays if uid in self.world.users
+            ],
+        )
+
+    def _raw_SuggestBirthdayRequest(self, request: Any) -> types.Updates:
+        return self._updates()
+
+    def _raw_GetTopPeersRequest(self, request: Any) -> Any:
+        if not self.world.top_peers_enabled:
+            return types.contacts.TopPeersDisabled()
+        wanted = {
+            "correspondents": "TopPeerCategoryCorrespondents",
+            "bots_pm": "TopPeerCategoryBotsPM",
+            "phone_calls": "TopPeerCategoryPhoneCalls",
+            "groups": "TopPeerCategoryGroups",
+            "channels": "TopPeerCategoryChannels",
+        }
+        categories = []
+        users: list[Any] = []
+        for flag, constructor in wanted.items():
+            if not getattr(request, flag, None):
+                continue
+            rows = self.world.top_peers.get(flag.replace("_", "-"), [])
+            categories.append(
+                types.TopPeerCategoryPeers(
+                    category=getattr(types, constructor)(),
+                    count=len(rows),
+                    peers=[
+                        types.TopPeer(peer=_peer_for(uid), rating=rating) for uid, rating in rows
+                    ],
+                )
+            )
+            users += [self.world.users[uid] for uid, _ in rows if uid in self.world.users]
+        return types.contacts.TopPeers(categories=categories, chats=[], users=users)
+
+    def _raw_ToggleTopPeersRequest(self, request: Any) -> bool:
+        self.world.top_peers_enabled = bool(request.enabled)
+        if not request.enabled:
+            self.world.top_peers.clear()
+        return True
+
+    def _raw_ResetTopPeerRatingRequest(self, request: Any) -> bool:
+        return True
+
+    # -- users -------------------------------------------------------------
+
+    def _raw_GetUsersRequest(self, request: Any) -> list[Any]:
+        out = []
+        for ref in request.id:
+            user = self._user_of(ref)
+            out.append(user if user is not None else types.UserEmpty(id=0))
+        return out
+
+    def _raw_GetRequirementsToContactRequest(self, request: Any) -> list[Any]:
+        out = []
+        for ref in request.id:
+            user = self._user_of(ref)
+            rule = self.world.contact_requirements.get(int(getattr(user, "id", 0) or 0), "free")
+            if rule == "premium":
+                out.append(types.RequirementToContactPremium())
+            elif rule.startswith("paid:"):
+                out.append(types.RequirementToContactPaidMessages(stars_amount=int(rule[5:])))
+            else:
+                out.append(types.RequirementToContactEmpty())
+        return out
+
+    def _raw_ExportContactTokenRequest(self, request: Any) -> Any:
+        return types.ExportedContactToken(
+            url=f"https://t.me/contact/{self.world.contact_token}",
+            expires=datetime.now(timezone.utc),
+        )
+
+    def _raw_ImportContactTokenRequest(self, request: Any) -> Any:
+        return next(iter(self.world.users.values()), self.world.me)
+
+    def _raw_GetUserPhotosRequest(self, request: Any) -> Any:
+        user = self._user_of(request.user_id)
+        photos = self.world.user_photos.get(int(getattr(user, "id", 0) or 0), [])
+        window = photos[request.offset : request.offset + request.limit]
+        return types.photos.PhotosSlice(count=len(photos), photos=window, users=[])
+
+    def _raw_UploadContactProfilePhotoRequest(self, request: Any) -> Any:
+        if request.file is None and request.video is None:
+            return types.photos.Photo(photo=types.PhotoEmpty(id=0), users=[])
+        return types.photos.Photo(
+            photo=types.Photo(
+                id=5150,
+                access_hash=1,
+                file_reference=b"",
+                date=datetime.now(timezone.utc),
+                sizes=[],
+                dc_id=2,
+            ),
+            users=[],
+        )
+
+    def _raw_GetSavedMusicRequest(self, request: Any) -> Any:
+        user = self._user_of(request.id)
+        documents = self.world.saved_music.get(int(getattr(user, "id", 0) or 0), [])
+        return types.users.SavedMusic(count=len(documents), documents=documents)
+
+    def _raw_GetPersonalChannelHistoryRequest(self, request: Any) -> Any:
+        user = self._user_of(request.user_id)
+        overrides = self.world.user_full.get(int(getattr(user, "id", 0) or 0), {})
+        channel_id = overrides.get("personal_channel_id")
+        history = list(reversed(self.world.history(-1000000000000 - int(channel_id or 0))))
+        return types.messages.ChannelMessages(
+            pts=1,
+            count=len(history),
+            messages=history[: request.limit],
+            topics=[],
+            chats=list(self.world.chats.values()),
+            users=[],
+        )
+
+    def _raw_GetSavedRequest(self, request: Any) -> list[Any]:
+        return list(self.world.saved_contacts)
+
+    def _raw_GetContactSignUpNotificationRequest(self, request: Any) -> bool:
+        return self.world.contact_signup_silent
+
+    def _raw_SetContactSignUpNotificationRequest(self, request: Any) -> bool:
+        self.world.contact_signup_silent = bool(request.silent)
+        return True
+
+    # -- resolution --------------------------------------------------------
+
+    def _resolved(self, entity: Any) -> Any:
+        from telethon import utils
+
+        return types.contacts.ResolvedPeer(
+            peer=utils.get_peer(entity),
+            chats=[] if isinstance(entity, types.User) else [entity],
+            users=[entity] if isinstance(entity, types.User) else [],
+        )
+
+    def _raw_ResolveUsernameRequest(self, request: Any) -> Any:
+        entity = self._lookup(request.username)
+        if entity is None:
+            from telethon.errors import UsernameNotOccupiedError
+
+            raise UsernameNotOccupiedError(request)
+        return self._resolved(entity)
+
+    def _raw_ResolvePhoneRequest(self, request: Any) -> Any:
+        user_id = self.world.phonebook.get(_e164(request.phone))
+        entity = self.world.users.get(user_id or 0)
+        if entity is None:
+            from telethon.errors import RPCError
+
+            raise RPCError(request, "PHONE_NOT_OCCUPIED", 400)
+        return self._resolved(entity)
+
+    def _raw_GetDeepLinkInfoRequest(self, request: Any) -> Any:
+        return types.help.DeepLinkInfo(message=self.world.deep_link_message)
+
+    # -- the reads `resolve link --open` performs ---------------------------
+    #
+    # Every one of them is a *read*: `resolve link` classifies and reports,
+    # and the acting verb lives in another group. These exist so that the
+    # dispatcher's per-kind branch is exercised rather than assumed.
+
+    def _raw_CheckChatInviteRequest(self, request: Any) -> Any:
+        return types.ChatInvite(
+            title="Shared group",
+            photo=types.PhotoEmpty(id=0),
+            participants_count=12,
+            color=0,
+        )
+
+    def _raw_GetBoostsStatusRequest(self, request: Any) -> Any:
+        return types.premium.BoostsStatus(
+            level=3,
+            current_level_boosts=10,
+            boosts=12,
+            boost_url="https://t.me/boost/news",
+        )
+
+    def _raw_CheckGiftCodeRequest(self, request: Any) -> Any:
+        return types.payments.CheckedGiftCode(
+            date=datetime.now(timezone.utc),
+            days=90,
+            chats=[],
+            users=[],
+            used_date=datetime.now(timezone.utc),
+        )
+
+    def _raw_GetThemeRequest(self, request: Any) -> Any:
+        return types.Theme(id=1, access_hash=1, slug="Slug", title="Midnight")
+
+    # -- stories -----------------------------------------------------------
+
+    def _raw_TogglePeerStoriesHiddenRequest(self, request: Any) -> bool:
+        marked = abs(self._chat_id(request.peer))
+        user = self.world.users.get(marked)
+        if user is not None:
+            user.stories_hidden = bool(request.hidden)
+        return True
+
+    def _raw_ToggleAllStoriesHiddenRequest(self, request: Any) -> bool:
+        self.world.all_stories_hidden = bool(request.hidden)
+        return True
+
+    def _raw_GetAllReadPeerStoriesRequest(self, request: Any) -> types.Updates:
+        return types.Updates(
+            updates=[
+                types.UpdateReadStories(peer=_peer_for(uid), max_id=max_id)
+                for uid, max_id in self.world.stories_read.items()
+            ],
+            users=[],
+            chats=[],
+            date=datetime.now(timezone.utc),
+            seq=0,
+        )
 
     # -- entities ----------------------------------------------------------
 

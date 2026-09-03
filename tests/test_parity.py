@@ -25,10 +25,10 @@ ROOT = Path(__file__).resolve().parent.parent
 #: Every P0 catalog id the landed PRs claim. Raised by each group PR, never
 #: lowered. ARCHITECTURE §1.3: "P0 coverage may never decrease and must reach
 #: 100 % before 2.0.0 final".
-P0_FLOOR = 116
+P0_FLOOR = 136
 
 #: The floor for total covered ids. Same rule, weaker guarantee.
-COVERED_FLOOR = 1010
+COVERED_FLOOR = 1132
 
 #: Every P0 catalog id PR-1's own operations cover, named rather than
 #: counted, so a swap (one dropped, one added) cannot pass a count check
@@ -217,10 +217,38 @@ PR4_P0_IDS = frozenset(
 )
 
 #: `(group prefixes, the P0 ids those groups claim)` for each landed PR.
+#: The P0 ids PR-5's own operations cover, named for the same reason.
+PR5_P0_IDS = frozenset(
+    {
+        "contacts-users.block-unblock",
+        "contacts-users.contact-add-by-phone",
+        "contacts-users.contact-add-by-user",
+        "contacts-users.contact-delete",
+        "contacts-users.contact-edit-name",
+        "contacts-users.contacts-list",
+        "contacts-users.contacts-search",
+        "contacts-users.resolve-deeplink",
+        "contacts-users.resolve-message-link",
+        "contacts-users.resolve-phone",
+        "contacts-users.search-public-chat",
+        "contacts-users.user-bio",
+        "contacts-users.user-phone",
+        "contacts-users.user-profile-basic",
+        "contacts-users.user-profile-full",
+        "contacts-users.user-requirements-to-contact",
+        "contacts-users.user-status",
+        "dialogs.block-user",
+        "dialogs.resolve-peer",
+        "dialogs.unblock-user",
+    }
+)
+
+
 P0_OWNERS = (
     (("message.", "draft."), PR1_P0_IDS),
     (("auth.", "account.", "passport."), PR2_P0_IDS),
     (("chat.", "folder."), PR3_P0_IDS),
+    (("contact.", "user.", "resolve."), PR5_P0_IDS),
     (PR4_GROUPS, PR4_P0_IDS),
     (("media.", "sticker.", "gif.", "emoji."), PR6_P0_IDS),
     (("poll.", "reaction.", "todo.", "location.", "search."), PR9_P0_IDS),
@@ -296,7 +324,9 @@ class TestTheGate:
         assert missing == [], f"a landed PR dropped coverage of {missing}"
 
     @pytest.mark.parametrize(
-        "prefixes,expected", P0_OWNERS, ids=["pr1", "pr2", "pr3", "pr4", "pr6", "pr9", "pr11"]
+        "prefixes,expected",
+        P0_OWNERS,
+        ids=["pr1", "pr2", "pr3", "pr5", "pr4", "pr6", "pr9", "pr11"],
     )
     def test_the_floor_is_the_whole_truth(self, prefixes, expected):
         """Each named list is exactly the P0 set its own groups claim.
@@ -385,6 +415,15 @@ class TestTheGate:
         stats = report.by_domain["media_files"]
         assert stats["accounted_percent"] == 100.0
         assert stats["covered"] >= 118
+
+    def test_contacts_users_is_fully_accounted_for(self, report):
+        """PR-5's own domain: implemented, or waived to a named later PR."""
+        stats = report.by_domain["contacts_users"]
+        assert stats["accounted_percent"] == 100.0
+        assert stats["covered"] >= 99
+
+    def test_the_contacts_users_domain_is_no_longer_waived_wholesale(self):
+        assert "contacts_users" not in waivers().domains
 
 
 class TestReport:

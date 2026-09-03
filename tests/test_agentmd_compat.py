@@ -64,6 +64,15 @@ V1_PATHS = [
     ("media", "upload"),
     ("dl",),
     ("up",),
+    ("contact", "list"),
+    ("contact", "add"),
+    ("contact", "rename"),
+    ("contact", "remove"),
+    ("contact", "search"),
+    ("contacts",),
+    ("user", "get"),
+    ("user", "dialog-status"),
+    ("user", "hide-stories"),
 ]
 
 #: Documented v1 paths that are still hand-written commands rather than
@@ -122,6 +131,21 @@ V1_KEYS: dict[str, set[str]] = {
     "chat.leave": {"left", "chat_id"},
     "chat.typing": {"typing", "chat_id"},
     "chat.catchup": {"chats"},
+    "contact.add": {"added", "user_id"},
+    "contact.rename": {"saved", "user_id", "first_name", "last_name"},
+    "contact.remove": {"removed"},
+    "user.get": {"id", "first_name", "username", "bio", "is_bot", "status", "stories_hidden"},
+    "user.dialog-status": {
+        "ref",
+        "id",
+        "username",
+        "resolved",
+        "has_dialog",
+        "message_count",
+        "source",
+        "reason",
+    },
+    "user.hide-stories": {"user_id", "username", "hidden", "already"},
 }
 
 #: The changes CHANGELOG.md lists under "Breaking". Anything not in here has
@@ -147,6 +171,9 @@ DELIBERATE_CHANGES = {
     "chat.list": "`{chats: [...]}` became the `Page[Dialog]` envelope, and "
     "each row's `id`/`name`/`type`/`username` moved into a nested `chat` "
     "object so a dialog names its peer the same way every other response does",
+    "contact.list": "`{contacts: [...]}` became the `Page[Contact]` envelope; "
+    "every v1 row key survives and `phone` is normalised to E.164",
+    "contact.search": "same as contact.list",
     "chat.poster.list": "`{posters: [...], scanned_messages, distinct_posters}` "
     "keeps its keys, but each poster gained `user_id` beside v1's `id` and "
     "`last_date`/`last_message_id` became `date`/`date_unix`/`last_msg_id`",

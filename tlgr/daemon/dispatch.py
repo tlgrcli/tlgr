@@ -86,6 +86,11 @@ class DaemonContext:
     warnings: list[str] = field(default_factory=list)
     flood_wait_slept: int = 0
     already: bool = False
+    #: Set when an operation could not *establish* its answer. The CLI turns
+    #: it into exit 13, so a truncated harvest or an unresolvable peer still
+    #: returns its partial result and still fails closed (§7.3).
+    indeterminate: bool = False
+    indeterminate_reason: str = ""
 
     def warn(self, message: str) -> None:
         self.warnings.append(message)
@@ -146,6 +151,18 @@ class DaemonContext:
     def mark_already(self) -> None:
         """Record that the world already looked the way the caller asked for."""
         self.already = True
+
+    def mark_indeterminate(self, reason: str = "") -> None:
+        """Record that the answer could not be established.
+
+        The result is still returned — a partial answer with a reason beats
+        an error that throws the partial answer away — and the CLI exits 13,
+        so a caller gating on it fails closed. `user dialog-status` is the
+        op this exists for: its three-valued contract needs both the body
+        and the non-zero status.
+        """
+        self.indeterminate = True
+        self.indeterminate_reason = reason
 
     def emit(self, event_type: str, payload: dict[str, Any], **kwargs: Any) -> None:
         """Echo an action tlgr itself performed onto the bus (§6.5).
@@ -392,6 +409,10 @@ def _envelope(
     }
     if dry_run:
         envelope["meta"]["dry_run"] = True
+    if context.indeterminate:
+        envelope["meta"]["indeterminate"] = True
+        if context.indeterminate_reason:
+            envelope["meta"]["reason"] = context.indeterminate_reason
     # `omit_defaults` drops an empty `items`, so the membership test v1 used
     # here made an empty page lose its `page` envelope entirely — the one
     # shape a caller walking pages must be able to rely on.

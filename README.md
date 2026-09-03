@@ -185,24 +185,66 @@ Full reference: [`docs/reference/folder.md`](docs/reference/folder.md).
 ### Contacts
 
 ```bash
-tlgr contact list
-tlgr contact add <phone> [name]
+tlgr contact list                      # --with-status --sort last-seen --export vcard --out FILE
+tlgr contact add <user|+phone> [name]  # --first-name --last-name --note --share-phone
 tlgr contact rename <user>             # --first-name, --last-name (tags non-contacts too)
-tlgr contact remove <user>
-tlgr contact search <query>
+tlgr contact remove <user>...          # --phone reaches numbers with no account
+tlgr contact search <query>            # --mine-only --global-only --recent
+tlgr contact note set <user> <text>    # --clear
+tlgr contact status list               # online / last-seen for every contact, in one call
+tlgr contact birthday list
+tlgr contact close-friends list|set
+tlgr contact blocked list|set          # --stories for the story blocklist
+tlgr contact top list|set              # frequent contacts, by category
+tlgr contact import <file.vcf|csv>     # bulk phonebook import
+tlgr contact sync <file>               # diff a phonebook against the server (--apply)
+tlgr contact saved list                # every number ever uploaded, account or not
+tlgr contact share <user> --to <chat>
+tlgr contact share-phone <user>        # irreversible
 ```
+
+An empty `contact add` by phone is **ambiguous** — the number may have no
+account, or its owner may refuse lookups by phone — and `reason` says so
+rather than the reply claiming "no such user".
 
 ### Users
 
 ```bash
-tlgr user get <user>
+tlgr user get <user>                   # --full --translate-bio LANG --from-chat/--from-message
 tlgr user dialog-status <user>         # does THIS account have prior history with them?
-tlgr user hide-stories <user>          # archive their stories for this account (--unhide)
+tlgr user hide-stories <user>...       # archive their stories for this account (--unhide)
+tlgr user block <user>                 # --stories --report-spam --delete-history
+tlgr user unblock <user>
+tlgr user can-message <user>...        # free | premium | paid (and the Stars price)
+tlgr user chat list <user>             # groups you share (--leave-all)
+tlgr user link <user>                  # --profile --text; `me --token` for a contact token
+tlgr user photo list|set <user>
+tlgr user music list <user>
+tlgr user personal-channel get <user>
+tlgr user birthday set <user> <date>
 ```
 
 `dialog-status` distinguishes "yes", "definitively no", and "cannot tell"
 (exit 13) instead of guessing. Never infer "no history" from an entity
 resolution error — see AGENT.md for why.
+
+`hide-stories` is idempotent: it reads the current flag first and reports
+`already: true` without an RPC, so a bulk pass over hundreds of peers is
+nearly free to repeat.
+
+### Resolving references
+
+```bash
+tlgr resolve peer <ref>...             # @username | id | +phone | t.me link | me
+tlgr resolve username <name>
+tlgr resolve phone <+number>           # --offline formats and validates, no RPC
+tlgr resolve link <url>                # classify any t.me / tg:// link (--open)
+tlgr resolve cache get                 # inspect the per-account peer database
+```
+
+`resolve link` never *acts*: it says what a link is and names the command
+that would follow it in `delegated_to`. A phone lookup that comes back empty
+exits 13, never 5 — no account and a privacy refusal are indistinguishable.
 
 ### Media, stickers, GIFs and emoji
 

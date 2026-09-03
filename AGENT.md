@@ -528,36 +528,123 @@ match it — that is what `folder remove --exclude` is for.
 ### Contacts
 
 ```
-tlgr contact list [--limit N] [--cursor TOKEN]
-→ {"contacts": [{"id": ..., "name": ..., "username": ..., "phone": ...}], "has_more": false}
+tlgr contact list [--limit N] [--cursor TOKEN] [--with-status] [--with-stories]
+                  [--sort name|first-name|last-name|last-seen|added] [--mutual-only]
+                  [--close-friends-only] [--ids-only] [--export vcard|csv|json --out PATH]
+→ Page[Contact]: {"items": [{"id", "name", "username", "phone", "mutual", ...}],
+                  "has_more": false, "next_cursor": null, "total": 2}
 
-tlgr contact add <phone> [name]
-→ {"added": true, "user_id": 123}
+tlgr contact add <user|+phone> [name] [--first-name T] [--last-name T] [--note T]
+                 [--share-phone] [--from-message <chat>:<id>]
+→ {"added": true, "user_id": 123, "imported": [123], "retry": [], "reason": null}
+# By USER it is contacts.addContact; by +PHONE it is contacts.importContacts.
+# An empty `imported` with an empty `retry` is AMBIGUOUS: the number may have
+# no Telegram account, OR its owner may refuse lookups by phone. `reason` says
+# so. Do not report it as "no such user". `retry` entries are not failures --
+# the server is asking for them again later.
 
 tlgr contact rename <user> [--first-name TEXT] [--last-name TEXT]
 → {"saved": true, "user_id": 123, "first_name": "...", "last_name": "..."}
 # Works on non-contacts too (saves them as a contact). Omitted parts keep the
-# current profile name. Useful for tagging users with state markers.
+# current profile name. Useful for tagging users with state markers. An empty
+# first name is sent as "." because the server rejects an empty one.
 
-tlgr contact remove <user>
-→ {"removed": true}
+tlgr contact remove <user>... [--phone NUMBER]
+→ {"removed": true, "user_ids": [123], "phones": []}
+# Deleting by phone reaches numbers with no Telegram account and is
+# irreversible server-side.
 
-tlgr contact search <query> [--limit N] [--cursor TOKEN]
-→ {"contacts": [...], "has_more": false}
+tlgr contact search <query> [--mine-only] [--global-only] [--recent] [--type KIND]
+→ Page[FoundPeer]: each row carries `source`: mine | global | recent | sponsored.
+# Adverts are OFF unless --with-sponsored. `--recent` is tlgr-local state.
+
+tlgr contact note set <user> [text] [--clear]        # private; read back by `user get --full`
+tlgr contact status list [--online-only]             # last-seen for every contact, one call
+tlgr contact birthday list [--window DAYS]
+tlgr contact close-friends list|set <user>...        # --add/--remove are read-modify-write
+tlgr contact blocked list [--stories]                # the two blocklists are independent
+tlgr contact blocked set <peer>...                   # REPLACES the list; the reply is the diff
+tlgr contact top list|set [--category NAME]          # frequent contacts
+tlgr contact import <file.vcf|file.csv> [--batch-size N]
+tlgr contact sync <file> [--apply] [--delete-missing]  # prints the diff unless --apply
+tlgr contact saved list [--invite-text]              # every number ever uploaded
+tlgr contact share <user> --to <chat>
+tlgr contact share-phone <user>                      # irreversible disclosure
 ```
+
+`contact status list` reports `by_me` on the coarse buckets (`recently`,
+`last_week`, `last_month`). It means **our own** last-seen privacy caused the
+coarseness — never report it as the peer hiding from us.
 
 ### Users
 
 ```
-tlgr user get <user>
-→ {"id": ..., "first_name": ..., "username": ..., "bio": ..., "is_bot": false, ...}
+tlgr user get <user> [--full] [--translate-bio LANG]
+                     [--from-chat CHAT --from-message ID]
+→ {"id": ..., "first_name": ..., "username": ..., "bio": ..., "is_bot": false,
+   "status": "online", "stories_hidden": false, ...}
+# Never prints an access hash: `access_hash_cached` says whether one is held.
+# A bare numeric id resolves only from this account's peer cache -- there is no
+# MTProto call that mints an access hash for one. For a `min` user (seen only
+# inside a channel message) pass --from-chat/--from-message.
+# No photo plus an empty status is a SIGNAL, not a verdict: this never claims
+# "they blocked you". Use the global --select to pull out one field.
+
+tlgr user block <user> [--stories] [--report-spam] [--delete-history]
+→ {"peer_id": ..., "blocked": true, "stories_only": false, "deleted": false}
+tlgr user unblock <user> [--stories]
+→ {"peer_id": ..., "blocked": false, "already": false}
+
+tlgr user can-message <user>...
+→ Page[ContactRequirement]: {"user_id", "result": free|premium|paid, "stars_amount"}
+# Pairs with dialog-status for cold-outreach gating: this answers "am I
+# allowed to", dialog-status answers "have I already".
+
+tlgr user chat list <user> [--leave-all]     # groups and channels you share
+tlgr user link <user> [--profile] [--text T] # `me --token` mints an expiring link
+tlgr user photo list|set <user>
+tlgr user music list <user>
+tlgr user personal-channel get <user>
+tlgr user birthday set <user> <date>         # sends a visible message
 
 tlgr user dialog-status <user> [--max-dialogs N]
 → {"ref": ..., "id": ..., "username": ..., "resolved": true, "has_dialog": true,
    "message_count": 12, "source": "peer_dialogs", "reason": null}
 
-tlgr user hide-stories <user> [--unhide]
+tlgr user hide-stories <user>... [--unhide] [--all on|off]
 → {"user_id": ..., "username": ..., "hidden": true, "already": false}
+# More than one peer fills `peers`; a single peer answers with exactly the
+# four keys above.
+```
+
+### Resolving a reference
+
+```
+tlgr resolve peer <ref>...  [--from-chat CHAT --from-message ID] [--ids botapi]
+→ Page[ResolvedRef]: {"ref", "id" (raw), "marked_id", "type", "title",
+                      "source", "resolved", "access_hash_cached"}
+# `source` says HOW it was answered. An uncached bare numeric id FAILS
+# (exit 5 or 13) rather than being guessed at -- there is no MTProto call that
+# turns an id into an access hash for a non-bot account.
+
+tlgr resolve username <name> [--type user|bot|group|channel]
+# USERNAME_INVALID exits 2 (a typo); USERNAME_NOT_OCCUPIED exits 5 (free).
+
+tlgr resolve phone <+number> [--offline] [--countries]
+→ {"phone", "e164", "country", "resolved", "peer", "reason"}
+# PHONE_NOT_OCCUPIED exits 13, NEVER 5: no account and a privacy refusal are
+# indistinguishable. --offline formats and validates without an RPC.
+
+tlgr resolve link <url> [--no-network] [--open] [--draft CHAT]
+→ {"kind", "raw_url", "username", "msg_id", ..., "delegated_to"}
+# Classifies any t.me / tg:// link into one of ~30 kinds and NEVER acts:
+# `delegated_to` names the command that would (chat join, bot start, gift
+# redeem, proxy add...). `t.me/+X` is a PHONE when X parses as a number and an
+# invite hash otherwise.
+
+tlgr resolve cache get [--type KIND] [--stale 7d] [--refresh PEER] [--purge]
+# The per-account peer database. Access hashes are never printed, only
+# `access_hash_cached`; they are per login session and worthless elsewhere.
 ```
 
 `hide-stories` is Telegram's own "Hide Stories" menu item: the peer leaves the

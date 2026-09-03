@@ -85,6 +85,11 @@ class Subscriber:
     types: frozenset[str] = frozenset()
     chats: frozenset[int] = frozenset()
     maxsize: int = 1024
+    #: `watch --raw` needs the TL update itself, which is ten times the size
+    #: of the payload. Converting it for every event on the chance somebody
+    #: wants it would tax the update loop, so the bus does it only while a
+    #: subscriber has asked.
+    want_raw: bool = False
     queue: asyncio.Queue[EventEnvelope] = field(init=False)
     dropped: int = 0
     closed: bool = False
@@ -501,6 +506,7 @@ class EventBus:
         self._tasks: list[asyncio.Task[None]] = []
         self._flush_task: asyncio.Task[None] | None = None
         self._dirty: set[str] = set()
+        self._raw_wanted = 0
         self._running = False
 
     # -- lifecycle ---------------------------------------------------------
@@ -601,6 +607,9 @@ class EventBus:
         buffer = self._buffers.setdefault(envelope.account, deque(maxlen=self.buffer_size))
         buffer.append(envelope)
 
+        if raw is not None and self._raw_wanted:
+            envelope.raw = tl_to_builtins(getattr(raw, "original_update", raw))
+
         for subscriber in self._subscribers:
             if subscriber.closed:
                 continue
@@ -659,18 +668,24 @@ class EventBus:
         types: Iterable[str] = (),
         chats: Iterable[int] = (),
         maxsize: int = 1024,
+        want_raw: bool = False,
     ) -> Subscriber:
         subscriber = Subscriber(
             account=account,
             types=frozenset(types),
             chats=frozenset(int(c) for c in chats),
             maxsize=maxsize,
+            want_raw=want_raw,
         )
         self._subscribers.append(subscriber)
+        if want_raw:
+            self._raw_wanted += 1
         return subscriber
 
     def unsubscribe(self, subscriber: Subscriber) -> None:
         subscriber.close()
+        if subscriber.want_raw and self._raw_wanted:
+            self._raw_wanted -= 1
         with contextlib.suppress(ValueError):
             self._subscribers.remove(subscriber)
 

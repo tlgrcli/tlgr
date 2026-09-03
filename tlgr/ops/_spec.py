@@ -8,7 +8,7 @@ operation to drift away from the first.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Protocol, TypeAlias, runtime_checkable
@@ -67,7 +67,10 @@ class OpContext(Protocol):
         ...
 
 
-Impl: TypeAlias = Callable[[Any, Any], Awaitable[Any]]
+#: `Awaitable[Any] | AsyncIterator[Any]`: a streaming operation is an async
+#: *generator*, which is not awaitable. Registry lint L6 is what keeps the two
+#: kinds honest — `stream=True` must be an async generator and nothing else.
+Impl: TypeAlias = Callable[[Any, Any], Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +92,12 @@ class OperationSpec:
     paginated: PageKind | None = None
     stream: bool = False
     needs_account: bool = True
+    #: False for a daemon operation that needs no *Telegram* client: reading
+    #: the event bus, the flood store, the dead-letter file, the job table.
+    #: Without it every one of those would connect an account to answer a
+    #: question about the daemon, and `--account all` could not be expressed
+    #: at all (there is no single session to acquire).
+    needs_client: bool = True
     needs_auth: bool = True
     surface: Surface = Surface.DAEMON
     idempotent: bool = False

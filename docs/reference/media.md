@@ -270,7 +270,7 @@ The ledger under the output root maps document id to path, so an interrupted exp
 tlgr media export <CHAT> [OPTIONS]
 ```
 
-**returns `ExportResult`**
+**returns `MediaExportResult`**
 
 | Argument | Type | Required | Meaning |
 |---|---|---|---|

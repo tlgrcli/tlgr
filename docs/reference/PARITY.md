@@ -7,31 +7,31 @@ Coverage against the Telegram feature catalog, computed from the registry: every
 `covered` is implemented today. `acct%` is covered **plus** waived — an id that belongs to a group a later PR owns, named in `tlgr/data/parity_waivers.toml` with the PR that closes it. Ids whose feasibility is `not-applicable` or `prohibited` are excluded from the denominator once and never counted again.
 
 ```
-catalog 2026-09-02 — 289 operations, 429 invocable paths
+catalog 2026-09-02 — 294 operations, 436 invocable paths
 
 domain                        covered    req       %   acct%  ops
 auth_sessions_security             85     89   95.5%  100.0%  43
-bots_inline_payments               13    175    7.4%  100.0%  5
+bots_inline_payments               16    175    9.1%  100.0%  6
 calls_voicechats                  126    133   94.7%  100.0%  49
-contacts_users                     17    121   14.0%  100.0%  12
-dialogs_chats                     112    146   76.7%  100.0%  54
+contacts_users                     18    121   14.9%  100.0%  13
+dialogs_chats                     114    146   78.1%  100.0%  55
 groups_channels_admin              26    162   16.0%  100.0%  15
 media_files                       121    143   84.6%  100.0%  60
-messages_core                     158    167   94.6%  100.0%  53
-polls_reactions_content           114    174   65.5%  100.0%  56
+messages_core                     159    167   95.2%  100.0%  54
+polls_reactions_content           117    174   67.2%  100.0%  57
 profile_settings_privacy           20    178   11.2%  100.0%  19
 stories                            12    120   10.0%  100.0%  9
-updates_sync_network                4    189    2.1%  100.0%  3
+updates_sync_network              117    189   61.9%  100.0%  8
 
 priority                      covered    req       %   acct%
-P0                                 95    178   53.4%  100.0%
-P1                                201    379   53.0%  100.0%
-P2                                256    610   42.0%  100.0%
-P3                                256    630   40.6%  100.0%
+P0                                105    178   59.0%  100.0%
+P1                                224    379   59.1%  100.0%
+P2                                291    610   47.7%  100.0%
+P3                                311    630   49.4%  100.0%
 
-TOTAL                             808   1797   45.0%  100.0%
+TOTAL                             931   1797   51.8%  100.0%
 excluded: not-applicable 79, prohibited 40
-uncovered: 989 (989 waived with a PR number)
+uncovered: 866 (866 waived with a PR number)
 ```
 
 ## By domain
@@ -39,26 +39,26 @@ uncovered: 989 (989 waived with a PR number)
 | Domain | Covered | Required | % | Accounted % | Ops |
 |---|---:|---:|---:|---:|---:|
 | `auth_sessions_security` | 85 | 89 | 95.5% | 100.0% | 43 |
-| `bots_inline_payments` | 13 | 175 | 7.4% | 100.0% | 5 |
+| `bots_inline_payments` | 16 | 175 | 9.1% | 100.0% | 6 |
 | `calls_voicechats` | 126 | 133 | 94.7% | 100.0% | 49 |
-| `contacts_users` | 17 | 121 | 14.0% | 100.0% | 12 |
-| `dialogs_chats` | 112 | 146 | 76.7% | 100.0% | 54 |
+| `contacts_users` | 18 | 121 | 14.9% | 100.0% | 13 |
+| `dialogs_chats` | 114 | 146 | 78.1% | 100.0% | 55 |
 | `groups_channels_admin` | 26 | 162 | 16.0% | 100.0% | 15 |
 | `media_files` | 121 | 143 | 84.6% | 100.0% | 60 |
-| `messages_core` | 158 | 167 | 94.6% | 100.0% | 53 |
-| `polls_reactions_content` | 114 | 174 | 65.5% | 100.0% | 56 |
+| `messages_core` | 159 | 167 | 95.2% | 100.0% | 54 |
+| `polls_reactions_content` | 117 | 174 | 67.2% | 100.0% | 57 |
 | `profile_settings_privacy` | 20 | 178 | 11.2% | 100.0% | 19 |
 | `stories` | 12 | 120 | 10.0% | 100.0% | 9 |
-| `updates_sync_network` | 4 | 189 | 2.1% | 100.0% | 3 |
+| `updates_sync_network` | 117 | 189 | 61.9% | 100.0% | 8 |
 
 ## By priority
 
 | Priority | Covered | Required | % | Accounted % |
 |---|---:|---:|---:|---:|
-| P0 | 95 | 178 | 53.4% | 100.0% |
-| P1 | 201 | 379 | 53.0% | 100.0% |
-| P2 | 256 | 610 | 42.0% | 100.0% |
-| P3 | 256 | 630 | 40.6% | 100.0% |
+| P0 | 105 | 178 | 59.0% | 100.0% |
+| P1 | 224 | 379 | 59.1% | 100.0% |
+| P2 | 291 | 610 | 47.7% | 100.0% |
+| P3 | 311 | 630 | 49.4% | 100.0% |
 
 ## Partial coverage
 
@@ -91,6 +91,16 @@ uncovered: 989 (989 waived with a PR number)
 | `richmsg.tasks` | `message.edit` | Checklist tasks live in a layer-229 rich body; --toggle-task is refused. |
 | `richmsg.translate` | `message.translate` | Rich-body translation is layer 229 and refused with NOT_SUPPORTED. |
 | `stories.live-join` | `vc.download` | watching a live story as a viewer is owned by `story live get` |
+| `updates.event-report-message-delivery` | `events.list` | the catalogue half: the type exists and is selectable. Receiving one is `watch`, which owns those ids fully. |
+| `updates.stream-daemon-multi-account` | `events.watch` | delivers every type; the catalogue half (what exists, what it means) is `events list`/`events get`, and gap recovery is the `sync` group. |
+| `updates.stream-event-filtering` | `events.watch` | delivers every type; the catalogue half (what exists, what it means) is `events list`/`events get`, and gap recovery is the `sync` group. |
+| `updates.sync-channel-short-poll` | `events.watch` | delivers every type; the catalogue half (what exists, what it means) is `events list`/`events get`, and gap recovery is the `sync` group. |
+| `updates.sync-difference-too-long` | `events.watch` | delivers every type; the catalogue half (what exists, what it means) is `events list`/`events get`, and gap recovery is the `sync` group. |
+| `updates.sync-dispatch-ordering` | `events.watch` | delivers every type; the catalogue half (what exists, what it means) is `events list`/`events get`, and gap recovery is the `sync` group. |
+| `updates.sync-duplicate-suppression` | `events.replay` | replays a range; following it live is `watch`, and de-duplication is the consumer's job through the envelope's stable seq. |
+| `updates.sync-peer-cache-from-updates` | `events.watch` | delivers every type; the catalogue half (what exists, what it means) is `events list`/`events get`, and gap recovery is the `sync` group. |
+| `updates.sync-too-long` | `events.watch` | delivers every type; the catalogue half (what exists, what it means) is `events list`/`events get`, and gap recovery is the `sync` group. |
+| `updates.sync-updating-indicator` | `events.watch` | delivers every type; the catalogue half (what exists, what it means) is `events list`/`events get`, and gap recovery is the `sync` group. |
 
 ## Gaps in a migrated domain
 
@@ -103,6 +113,17 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `dialogs.resolve-peer` | P0 | Resolve @username / phone / t.me link to a chat | waived until PR-5: Turning a @username, a phone number or a t.me link into a chat is `resolve` (PR-5); the chat group consumes the resolver rather than exposing it. |
 | `dialogs.unblock-user` | P0 | Unblock user | waived until PR-5: Unblocking is `user unblock` (PR-5). |
 | `profile.photo-set` | P0 | Set profile photo | waived until PR-12: Setting your profile photo is `profile photo set` (PR-12). |
+| `updates.invoke-init-connection` | P0 | Identify the client (device model, app version, language) | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.net-flood-wait` | P0 | FLOOD_WAIT handling and budget | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.ops-daemon-lifecycle` | P0 | Run the update-receiving daemon | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.ops-reconnect-health` | P0 | Detect and recover a dead connection | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.ops-single-updates-consumer` | P0 | Avoid stealing updates between processes | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.session-persistence` | P0 | Persist the MTProto session (auth key, DC, entities, update state) | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.sync-catch-up-on-start` | P0 | Catch up on updates missed while the daemon was down | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.sync-get-channel-difference` | P0 | Fill gaps in a channel's update sequence | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.sync-get-difference` | P0 | Fill gaps in the common/secret update sequence | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.sync-pts-gap-algorithm` | P0 | pts/pts_count gap detection per message box | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.sync-state-persistence` | P0 | Persist pts/qts/seq/date and per-channel pts across restarts | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
 | `calls.privacy-p2p` | P1 | Privacy: peer-to-peer calls | waived until PR-12: inputPrivacyKeyPhoneP2P is the same account.setPrivacy surface as every other privacy key (PR-12). |
 | `chat.photo-set` | P1 | Set group / channel photo (photo, video or emoji/sticker avatar) | waived until PR-7: A group or channel photo is `chat photo set` (PR-7). |
 | `contact.receive-card` | P1 | Add a received contact card to your address book | waived until PR-5: contact cards, notes and birthdays are the `contact` surface (PR-5). |
@@ -110,9 +131,23 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `dialogs.block-stories` | P1 | Hide my stories from a user (story blocklist) | waived until PR-5: The story blocklist is a privacy surface on the user group (PR-5). |
 | `dialogs.dialog-exists` | P1 | Does a dialog with this peer exist | waived until PR-5: `user dialog-status` answers this and migrates with the user group (PR-5). |
 | `dialogs.notify-exceptions` | P1 | List notification exceptions | waived until PR-12: The exceptions *list* is `notify exceptions` (PR-12); one chat's exception is `chat notify`. |
-| `messages-core.message-watch-events` | P1 | Live stream of new / edited / deleted messages and read receipts | waived until PR-4: The live message stream is the event bus surface (PR-4). |
 | `profile.photos-list-history` | P1 | View own / another user's profile photo history | waived until PR-12: Profile photo history is the `profile` group (PR-12). |
 | `stars.balance` | P1 | Telegram Stars balance | waived until PR-12: the Star balance and top-up packages are the `stars` surface (PR-12). |
+| `updates.config-account-frozen` | P1 | Frozen-account state and appeal link | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.config-app` | P1 | Read the client (app) config | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.config-mtproto` | P1 | Read the MTProto server config | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.net-connection-status` | P1 | Report connection status / current DC | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.net-error-taxonomy` | P1 | Structured RPC error reporting | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.net-proxy-mtproxy` | P1 | MTProto proxy (MTProxy) with secret | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.net-proxy-socks5` | P1 | SOCKS5 proxy | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.net-timeouts-retries` | P1 | Connection/request timeouts and retry policy | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.presence-read-receipts-policy` | P1 | Read receipts must not be faked | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.presence-set-online` | P1 | Appear online | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.stream-webhook-delivery` | P1 | Push events to an HTTP webhook | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.sync-disable-updates` | P1 | Run a request without subscribing to updates | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.sync-get-state` | P1 | Fetch update state (pts/qts/date/seq) | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.sync-new-session-triggers-diff` | P1 | Re-sync after new_session_created / socket reset | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.sync-seq-gap-algorithm` | P1 | seq gap detection for the Updates container | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
 | `attach.menu-bots` | P2 | Attachment-menu / side-menu mini-app bots: list, info, add, remove | waived until PR-10: Attachment-menu bots are the `bot` group (PR-10). |
 | `auth.url-auth-bot-button` | P2 | Log in to a website via a bot's login button (Seamless Telegram Login) | waived until PR-10: Seamless Telegram Login is a bot keyboard button (messages.requestUrlAuth / acceptUrlAuth); it lands with the bots group in PR-10. |
 | `contact.note` | P2 | Private note on a contact | waived until PR-5: contact cards, notes and birthdays are the `contact` surface (PR-5). |
@@ -127,8 +162,6 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `dialogs.hide-stories-peer` | P2 | Hide a peer's stories from the strip | waived until PR-8: Hiding a peer's stories is the story strip (PR-8). |
 | `dialogs.notify-scope-defaults` | P2 | Default notification settings per chat type | waived until PR-12: Scope-wide defaults are `notify set` (PR-12). |
 | `dialogs.presence-watch` | P2 | Peer online status / last seen | waived until PR-4: Online/last-seen is an update stream (PR-4). |
-| `dialogs.typing-watch` | P2 | See who is typing | waived until PR-4: Watching who is typing is an update stream (PR-4); sending one is `chat typing`. |
-| `dialogs.watch-dialog-events` | P2 | Live dialog-level events | waived until PR-4: Live dialog events are the event bus (PR-4). |
 | `emoji.status-set` | P2 | Set / clear own emoji status (custom emoji or collectible gift), with expiry | waived until PR-12: Setting your own emoji status is `profile status set` (PR-12). |
 | `gift.catalog` | P2 | Browse available gifts | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
 | `gift.convert-to-stars` | P2 | Convert a gift back into Stars | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
@@ -157,6 +190,33 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `profile.photo-set-video` | P2 | Animated profile photo (video avatar) | waived until PR-12: A video avatar is the `profile` group (PR-12). |
 | `profile.saved-music` | P2 | Music on profile (save songs to profile, list, reorder) | waived until PR-12: Music on a profile is the `profile` group (PR-12). |
 | `sticker.group-sticker-set` | P2 | Group sticker set and group custom-emoji set (supergroup admin) | waived until PR-7: A supergroup's sticker set is a chat setting (PR-7). |
+| `updates.config-dc-options` | P2 | List data centres / connection endpoints | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.config-dns-fallback` | P2 | Fetch the config over DNS/HTTPS when the DCs are unreachable | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.config-nearest-dc` | P2 | Find the nearest data centre | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.config-promo-psa` | P2 | Promoted / PSA / sponsored chat at the top of the list | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.config-suggestions` | P2 | Server-suggested actions | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.invoke-client-proxy-declare` | P2 | Declare the MTProxy to the server (InputClientProxy) | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.invoke-with-layer` | P2 | Declare the TL layer | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.net-ipv6` | P2 | IPv6 connectivity | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.net-migrate-errors` | P2 | Handle 303 SEE_OTHER migrations | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.net-parallel-connections` | P2 | Parallel sessions/connections to a DC for transfers | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.net-ping-latency` | P2 | Ping / round-trip latency to the server | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.net-proxy-autoswitch` | P2 | Auto-switch between saved proxies on failure | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.net-proxy-http` | P2 | HTTP(S) CONNECT proxy | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.net-proxy-list` | P2 | Manage a list of proxies | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.net-proxy-ping` | P2 | Test a proxy / measure its latency | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.net-proxy-share-link` | P2 | Import/export a proxy as a tg:// link or QR code | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.net-proxy-system` | P2 | Use the system proxy | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.net-test-dc` | P2 | Connect to the test data centres | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.net-transport-mode` | P2 | MTProto transport / obfuscation mode | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.presence-keepalive-period` | P2 | Honour the server's online refresh period | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.session-export-auth-dc` | P2 | Cross-DC authorisation export for file transfers | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.session-time-sync` | P2 | Clock synchronisation with the server | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.sync-force-resync` | P2 | Force a resync / repair the update state by hand | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.sync-old-layer-socket-reset` | P2 | Recover from constructors of an older layer | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.sync-qts-gap-algorithm` | P2 | qts gap detection for the secondary sequence | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.takeout-export-run` | P2 | Run a full account export | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.takeout-session` | P2 | Start/finish a data-export (takeout) session | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
 | `attach.file-download-check` | P3 | Mini-app file download permission check | waived until PR-10: Mini-app download permission is the `webapp` surface (PR-10). |
 | `attach.open-mini-app` | P3 | Open an attachment-menu mini app in a chat | waived until PR-10: Opening a mini app is the `webapp` group (PR-10). |
 | `auction.acquired-gifts` | P3 | Gifts I won in an auction | waived until PR-12: collectible-gift auctions are the `gift` surface (PR-12). |
@@ -214,14 +274,11 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `gift.upgrade-preview` | P3 | Preview a gift upgrade | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
 | `giveaway.boosts-unrestrict` | P3 | Let boosters bypass group restrictions | waived until PR-7: giveaways and channel boosts are the `giveaway`/`boost` surface (PR-7). |
 | `giveaway.list-prepaid` | P3 | Prepaid giveaways on a channel | waived until PR-12: giveaways and channel boosts are the `giveaway`/`boost` surface (PR-12). |
-| `giveaway.prize-stars` | P3 | Receive a Stars prize | waived until PR-4: a Stars prize arrives as an update (PR-4). |
 | `giveaway.results` | P3 | Giveaway results message | waived until PR-12: giveaways and channel boosts are the `giveaway`/`boost` surface (PR-12). |
 | `giveaway.user-boosts` | P3 | Boosts a specific user gave a channel | waived until PR-7: giveaways and channel boosts are the `giveaway`/`boost` surface (PR-7). |
 | `location.business-address` | P3 | Business account location | waived until PR-12: a business account's address is the `business` surface (PR-12). |
 | `location.channel-geo` | P3 | Set a location for a geo-group | waived until PR-7: a geo-group's location is set through the channel admin surface (PR-7). |
 | `location.geogroup-create` | P3 | Create a location-based group | waived until PR-7: creating a location-based group is `chat create` (PR-7). |
-| `location.proximity-alert-event` | P3 | Proximity reached notification | waived until PR-4: a proximity alert arrives as an update, not a command (PR-4). |
-| `location.viewed-receipt` | P3 | Live location viewed receipt | waived until PR-4: a live-location view receipt arrives as an update (PR-4). |
 | `messages-core.chat-welcome-messages` | P3 | Chat welcome messages (empty-chat cards) | waived until PR-3: Empty-chat welcome cards are a chat setting (PR-3). |
 | `messages-core.paid-messages-group-price` | P3 | Charge Stars per message in a supergroup / channel direct messages | waived until PR-7: The per-group Star price is a supergroup setting (PR-7). |
 | `messages-core.search-hashtag-stories` | P3 | Hashtag / location search in public stories | waived until PR-8: Hashtag search over public stories is the story surface (PR-8). |
@@ -234,3 +291,22 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `ringtone.set-for-chat` | P3 | Set notification sound for a chat or chat category | waived until PR-12: Per-chat notification sounds are the `notify` group (PR-12). |
 | `stars.topup-options` | P3 | Star purchase packages | waived until PR-12: the Star balance and top-up packages are the `stars` surface (PR-12). |
 | `theme.cloud-themes` | P3 | Cloud themes (list, install, create, update, upload theme file) | waived until PR-12: Cloud themes are the `settings` group (PR-12). |
+| `updates.config-cdn` | P3 | Read the CDN public keys config | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.config-countries` | P3 | Country list with phone prefixes/patterns | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.config-country-lookup` | P3 | Country metadata lookup (name, flag, preferred language) | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.config-deep-link-info` | P3 | Resolve an unsupported tg:// deep link | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.config-emoji-keywords` | P3 | Emoji keyword dictionary (langpack-style incremental sync) | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.config-invite-text` | P3 | Invite-a-friend text | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.config-peer-colors` | P3 | Name/profile colour palettes | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.config-premium-promo` | P3 | Premium promo/pricing page data | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.config-recent-me-urls` | P3 | Recently used t.me links | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.config-support` | P3 | Telegram support contact & info | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.config-timezones` | P3 | Timezone list | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.invoke-business-connection` | P3 | Act on behalf of a connected business account | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.invoke-init-params-json` | P3 | initConnection params: timezone offset and client hints | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.net-local-addr` | P3 | Bind the outgoing connection to a local address | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.net-network-type` | P3 | Declare the network type (wifi / mobile / roaming / none) | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.net-proxy-for-calls` | P3 | Use the proxy for calls too | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.ops-network-usage-stats` | P3 | Network data usage statistics | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.session-pfs` | P3 | Perfect forward secrecy (temporary auth keys) | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
+| `updates.takeout-split-ranges` | P3 | Paginate an export by message ranges | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |

@@ -237,7 +237,6 @@ from tlgr.cli.legacy.daemon_cmd import daemon_group  # noqa: E402
 from tlgr.cli.legacy.job import job_group  # noqa: E402
 from tlgr.cli.legacy.profile import profile_group  # noqa: E402
 from tlgr.cli.legacy.user import user_group  # noqa: E402
-from tlgr.cli.legacy.watch import watch_command  # noqa: E402
 
 cli.add_command(contact_group, "contact")
 cli.add_command(profile_group, "profile")
@@ -245,7 +244,6 @@ cli.add_command(daemon_group, "daemon")
 cli.add_command(job_group, "job")
 cli.add_command(config_group, "config")
 cli.add_command(user_group, "user")
-cli.add_command(watch_command, "watch")
 
 
 # ---------------------------------------------------------------------------
@@ -296,12 +294,12 @@ def build_cli() -> click.Group:
     """
     import tlgr.ops  # noqa: F401  — importing it is what populates the registry
     from tlgr.cli.gen import set_dispatcher
-    from tlgr.transport import make_dispatcher
+    from tlgr.transport import make_dispatcher, make_stream_dispatcher
 
     # Installing the transport here, rather than importing it in `gen.py`, is
     # what keeps `cli/gen.py` testable with a fake dispatcher and keeps the
     # daemon out of the CLI's import graph.
-    set_dispatcher(make_dispatcher())
+    set_dispatcher(make_dispatcher(), make_stream_dispatcher())
 
     generated = build_click_tree()
     clash = sorted(set(generated) & set(cli.commands))

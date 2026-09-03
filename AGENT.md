@@ -166,34 +166,54 @@ tell a user from a channel.
 ### Chats
 
 ```
-tlgr chat list [--type user|group|channel] [--search TEXT] [--unread] [--limit N] [--cursor TOKEN]
-→ {"chats": [{"id": ..., "name": ..., "type": ..., "username": ...,
-              "unread_count": 3, "last_message": {"id": ..., "date": ..., "out": false, "text": "..."}}],
-   "has_more": true, "next_cursor": "..."}
+tlgr chat list [--folder main|archive|all|<name|id>] [--type user|bot|group|supergroup|channel|saved]
+               [--unread] [--unread-mark] [--with-mentions] [--with-reactions] [--with-drafts]
+               [--pinned] [--muted|--unmuted] [--search TEXT] [--sort date|unread|name|pinned]
+               [--scope dialogs|admined-public|inactive|left] [--common-with USER]
+               [--limit N] [--cursor TOKEN] [--all]
+→ {"ok": true, "result": [{"chat": {"id": -100123, "raw_id": 123, "kind": "supergroup",
+                                    "title": "...", "username": "..."},
+                           "unread_count": 3, "unread_mark": false, "pinned": false,
+                           "folder_id": 0, "notify": {"muted": false},
+                           "last_message": {"id": ..., "date": "...", "out": false, "text": "...",
+                                            "kind": "message"}}],
+   "page": {"has_more": true, "next_cursor": "...", "total": null}}
 
-tlgr inbox [--type user] [--limit N]        # shortcut for chat list --unread
+tlgr chats [...]                            # alias for chat list
+tlgr inbox [...]                            # alias; add --unread yourself
+```
 
-tlgr catchup [--type user] [--limit-chats N] [--per-chat N]   # shortcut for chat catchup
-tlgr chat catchup [--type ...] [--limit-chats N] [--per-chat N]
-→ {"chats": [{...chat info..., "unread_count": 3,
-              "messages": [{"id": ..., "date": ..., "out": ..., "reply_to": ..., "text": ...,
-                            "sender": {"id": ..., "name": ..., "username": ...}}]}]}
-# "What did I miss?" — every unread chat with its recent messages in one call.
+**The row's peer is nested under `chat`.** v1 spelled it flat
+(`id`/`name`/`type`/`username`); those keys moved into the same `Peer` object
+every other v2 response embeds, and `--select chat.id,unread_count` reaches
+them. `last_message` is a whole `Message`, so a service event
+(`"kind": "service"`) and a caption-less sticker (`"media": {...}`) are
+distinguishable from a genuinely blank message. Never emits a read receipt.
+
+```
+tlgr catchup [--type user] [--limit-chats N] [--per-chat N]
+tlgr chat catchup [...]
+→ {"chats": [{"id": ..., "name": ..., "unread_count": 3, "unread_mark": false,
+              "messages": [{...}]}]}
+# "What did I miss?" — every unread chat with its recent messages, one call.
 # READ-ONLY: emits no read receipts. Start every session/wake with this.
+# A chat carrying only the manual unread mark is included even at count 0.
 
-tlgr chat open <chat> [--limit N] [--no-read]
-→ {"chat_id": ..., "marked_read": true, "messages": [...same shape as catchup...]}
+tlgr chat open <chat> [--limit N] [--no-read] [--topic ID]
+→ {"chat_id": ..., "marked_read": true, "messages": [...]}
 # Open a chat the way a human would: fetch recent history AND emit a read
 # receipt (visible to the other side — that's the point; it humanizes you).
-# Choose your reading mode deliberately:
 #   - loud (visible):  chat open            → history + read receipt
 #   - silent (peek):   chat open --no-read, or message list
-# Read before you act: pull real history instead of trusting summaries.
-# A read receipt has a SECOND effect that is easy to miss: it clears the
-# unread badge in the ACCOUNT OWNER's own client. On a chat the owner is
-# handling by hand, that badge is their only reminder that they owe a reply —
-# so peek with --no-read there and keep 'chat open' for chats you are
-# advancing yourself. If you cleared one by accident, see 'chat unread'.
+# A read receipt also clears the unread badge in the ACCOUNT OWNER's own
+# client. On a chat the owner is handling by hand that badge is their only
+# reminder that they owe a reply — peek with --no-read there. If you cleared
+# one by accident, see 'chat unread'.
+
+tlgr chat read [<chat>...] [--up-to ID] [--mentions] [--reactions] [--polls]
+               [--folder FOLDER] [--from-file PATH] [--topic ID]
+→ {"read": true, "results": [{"chat_id": ..., "ok": true}]}
+# The receipt without the history. Irreversible for the other side.
 
 tlgr chat unread <chat> [--clear]
 → {"unread": true, "chat_id": ...}
@@ -204,18 +224,20 @@ tlgr chat unread <chat> [--clear]
 # with "unread_mark": true and DO appear in chat list --unread / inbox /
 # catchup, even though their unread_count is 0.
 
-tlgr chat members <chat> [--admins] [--search TEXT] [--limit N]
-→ {"members": [{"id": ..., "first_name": ..., "last_name": ..., "username": ...,
-                "is_bot": false, "is_deleted": false, "is_contact": false, "is_self": false}]}
+tlgr chat get <chat> [--full] [--field NAME]
+→ {"id": ..., "type": "user", "title": "...", "name": "...", "username": "...",
+   "unread": 3, "notify_settings": {...}, "ttl_period": null, "settings": {...}}
+# --full adds getFullUser/getFullChat/getFullChannel: about, participant
+# counts, admin rights, linked chat, invite link, antispam, and the rest.
+# `name` is v1's spelling of `title` and is still emitted.
 
-tlgr chat posters <chat> [--limit N] [--max-messages N]
-→ {"posters": [{"id": ..., "username": ..., "name": ..., "count": 44,
+tlgr chat posters <chat> [--limit N] [--max-messages N] [--since TS] [--min-messages N]
+→ {"posters": [{"user_id": ..., "id": ..., "username": ..., "name": ..., "count": 44,
                 "is_bot": false, "is_deleted": false,
-                "last_date": "...", "last_message_id": ...}],
+                "last_msg_id": ..., "date": "...", "date_unix": ...}],
    "scanned_messages": 2400, "distinct_posters": 137}
-# Distinct senders in a chat's recent history with per-sender counts, sorted
-# by count descending. Pagination is handled INTERNALLY — do not pass
-# --offset-id and do not hand-roll the walk. --max-messages bounds the scan
+# Distinct senders in a chat's recent history, by count. Pagination is handled
+# INTERNALLY — do not hand-roll the walk. --max-messages bounds the scan
 # (default 2000, hard cap 20000). Exits 3 (EMPTY) when nobody has posted.
 # On a FloodWait mid-scan it backs off and returns the partial harvest with
 # "partial": true and "flood_wait": N.
@@ -223,24 +245,76 @@ tlgr chat posters <chat> [--limit N] [--max-messages N]
 # always users: anonymous admins and a linked channel post under a negative
 # channel id, so filter to positive ids when harvesting people.
 
-tlgr chat get <chat>
-→ {"id": ..., "name": ..., "type": ..., "username": ...}
-
-tlgr chat create <name> [--type group|channel] [--members USER1 USER2]
-→ {"id": ..., "name": ..., "type": ...}
-
-tlgr chat archive <chat>
-→ {"archived": true, "chat_id": ...}
-
-tlgr chat mute <chat> [duration_seconds]
-→ {"muted": true, "chat_id": ...}
-
-tlgr chat leave <chat>
-→ {"left": true, "chat_id": ...}
-
-tlgr chat typing <chat> [--duration SECONDS]
-→ {"typing": true, "chat_id": ...}
+tlgr chat mention list <chat> [--kind mention|reaction|poll-vote] [--read] [--topic ID]
+→ the three unread queues next to unread_count, as a page of messages.
 ```
+
+Acting on one chat:
+
+```
+tlgr chat archive <chat>... [--undo] [--dismiss-bar]  → {"archived": true, "chat_id": ..., "chat_ids": [...]}
+tlgr chat mute <chat>... [--for 8h|--until TS|--forever|--off] [--stories] [--folder F]
+                                                      → {"muted": true, "chat_id": ..., "mute_until": "..."}
+tlgr chat pin <chat>... [--unpin] [--folder F] [--order]
+tlgr chat leave <chat>... [--delete-history] [--remove-from-folders] [--yes]
+tlgr chat delete <chat> [--for-both|--for-everyone] [--yes]
+tlgr chat clear <chat> [--for-both] [--since TS] [--until TS] [--yes]
+tlgr chat typing <chat> [--action typing|record-audio|upload-photo|…] [--duration N]
+tlgr chat ttl set <chat> [1d|1w|off]                  # omit the period to read it
+tlgr chat notify get|set <chat> [--silent on|off|default] [--preview …] [--sound …]
+tlgr chat theme list | chat theme set <chat> --emoji 🌷 [--unset]
+tlgr chat wallpaper set <chat> [--slug S|--file PATH|--color '#rrggbb'] [--for-both] [--unset]
+tlgr chat translate <chat> on|off
+tlgr chat set <chat> [--sharing on|off] [--view-as topics|messages] [--send-as PEER]
+tlgr chat action-bar get <chat> [--hide]              # the anti-spam bar, incl. registration_month
+tlgr chat badge get [--folder F] [--include-muted] [--limits]
+tlgr chat report <chat> [--spam|--reason …|--option HEX] [--comment TEXT] [--yes]
+tlgr chat saved list [--in CHAT] [--pinned]           # Saved-Messages sublists / monoforum topics
+tlgr chat import <chat> <export.txt> [--check] [--yes]
+tlgr chat autoarchive set [--auto on|off] [--keep-unmuted on|off]
+tlgr chat promo list [--dismiss KEY] [--hide-promo]
+```
+
+`chat mute --for 8h` writes an **absolute** timestamp: v1 computed it from the
+event loop's clock, so every timed mute resolved to 1970 and did nothing.
+`chat secret list|start|send` are registered and refuse with `NOT_SUPPORTED`
+(exit 13) — tlgr has no end-to-end layer; `chat secret discard` works.
+
+`chat create` and `chat members` are unchanged from v1 and migrate with the
+groups-and-channels group.
+
+### Folders
+
+A chat folder is a *filter*, not a container: Telegram stores one
+`dialogFilter` per folder and every client applies it to its own dialog list.
+Editing one is a read-modify-write of the whole filter, which tlgr does in a
+single call.
+
+```
+tlgr folder list [--with-counts] [--tags on|off]
+→ {"tags_enabled": false,
+   "folders": [{"id": 2, "title": "Work", "emoticon": "💼", "groups": true,
+                "include_peers": [...], "exclude_peers": [...], "pinned_peers": [...],
+                "is_chatlist": false, "chats": 12, "unread_chats": 3}]}
+
+tlgr folder create <title> [--emoji E] [--groups] [--channels] [--bots] [--contacts]
+                           [--exclude-muted] [--exclude-read] [--exclude-archived]
+                           [--include CHAT]... [--exclude CHAT]... [--pin CHAT]...
+tlgr folder edit <folder> [--title T] [--groups/--no-groups] [--add CHAT] [--remove CHAT] …
+tlgr folder add <folder> <chat>... [--pin]
+tlgr folder remove <folder> <chat>... [--exclude]
+tlgr folder delete <folder> [--leave-chats none|suggested|all|<chat>,…] [--yes]
+tlgr folder reorder <folder>...            # 'main' positions the All-chats tab
+tlgr folder suggested list [--add TITLE]
+tlgr folder join <t.me/addlist/SLUG> [--chats CHAT]... [--all-chats]   # previews unless told to join
+tlgr folder share list|set|delete <folder> [--slug S] [--chats CHAT]... [--all-eligible]
+tlgr folder update list <folder> [--join all] [--dismiss]
+```
+
+`--folder <name|id>` works on `chat list`, `chat read`, `chat mute`,
+`chat pin` and `chat badge get` too; it is matched by folder id or by title.
+Removing a chat from a folder does not stick if the folder's type flags still
+match it — that is what `folder remove --exclude` is for.
 
 ### Contacts
 

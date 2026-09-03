@@ -1587,6 +1587,7 @@ SPEC_PARTICIPANT_LIST = OperationSpec(
         "conference.participants",
         "groupcall.list-participants",
         "groupcall.participants-by-id",
+        "livestory.streamer-info",
     ),
 )
 

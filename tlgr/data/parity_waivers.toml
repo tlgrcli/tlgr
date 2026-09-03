@@ -43,11 +43,6 @@ pr = 10
 reason = "bot, inline, webapp and payment land in PR-10."
 
 [[domain]]
-name = "calls_voicechats"
-pr = 11
-reason = "call, vc and conference land in PR-11."
-
-[[domain]]
 name = "profile_settings_privacy"
 pr = 12
 reason = "profile, privacy, notify, settings, business, premium, gift and stars land in PR-12."
@@ -788,3 +783,51 @@ pr = 12
 reason = "Cloud themes are the `settings` group (PR-12)."
 
 
+# --- PR-11 (calls) ---------------------------------------------------------
+# The call domain is migrated; what is left inside it belongs to other groups
+# by subject, not by effort. Each one names the group that owns it.
+
+[[id]]
+id = "calls.privacy-who-can-call"
+pr = 12
+reason = "inputPrivacyKeyPhoneCall is a privacy rule, set with `privacy set` in the privacy group (PR-12); `call start` already reports the peer's side of it."
+
+[[id]]
+id = "calls.privacy-p2p"
+pr = 12
+reason = "inputPrivacyKeyPhoneP2P is the same account.setPrivacy surface as every other privacy key (PR-12)."
+
+[[id]]
+id = "calls.session-accept-calls"
+pr = 2
+reason = "Per-session call acceptance is account.changeAuthorizationSettings, i.e. `session` in the auth group (PR-2)."
+
+[[id]]
+id = "groupcall.admin-log"
+pr = 7
+reason = "channels.getAdminLog is one command with one filter vocabulary; the video-chat events are read through `chat admin log` (PR-7)."
+
+[[id]]
+id = "groupcall.admin-right-manage-call"
+pr = 7
+reason = "manage_call is one keyword in the admin-rights vocabulary owned by `chat admin promote` (PR-7)."
+
+[[id]]
+id = "livestory.start-rtmp"
+pr = 8
+reason = "Starting a live story is stories.startLive (PR-8); the RTMP credentials half is already covered here by `vc rtmp get --live-story`."
+
+[[id]]
+id = "calls.top-callers"
+pr = 5
+reason = "contacts.getTopPeers is the contact group's suggestion surface (PR-5); the phone-calls category is one flag on it."
+
+[[id]]
+id = "calls.reset-top-caller"
+pr = 5
+reason = "contacts.resetTopPeerRating is the same surface as top-callers (PR-5)."
+
+[[id]]
+id = "groupcall.speaking-indicator"
+pr = 3
+reason = "speakingInGroupCallAction is broadcast with messages.setTyping, i.e. the chat-action surface `chat typing` (PR-3) — and tlgr has no microphone behind it in any case."

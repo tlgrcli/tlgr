@@ -451,9 +451,9 @@ Also invocable as: `tlgr conference participants`, `tlgr vc participants`
 $ tlgr vc participant list @newsroom --json
 ```
 
-<details><summary>Catalog coverage (4 full, 0 partial)</summary>
+<details><summary>Catalog coverage (5 full, 0 partial)</summary>
 
-Full: `conference.participant-states`, `conference.participants`, `groupcall.list-participants`, `groupcall.participants-by-id`
+Full: `conference.participant-states`, `conference.participants`, `groupcall.list-participants`, `groupcall.participants-by-id`, `livestory.streamer-info`
 
 </details>
 

@@ -499,6 +499,9 @@ class PassportVerification(Model):
     sent: bool = False
     verified: bool = False
     code_length: int | None = None
+    #: Telegram will not accept the code without the hash that came with it,
+    #: and the second call is a different process.
+    code_hash: str | None = None
 
 
 class PassportDeletion(Model):

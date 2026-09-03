@@ -61,7 +61,8 @@ from tlgr.models.auth import (
 )
 from tlgr.models.base import Request
 from tlgr.models.page import Page
-from tlgr.ops import _auth
+from tlgr.models.peer import PeerRef
+from tlgr.ops import _auth, _send
 from tlgr.ops._params import arg, choice, opt
 from tlgr.ops._spec import OpContext, OperationSpec, Surface
 
@@ -2430,7 +2431,7 @@ class SuggestionListReq(Request):
         str | None, opt("--dismiss", metavar="NAME", help="Dismiss this suggestion.")
     ] = None
     hide_promo: Annotated[
-        str | None,
+        PeerRef | None,
         opt("--hide-promo", metavar="CHAT", kind="peer", help="Hide the promoted dialog."),
     ] = None
 
@@ -2456,7 +2457,7 @@ async def suggestion_list(ctx: OpContext, req: SuggestionListReq) -> Page[Sugges
             fn.DismissSuggestionRequest(peer=types.InputPeerEmpty(), suggestion=req.dismiss)
         )
     if req.hide_promo:
-        await client(fn.HidePromoDataRequest(peer=await client.get_input_entity(req.hide_promo)))
+        await client(fn.HidePromoDataRequest(peer=await _send.resolve(ctx, req.hide_promo)))
 
     config = await _auth.app_config(client)
     pending = [str(name) for name in (config.get("pending_suggestions") or [])]
@@ -2509,8 +2510,8 @@ SPEC_SUGGESTION_LIST = OperationSpec(
 
 class SupportGetReq(Request):
     user: Annotated[
-        str | None,
-        arg(0, metavar="USER", required=False, kind="user", help="Support accounts only."),
+        PeerRef | None,
+        arg(0, metavar="USER", required=False, kind="peer", help="Support accounts only."),
     ] = None
     info: Annotated[bool, opt("--info", help="Read the support note on USER.")] = False
     set_note: Annotated[
@@ -2529,7 +2530,7 @@ async def support_get(ctx: OpContext, req: SupportGetReq) -> SupportInfo:
 
     client = _auth.client(ctx)
     if req.user and (req.info or req.set_note is not None):
-        target = await client.get_input_entity(req.user)
+        target = await _send.resolve(ctx, req.user)
         if req.set_note is not None:
             answer = await client(
                 fn.EditUserInfoRequest(user_id=target, message=req.set_note, entities=[])

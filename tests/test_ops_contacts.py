@@ -48,7 +48,7 @@ OTHER_ID = -1000000000000 - OTHER
 @pytest.fixture
 def book(world):
     """An address book: two contacts, one stranger, two channels."""
-    from fake_telethon import make_channel, make_user
+    from fake_telethon import make_channel, make_user, make_wallpaper
 
     alice = make_user(ALICE, username="alice", first="Alice")
     alice.last_name = "Anderson"
@@ -70,6 +70,11 @@ def book(world):
     world.search_mine = [ALICE]
     world.search_global = [CAROL]
     world.phonebook["+15550009999"] = CAROL
+    # The two link targets `resolve link --open` reads back. The sticker and
+    # wallpaper worlds belong to the media group; seeding them here is what
+    # lets this test assert against the same replies that group's ops see.
+    world.add_sticker_set("Pack", [])
+    world.wallpapers["Slug"] = make_wallpaper("Slug", wallpaper_id=77)
     return world
 
 

@@ -3430,21 +3430,6 @@ class FakeTelegramClient:
             color=0,
         )
 
-    def _raw_GetStickerSetRequest(self, request: Any) -> Any:
-        return types.messages.StickerSet(
-            set=types.StickerSet(
-                id=1,
-                access_hash=1,
-                title="Pack",
-                short_name="Pack",
-                count=0,
-                hash=0,
-            ),
-            packs=[],
-            keywords=[],
-            documents=[],
-        )
-
     def _raw_GetBoostsStatusRequest(self, request: Any) -> Any:
         return types.premium.BoostsStatus(
             level=3,
@@ -3462,19 +3447,8 @@ class FakeTelegramClient:
             used_date=datetime.now(timezone.utc),
         )
 
-    def _raw_GetStoriesByIDRequest(self, request: Any) -> Any:
-        return types.stories.Stories(count=0, stories=[], chats=[], users=[])
-
     def _raw_GetThemeRequest(self, request: Any) -> Any:
         return types.Theme(id=1, access_hash=1, slug="Slug", title="Midnight")
-
-    def _raw_GetWallPaperRequest(self, request: Any) -> Any:
-        return types.WallPaper(
-            id=77,
-            access_hash=1,
-            slug="Slug",
-            document=types.DocumentEmpty(id=0),
-        )
 
     # -- stories -----------------------------------------------------------
 

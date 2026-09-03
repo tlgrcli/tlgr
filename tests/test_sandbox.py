@@ -28,8 +28,8 @@ class TestEnableCommands:
         assert "not enabled" in result.output
 
     def test_legacy_top_level_block_still_exits_2(self, runner):
-        """`media` is still hand-written; `contact` became generated in PR-5."""
-        result = runner.invoke(cli, ["--enable-commands", "message", "media", "download"])
+        """`profile` is the last hand-written group; `contact` is generated in PR-5."""
+        result = runner.invoke(cli, ["--enable-commands", "message", "profile", "get"])
         assert result.exit_code == 2
         assert "not enabled" in result.output
 

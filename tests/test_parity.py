@@ -25,10 +25,10 @@ ROOT = Path(__file__).resolve().parent.parent
 #: Every P0 catalog id the registry claims. Raised by each group PR, never
 #: lowered. ARCHITECTURE §1.3: "P0 coverage may never decrease and must reach
 #: 100 % before 2.0.0 final".
-P0_FLOOR = 62
+P0_FLOOR = 63
 
 #: The floor for total covered ids. Same rule, weaker guarantee.
-COVERED_FLOOR = 420
+COVERED_FLOOR = 430
 
 #: Every P0 catalog id PR-1's own operations cover, named rather than
 #: counted, so a swap (one dropped, one added) cannot pass a count check
@@ -119,6 +119,7 @@ PR9_P0_IDS = frozenset(
         "reaction.read-summary",
         "reaction.remove",
         "reaction.send-emoji",
+        "todo.toggle-completed",
     }
 )
 

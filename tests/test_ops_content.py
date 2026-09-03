@@ -982,3 +982,262 @@ class TestReactionModeration:
         )
         assert out.get("banned", False) is False
         assert history.called("BlockFromRepliesRequest") == []
+
+
+# ---------------------------------------------------------------------------
+# todo
+# ---------------------------------------------------------------------------
+
+
+async def make_todo(client, in_thread, **overrides: Any) -> dict[str, Any]:
+    request: dict[str, Any] = {
+        "chat": "@alice",
+        "title": "Release checklist",
+        "tasks": ["tag the commit", "publish the wheel", "announce it"],
+    }
+    request.update(overrides)
+    return await result(client, in_thread, "todo.create", request)
+
+
+class TestTodoCreate:
+    async def test_tasks_are_numbered_from_one(self, live_daemon, client, in_thread, peers):
+        checklist = await make_todo(client, in_thread)
+        assert [task["id"] for task in checklist["tasks"]] == [1, 2, 3]
+        assert checklist["title"] == "Release checklist"
+        request = peers.called("SendMediaRequest")[0]
+        assert [item.id for item in request.media.todo.list] == [1, 2, 3]
+
+    async def test_an_empty_checklist_is_a_usage_error(self, live_daemon, client, in_thread, peers):
+        error = await fails(
+            client, in_thread, "todo.create", {"chat": "@alice", "title": "x", "tasks": []}
+        )
+        assert error.exit_code == EXIT_USAGE
+
+    async def test_the_permission_flags_reach_the_request(
+        self, live_daemon, client, in_thread, peers
+    ):
+        checklist = await make_todo(
+            client, in_thread, others_can_add=True, others_can_complete=True
+        )
+        assert checklist["others_can_add"] is True
+        assert checklist["others_can_complete"] is True
+
+    async def test_the_v1_style_alias_reaches_the_same_op(self, live_daemon, client, in_thread):
+        from tlgr.registry import canonical
+
+        assert canonical("message checklist") == "todo.create"
+
+
+class TestTodoToggle:
+    async def test_ticking_and_unticking_happen_in_one_request(
+        self, live_daemon, client, in_thread, peers
+    ):
+        checklist = await make_todo(client, in_thread)
+        await result(
+            client,
+            in_thread,
+            "todo.toggle",
+            {"chat": "@alice", "msg_id": checklist["msg_id"], "done": ["1", "2"]},
+        )
+        out = await result(
+            client,
+            in_thread,
+            "todo.toggle",
+            {"chat": "@alice", "msg_id": checklist["msg_id"], "done": ["3"], "undone": ["1"]},
+        )
+        request = peers.called("ToggleTodoCompletedRequest")[-1]
+        assert request.completed == [3] and request.incompleted == [1]
+        assert {task["id"] for task in out["tasks"] if task.get("done")} == {2, 3}
+        assert out["done_count"] == 2
+
+    async def test_a_completion_records_who_and_when(self, live_daemon, client, in_thread, peers):
+        checklist = await make_todo(client, in_thread)
+        out = await result(
+            client,
+            in_thread,
+            "todo.toggle",
+            {"chat": "@alice", "msg_id": checklist["msg_id"], "done": ["1"]},
+        )
+        first = out["tasks"][0]
+        assert first["completed_by"] == peers.me.id
+        assert first["completed_date"].endswith("Z")
+
+    async def test_ticking_what_is_already_ticked_is_already(
+        self, live_daemon, client, in_thread, peers
+    ):
+        checklist = await make_todo(client, in_thread)
+        await result(
+            client,
+            in_thread,
+            "todo.toggle",
+            {"chat": "@alice", "msg_id": checklist["msg_id"], "done": ["1"]},
+        )
+        envelope = await call(
+            client,
+            in_thread,
+            "todo.toggle",
+            {"chat": "@alice", "msg_id": checklist["msg_id"], "done": ["1"]},
+        )
+        assert envelope["result"]["already"] is True
+        assert len(peers.called("ToggleTodoCompletedRequest")) == 1
+
+    async def test_an_unknown_task_is_a_usage_error(self, live_daemon, client, in_thread, peers):
+        checklist = await make_todo(client, in_thread)
+        error = await fails(
+            client,
+            in_thread,
+            "todo.toggle",
+            {"chat": "@alice", "msg_id": checklist["msg_id"], "done": ["99"]},
+        )
+        assert error.exit_code == EXIT_USAGE
+
+    async def test_naming_no_task_is_a_usage_error(self, live_daemon, client, in_thread, peers):
+        checklist = await make_todo(client, in_thread)
+        error = await fails(
+            client, in_thread, "todo.toggle", {"chat": "@alice", "msg_id": checklist["msg_id"]}
+        )
+        assert error.exit_code == EXIT_USAGE
+
+    async def test_send_as_sets_the_chats_default_identity_first(
+        self, live_daemon, client, in_thread, peers
+    ):
+        checklist = await make_todo(client, in_thread)
+        await result(
+            client,
+            in_thread,
+            "todo.toggle",
+            {
+                "chat": "@alice",
+                "msg_id": checklist["msg_id"],
+                "done": ["1"],
+                "send_as": str(CHANNEL_ID),
+            },
+        )
+        assert peers.called("SaveDefaultSendAsRequest")
+
+    async def test_a_message_that_is_not_a_checklist_is_not_found(
+        self, live_daemon, client, in_thread, peers
+    ):
+        peers.add_message(ALICE, "just text", message_id=500)
+        error = await fails(
+            client, in_thread, "todo.toggle", {"chat": "@alice", "msg_id": 500, "done": ["1"]}
+        )
+        assert error.exit_code == EXIT_NOT_FOUND
+
+
+class TestTodoAddAndEdit:
+    async def test_appending_continues_the_numbering(self, live_daemon, client, in_thread, peers):
+        """Reusing an id is TODO_ITEM_DUPLICATE; reusing a freed one moves a tick."""
+        checklist = await make_todo(client, in_thread, others_can_add=True)
+        out = await result(
+            client,
+            in_thread,
+            "todo.add",
+            {"chat": "@alice", "msg_id": checklist["msg_id"], "tasks": ["sign the release"]},
+        )
+        assert [item.id for item in peers.called("AppendTodoListRequest")[0].list] == [4]
+        assert [task["id"] for task in out["tasks"]] == [1, 2, 3, 4]
+
+    async def test_appending_to_a_closed_list_warns(self, live_daemon, client, in_thread, peers):
+        checklist = await make_todo(client, in_thread)
+        envelope = await call(
+            client,
+            in_thread,
+            "todo.add",
+            {"chat": "@alice", "msg_id": checklist["msg_id"], "tasks": ["x"]},
+        )
+        assert envelope["meta"]["warnings"]
+
+    async def test_removing_a_task_keeps_the_survivors_ids(
+        self, live_daemon, client, in_thread, peers
+    ):
+        """Renumbering would move every completion onto a different task."""
+        checklist = await make_todo(client, in_thread)
+        await result(
+            client,
+            in_thread,
+            "todo.toggle",
+            {"chat": "@alice", "msg_id": checklist["msg_id"], "done": ["3"]},
+        )
+        out = await result(
+            client,
+            in_thread,
+            "todo.edit",
+            {"chat": "@alice", "msg_id": checklist["msg_id"], "remove_task": ["1"]},
+        )
+        assert [task["id"] for task in out["tasks"]] == [2, 3]
+        assert [task["id"] for task in out["tasks"] if task.get("done")] == [3]
+
+    async def test_renaming_a_task_and_the_list(self, live_daemon, client, in_thread, peers):
+        checklist = await make_todo(client, in_thread)
+        out = await result(
+            client,
+            in_thread,
+            "todo.edit",
+            {
+                "chat": "@alice",
+                "msg_id": checklist["msg_id"],
+                "title": "Release 2.0",
+                "rename_task": ["2=publish the sdist"],
+            },
+        )
+        assert out["title"] == "Release 2.0"
+        assert out["tasks"][1]["title"] == "publish the sdist"
+
+    async def test_a_rename_without_a_separator_is_a_usage_error(
+        self, live_daemon, client, in_thread, peers
+    ):
+        checklist = await make_todo(client, in_thread)
+        error = await fails(
+            client,
+            in_thread,
+            "todo.edit",
+            {"chat": "@alice", "msg_id": checklist["msg_id"], "rename_task": ["2"]},
+        )
+        assert error.exit_code == EXIT_USAGE
+
+    async def test_a_checklist_cannot_be_emptied_by_editing(
+        self, live_daemon, client, in_thread, peers
+    ):
+        checklist = await make_todo(client, in_thread)
+        error = await fails(
+            client,
+            in_thread,
+            "todo.edit",
+            {"chat": "@alice", "msg_id": checklist["msg_id"], "remove_task": ["1", "2", "3"]},
+        )
+        assert error.exit_code == EXIT_USAGE
+
+    async def test_the_permission_switches_are_tri_state(
+        self, live_daemon, client, in_thread, peers
+    ):
+        checklist = await make_todo(client, in_thread, others_can_add=True)
+        out = await result(
+            client,
+            in_thread,
+            "todo.edit",
+            {"chat": "@alice", "msg_id": checklist["msg_id"], "others_can_complete": "on"},
+        )
+        # Not asked about, so left alone; asked about, so changed.
+        assert out["others_can_add"] is True
+        assert out["others_can_complete"] is True
+
+    async def test_an_unknown_switch_value_is_a_usage_error(
+        self, live_daemon, client, in_thread, peers
+    ):
+        checklist = await make_todo(client, in_thread)
+        error = await fails(
+            client,
+            in_thread,
+            "todo.edit",
+            {"chat": "@alice", "msg_id": checklist["msg_id"], "others_can_add": "maybe"},
+        )
+        assert error.exit_code == EXIT_USAGE
+
+    async def test_reading_a_checklist_back(self, live_daemon, client, in_thread, peers):
+        checklist = await make_todo(client, in_thread)
+        read = await result(
+            client, in_thread, "todo.get", {"chat": "@alice", "msg_id": checklist["msg_id"]}
+        )
+        assert read["title"] == "Release checklist"
+        assert len(read["tasks"]) == 3

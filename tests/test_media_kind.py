@@ -199,19 +199,6 @@ def test_include_media_payload_gains_the_same_detail():
     assert out[0]["media"]["alt"] == "🙏"
 
 
-def test_dialog_last_message_labels_kind_too():
-    """The surface the inbox and gh_pending read FIRST (L082's larger half)."""
-    dialog = SimpleNamespace(
-        unread_count=1,
-        dialog=None,
-        message=_msg(9, "", media=_doc(DocumentAttributeSticker(alt="❤"))),
-    )
-    extras = ClientWrapper._dialog_extras(dialog)
-    assert extras["last_message"]["media_type"] == "MessageMediaDocument"
-    assert extras["last_message"]["media_kind"] == "sticker"
-    assert extras["last_message"]["media_alt"] == "❤"
-
-
 def test_text_message_has_no_kind():
     w = _wrap([_msg(1, "سلام")])
     out = asyncio.run(w.get_messages(7, limit=10))

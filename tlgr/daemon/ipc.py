@@ -117,18 +117,8 @@ class LegacyRoutes:
         app.router.add_post("/daemon/stop", self._daemon_stop)
 
         # Chats
-        app.router.add_get("/chat/list", self._chat_list)
-        app.router.add_get("/chat/catchup", self._chat_catchup)
-        app.router.add_post("/chat/open", self._chat_open)
-        app.router.add_post("/chat/unread", self._chat_unread)
-        app.router.add_get("/chat/get", self._chat_get)
         app.router.add_post("/chat/create", self._chat_create)
-        app.router.add_post("/chat/archive", self._chat_archive)
-        app.router.add_post("/chat/mute", self._chat_mute)
-        app.router.add_post("/chat/leave", self._chat_leave)
-        app.router.add_post("/chat/typing", self._chat_typing)
         app.router.add_get("/chat/members", self._chat_members)
-        app.router.add_get("/chat/posters", self._chat_posters)
 
         # Contacts
         app.router.add_get("/contact/list", self._contact_list)
@@ -168,84 +158,6 @@ class LegacyRoutes:
 
     # -- Chats --
 
-    async def _chat_list(self, request: web.Request) -> web.Response:
-        q = request.query
-        account = q.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _no_client(account)
-        try:
-            chats: list[dict[str, Any]] = []
-            async for c in client.list_chats(
-                limit=int(q.get("limit", 100)) if q.get("limit") else None,
-                chat_type=q.get("type"),
-                search=q.get("search"),
-                unread_only=q.get("unread") == "1",
-                offset=int(q.get("offset", 0)),
-            ):
-                chats.append(c)
-            return _json_response({"chats": chats})
-        except Exception as e:
-            return _handle_exception(e)
-
-    async def _chat_catchup(self, request: web.Request) -> web.Response:
-        q = request.query
-        account = q.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _no_client(account)
-        try:
-            chats = await client.catchup(
-                limit_chats=int(q.get("limit_chats", 20)),
-                per_chat=int(q.get("per_chat", 10)),
-                chat_type=q.get("type"),
-            )
-            return _json_response({"chats": chats})
-        except Exception as e:
-            return _handle_exception(e)
-
-    async def _chat_open(self, request: web.Request) -> web.Response:
-        body = await _get_body(request)
-        account = body.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _no_client(account)
-        try:
-            result = await client.open_chat(
-                _ref(body["chat"]),
-                limit=int(body.get("limit", 30)),
-                mark_read=body.get("mark_read", True),
-            )
-            return _json_response(result)
-        except Exception as e:
-            return _handle_exception(e)
-
-    async def _chat_unread(self, request: web.Request) -> web.Response:
-        body = await _get_body(request)
-        account = body.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _no_client(account)
-        try:
-            result = await client.mark_chat_unread(
-                _ref(body["chat"]), unread=body.get("unread", True)
-            )
-            return _json_response(result)
-        except Exception as e:
-            return _handle_exception(e)
-
-    async def _chat_get(self, request: web.Request) -> web.Response:
-        q = request.query
-        account = q.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _no_client(account)
-        try:
-            info = await client.get_chat_info(_ref(q["chat"]))
-            return _json_response(info)
-        except Exception as e:
-            return _handle_exception(e)
-
     async def _chat_create(self, request: web.Request) -> web.Response:
         body = await _get_body(request)
         account = body.get("account", "")
@@ -258,54 +170,6 @@ class LegacyRoutes:
                 chat_type=body.get("type", "group"),
                 members=body.get("members"),
             )
-            return _json_response(result)
-        except Exception as e:
-            return _handle_exception(e)
-
-    async def _chat_archive(self, request: web.Request) -> web.Response:
-        body = await _get_body(request)
-        account = body.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _no_client(account)
-        try:
-            result = await client.archive_chat(_ref(body["chat"]))
-            return _json_response(result)
-        except Exception as e:
-            return _handle_exception(e)
-
-    async def _chat_mute(self, request: web.Request) -> web.Response:
-        body = await _get_body(request)
-        account = body.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _no_client(account)
-        try:
-            result = await client.mute_chat(_ref(body["chat"]), body.get("duration"))
-            return _json_response(result)
-        except Exception as e:
-            return _handle_exception(e)
-
-    async def _chat_leave(self, request: web.Request) -> web.Response:
-        body = await _get_body(request)
-        account = body.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _no_client(account)
-        try:
-            result = await client.leave_chat(_ref(body["chat"]))
-            return _json_response(result)
-        except Exception as e:
-            return _handle_exception(e)
-
-    async def _chat_typing(self, request: web.Request) -> web.Response:
-        body = await _get_body(request)
-        account = body.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _no_client(account)
-        try:
-            result = await client.send_typing(_ref(body["chat"]), duration=body.get("duration", 5))
             return _json_response(result)
         except Exception as e:
             return _handle_exception(e)
@@ -326,24 +190,6 @@ class LegacyRoutes:
             return _json_response({"members": members})
         except Exception as e:
             return _handle_exception(e)
-
-    async def _chat_posters(self, request: web.Request) -> web.Response:
-        q = request.query
-        account = q.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _no_client(account)
-        try:
-            result = await client.chat_posters(
-                _ref(q["chat"]),
-                limit=int(q["limit"]) if q.get("limit") else None,
-                max_messages=int(q.get("max_messages", 2000)),
-            )
-            return _json_response(result)
-        except Exception as e:
-            return _handle_exception(e)
-
-    # -- Contacts --
 
     async def _contact_list(self, request: web.Request) -> web.Response:
         q = request.query

@@ -232,7 +232,7 @@ def cli(
 from tlgr.cli.gen import build_click_tree  # noqa: E402
 from tlgr.cli.legacy import agent as legacy_agent  # noqa: E402
 from tlgr.cli.legacy.account import account_group  # noqa: E402
-from tlgr.cli.legacy.chat import chat_group  # noqa: E402
+from tlgr.cli.legacy.chat import chat_create, chat_members  # noqa: E402
 from tlgr.cli.legacy.completion import completion_group  # noqa: E402
 from tlgr.cli.legacy.config_cmd import config_group  # noqa: E402
 from tlgr.cli.legacy.contact import contact_group  # noqa: E402
@@ -244,7 +244,6 @@ from tlgr.cli.legacy.user import user_group  # noqa: E402
 from tlgr.cli.legacy.watch import watch_command  # noqa: E402
 
 cli.add_command(account_group, "account")
-cli.add_command(chat_group, "chat")
 cli.add_command(contact_group, "contact")
 cli.add_command(profile_group, "profile")
 cli.add_command(media_group, "media")
@@ -283,57 +282,6 @@ def shortcut_logout(ctx: click.Context, alias: str) -> None:
 def shortcut_status(ctx: click.Context) -> None:
     """Show daemon status (shortcut for 'daemon status')."""
     ctx.invoke(daemon_group.commands["status"])
-
-
-@cli.command("chats")
-@click.option("--type", "chat_type", default=None, help="Filter: user, group, channel, bot.")
-@click.option("--search", "-s", default=None, help="Filter by name.")
-@click.option("--limit", "-n", type=int, default=None)
-@click.pass_context
-def shortcut_chats(
-    ctx: click.Context, chat_type: str | None, search: str | None, limit: int | None
-) -> None:
-    """List all chats (shortcut for 'chat list')."""
-    ctx.invoke(
-        chat_group.commands["list"],
-        chat_type=chat_type,
-        search=search,
-        limit=limit,
-        account=ctx.obj.get("account"),
-    )
-
-
-@cli.command("inbox")
-@click.option("--type", "chat_type", default=None, help="Filter: user, group, channel, bot.")
-@click.option("--limit", "-n", type=int, default=None)
-@click.pass_context
-def shortcut_inbox(ctx: click.Context, chat_type: str | None, limit: int | None) -> None:
-    """List chats with unread messages (shortcut for 'chat list --unread')."""
-    ctx.invoke(
-        chat_group.commands["list"],
-        chat_type=chat_type,
-        limit=limit,
-        unread=True,
-        account=ctx.obj.get("account"),
-    )
-
-
-@cli.command("catchup")
-@click.option("--type", "chat_type", default=None, help="Filter: user, group, channel, bot.")
-@click.option("--limit-chats", type=int, default=20)
-@click.option("--per-chat", type=int, default=10)
-@click.pass_context
-def shortcut_catchup(
-    ctx: click.Context, chat_type: str | None, limit_chats: int, per_chat: int
-) -> None:
-    """Unread chats with their recent messages (shortcut for 'chat catchup')."""
-    ctx.invoke(
-        chat_group.commands["catchup"],
-        chat_type=chat_type,
-        limit_chats=limit_chats,
-        per_chat=per_chat,
-        account=ctx.obj.get("account"),
-    )
 
 
 @cli.command("contacts")
@@ -385,6 +333,9 @@ def shortcut_upload(ctx: click.Context, chat: str, path: str, caption: str) -> N
 #: account manager, so it migrates with the account group (PR-2).
 LEGACY_EXTRAS: dict[str, list[click.Command]] = {
     "agent": [legacy_agent.agent_whoami],
+    # `chat create` and `chat members` are member/admin operations and
+    # migrate with the groups-and-channels group (PR-7).
+    "chat": [chat_members, chat_create],
 }
 
 

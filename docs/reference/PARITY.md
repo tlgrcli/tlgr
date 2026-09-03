@@ -7,31 +7,31 @@ Coverage against the Telegram feature catalog, computed from the registry: every
 `covered` is implemented today. `acct%` is covered **plus** waived — an id that belongs to a group a later PR owns, named in `tlgr/data/parity_waivers.toml` with the PR that closes it. Ids whose feasibility is `not-applicable` or `prohibited` are excluded from the denominator once and never counted again.
 
 ```
-catalog 2026-09-02 — 46 operations, 77 invocable paths
+catalog 2026-09-02 — 93 operations, 145 invocable paths
 
 domain                        covered    req       %   acct%  ops
 auth_sessions_security              0     89    0.0%  100.0%  0
 bots_inline_payments               12    175    6.9%  100.0%  4
-calls_voicechats                    2    133    1.5%  100.0%  2
-contacts_users                      0    121    0.0%  100.0%  0
-dialogs_chats                       6    146    4.1%  100.0%  5
-groups_channels_admin               8    162    4.9%  100.0%  6
-media_files                         2    143    1.4%  100.0%  2
-messages_core                     133    167   79.6%  100.0%  35
-polls_reactions_content            32    174   18.4%  100.0%  17
-profile_settings_privacy            2    178    1.1%  100.0%  2
-stories                             1    120    0.8%  100.0%  1
-updates_sync_network                2    189    1.1%  100.0%  1
+calls_voicechats                    3    133    2.3%  100.0%  3
+contacts_users                     11    121    9.1%  100.0%  8
+dialogs_chats                     109    146   74.7%  100.0%  51
+groups_channels_admin              25    162   15.4%  100.0%  14
+media_files                         5    143    3.5%  100.0%  4
+messages_core                     141    167   84.4%  100.0%  40
+polls_reactions_content            33    174   19.0%  100.0%  18
+profile_settings_privacy            6    178    3.4%  100.0%  5
+stories                             2    120    1.7%  100.0%  2
+updates_sync_network                3    189    1.6%  100.0%  2
 
 priority                      covered    req       %   acct%
-P0                                 30    178   16.9%  100.0%
-P1                                 53    379   14.0%  100.0%
-P2                                 50    610    8.2%  100.0%
-P3                                 67    630   10.6%  100.0%
+P0                                 53    178   29.8%  100.0%
+P1                                 91    379   24.0%  100.0%
+P2                                101    610   16.6%  100.0%
+P3                                105    630   16.7%  100.0%
 
-TOTAL                             200   1797   11.1%  100.0%
+TOTAL                             350   1797   19.5%  100.0%
 excluded: not-applicable 79, prohibited 40
-uncovered: 1597 (1597 waived with a PR number)
+uncovered: 1447 (1447 waived with a PR number)
 ```
 
 ## By domain
@@ -40,25 +40,25 @@ uncovered: 1597 (1597 waived with a PR number)
 |---|---:|---:|---:|---:|---:|
 | `auth_sessions_security` | 0 | 89 | 0.0% | 100.0% | 0 |
 | `bots_inline_payments` | 12 | 175 | 6.9% | 100.0% | 4 |
-| `calls_voicechats` | 2 | 133 | 1.5% | 100.0% | 2 |
-| `contacts_users` | 0 | 121 | 0.0% | 100.0% | 0 |
-| `dialogs_chats` | 6 | 146 | 4.1% | 100.0% | 5 |
-| `groups_channels_admin` | 8 | 162 | 4.9% | 100.0% | 6 |
-| `media_files` | 2 | 143 | 1.4% | 100.0% | 2 |
-| `messages_core` | 133 | 167 | 79.6% | 100.0% | 35 |
-| `polls_reactions_content` | 32 | 174 | 18.4% | 100.0% | 17 |
-| `profile_settings_privacy` | 2 | 178 | 1.1% | 100.0% | 2 |
-| `stories` | 1 | 120 | 0.8% | 100.0% | 1 |
-| `updates_sync_network` | 2 | 189 | 1.1% | 100.0% | 1 |
+| `calls_voicechats` | 3 | 133 | 2.3% | 100.0% | 3 |
+| `contacts_users` | 11 | 121 | 9.1% | 100.0% | 8 |
+| `dialogs_chats` | 109 | 146 | 74.7% | 100.0% | 51 |
+| `groups_channels_admin` | 25 | 162 | 15.4% | 100.0% | 14 |
+| `media_files` | 5 | 143 | 3.5% | 100.0% | 4 |
+| `messages_core` | 141 | 167 | 84.4% | 100.0% | 40 |
+| `polls_reactions_content` | 33 | 174 | 19.0% | 100.0% | 18 |
+| `profile_settings_privacy` | 6 | 178 | 3.4% | 100.0% | 5 |
+| `stories` | 2 | 120 | 1.7% | 100.0% | 2 |
+| `updates_sync_network` | 3 | 189 | 1.6% | 100.0% | 2 |
 
 ## By priority
 
 | Priority | Covered | Required | % | Accounted % |
 |---|---:|---:|---:|---:|
-| P0 | 30 | 178 | 16.9% | 100.0% |
-| P1 | 53 | 379 | 14.0% | 100.0% |
-| P2 | 50 | 610 | 8.2% | 100.0% |
-| P3 | 67 | 630 | 10.6% | 100.0% |
+| P0 | 53 | 178 | 29.8% | 100.0% |
+| P1 | 91 | 379 | 24.0% | 100.0% |
+| P2 | 101 | 610 | 16.6% | 100.0% |
+| P3 | 105 | 630 | 16.7% | 100.0% |
 
 ## Partial coverage
 
@@ -66,7 +66,11 @@ uncovered: 1597 (1597 waived with a PR number)
 |---|---|---|
 | `bots.rich-message-translate` | `message.translate` | Rich-body translation is layer 229 and refused with NOT_SUPPORTED. |
 | `bots.rich-message-view` | `message.get` | --rich is refused with NOT_SUPPORTED until Telethon carries layer 229. |
+| `contacts-users.contacts-sort` | `chat.list` | Peer search here is a substring match over the dialog list; the global one is `contact search`. `--sort` orders chats, not contacts. |
+| `contacts-users.user-leave-common-groups` | `chat.leave` | `--common-with` leaves the shared groups; listing them is `user chat list`. |
+| `dialogs.search-peers` | `chat.list` | Peer search here is a substring match over the dialog list; the global one is `contact search`. `--sort` orders chats, not contacts. |
 | `game.play` | `message.game.get` | A CLI cannot render an HTML5 game; --url is refused with NOT_SUPPORTED. |
+| `groups-channels-admin.pending-suggestions` | `chat.get` | Pending suggestions are reported here; dismissing one is PR-7's. |
 | `messages-core.ephemeral-messages` | `message.delete` | --revert needs layer 229's ephemeral.* namespace and is refused. |
 | `messages-core.send-rich-message` | `message.send` | A layer-229 rich body is refused with NOT_SUPPORTED: the pinned Telethon speaks layer 227 and cannot serialise inputRichMessage*. |
 | `richmsg.compose-ai` | `message.compose` | Composing a rich body needs layer 229 and is refused with NOT_SUPPORTED. |
@@ -81,20 +85,32 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 
 | Catalog id | Priority | Feature | Closed by |
 |---|---|---|---|
+| `dialogs.block-user` | P0 | Block user | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.resolve-peer` | P0 | Resolve @username / phone / t.me link to a chat | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.unblock-user` | P0 | Unblock user | waived until PR-3: chat, folder and the dialog list land in PR-3. |
 | `messages-core.search-global` | P0 | Global message search across all chats | waived until PR-3: Global search spans the dialog list, so it is the `search` group's surface in PR-3; `message search` is scoped to one chat by design. |
-| `messages-core.chat-mark-unread` | P1 | Mark chat as unread / undo | waived until PR-3: `chat unread` already exists in v1 and migrates with the chat group (PR-3). |
+| `dialogs.actionbar-add-contact` | P1 | Add to contacts from the action bar | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.block-stories` | P1 | Hide my stories from a user (story blocklist) | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.dialog-exists` | P1 | Does a dialog with this peer exist | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.notify-exceptions` | P1 | List notification exceptions | waived until PR-3: chat, folder and the dialog list land in PR-3. |
 | `messages-core.checklist-append-tasks` | P1 | Add tasks to an existing checklist | waived until PR-9: Checklists are the `todo` group (PR-9). |
 | `messages-core.delete-call-history` | P1 | Delete call-log messages | waived until PR-3: The call log is a chat-level history (PR-3). |
-| `messages-core.history-clear` | P1 | Clear chat history (for me / for everyone) | waived until PR-3: Clearing a history is a chat operation, not a message one (PR-3). |
-| `messages-core.history-delete-conversation` | P1 | Delete chat / leave and delete | waived until PR-3: Deleting a conversation is `chat delete` (PR-3). |
 | `messages-core.message-watch-events` | P1 | Live stream of new / edited / deleted messages and read receipts | waived until PR-4: The live message stream is the event bus surface (PR-4). |
 | `messages-core.search-global-media-tabs` | P1 | Global media / links / files / music / voice tabs | waived until PR-3: The global media/links/files tabs are the global search surface (PR-3). |
 | `messages-core.search-hashtag-public-posts` | P1 | Global hashtag search in public channel posts | waived until PR-3: Global hashtag search is global search (PR-3); the in-chat form is `message search --hashtag`. |
-| `messages-core.typing-action` | P1 | Typing / recording / uploading indicator | waived until PR-3: `chat typing` exists in v1 and migrates with the chat group; `message send --typing` uses it (PR-3). |
+| `dialogs.actionbar-share-phone` | P2 | Share my phone number | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.bot-stop-restart` | P2 | Stop and block bot / Restart bot | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.business-bot-bar` | P2 | Manage connected business bot in a chat | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.business-link-create` | P2 | Create a business 'link to chat' | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.business-link-list` | P2 | List business chat links (with view counters) | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.frozen-account` | P2 | Frozen account state | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.hide-stories-peer` | P2 | Hide a peer's stories from the strip | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.notify-scope-defaults` | P2 | Default notification settings per chat type | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.presence-watch` | P2 | Peer online status / last seen | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.typing-watch` | P2 | See who is typing | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.watch-dialog-events` | P2 | Live dialog-level events | waived until PR-3: chat, folder and the dialog list land in PR-3. |
 | `messages-core.checklist-create` | P2 | Send a checklist / to-do list | waived until PR-9: Checklists are the `todo` group (PR-9). |
 | `messages-core.checklist-toggle-task` | P2 | Tick / untick a checklist task | waived until PR-9: Checklists are the `todo` group (PR-9); the rich-body form also needs layer 229. |
-| `messages-core.history-clear-date-range` | P2 | Delete messages in a date range | waived until PR-3: Same surface as history-clear (PR-3). |
-| `messages-core.history-clear-topic` | P2 | Clear a forum topic's history | waived until PR-3: Clearing a topic's history belongs to `chat topic` (PR-7 via PR-3's chat group). |
 | `messages-core.message-statistics` | P2 | Post statistics and public forwards (channel admins) | waived until PR-4: Post statistics and public forwards are the `stats` surface (PR-4). |
 | `messages-core.quick-reply-list` | P2 | Quick replies (business shortcuts): list shortcuts and their messages | waived until PR-12: Business quick-reply shortcuts are a business setting (PR-12); `message send --quick-reply` uses one. |
 | `messages-core.quick-reply-manage` | P2 | Create/edit/reorder/delete quick reply shortcuts and their messages | waived until PR-12: Business quick-reply shortcuts are a business setting (PR-12). |
@@ -106,12 +122,29 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `messages-core.search-public-posts-fulltext` | P2 | Full-text search in all public channel posts (paid after free quota) | waived until PR-3: Full-text search over all public posts is a global surface with its own quota (PR-3). |
 | `messages-core.translate-channel-autotranslation` | P2 | Automatic translation of a channel's posts | waived until PR-3: Channel auto-translation is a channel setting (PR-3). |
 | `messages-core.ttl-default-new-chats` | P2 | Default auto-delete timer for new chats | waived until PR-3: The default auto-delete timer is an account-wide chat setting (PR-3). |
+| `dialogs.blocked-set-bulk` | P3 | Replace the whole blocklist | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.business-link-delete` | P3 | Delete a business chat link | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.business-link-edit` | P3 | Edit a business chat link | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.business-link-resolve` | P3 | Open a business chat link (t.me/m/<slug>) | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.channel-autotranslation` | P3 | Channel auto-translation for all subscribers | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.community-collapse` | P3 | Community: group / ungroup chats in the list | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.community-join-requests` | P3 | Community pending peer-link requests | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.contact-signup-notify` | P3 | Notify when a contact joins Telegram | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.forum-tabs-mode` | P3 | Forum topics as tabs or list (admin) | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.new-chats-privacy` | P3 | Who can start a chat with me (Premium-only / paid messages) | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.notify-community` | P3 | Community-level notification settings | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.personal-channel-preview` | P3 | Personal channel preview on a profile | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.reactions-notify` | P3 | Reaction / poll-vote notification settings | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.recent-searches` | P3 | Recent searches list | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.recommended-channels` | P3 | Similar / recommended channels and bots | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.saved-tags` | P3 | Saved Messages reaction tags | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.sponsored-search-peers` | P3 | Sponsored chats in search results | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.top-peers-toggle` | P3 | Enable / disable frequent-contact suggestions | waived until PR-3: chat, folder and the dialog list land in PR-3. |
+| `dialogs.wallpaper-gallery` | P3 | Global wallpaper gallery (saved / installed) | waived until PR-3: chat, folder and the dialog list land in PR-3. |
 | `messages-core.chat-welcome-messages` | P3 | Chat welcome messages (empty-chat cards) | waived until PR-3: Empty-chat welcome cards are a chat setting (PR-3). |
 | `messages-core.checklist-edit` | P3 | Edit a checklist (title and items) | waived until PR-9: Checklists are the `todo` group (PR-9). |
 | `messages-core.paid-messages-group-price` | P3 | Charge Stars per message in a supergroup / channel direct messages | waived until PR-7: The per-group Star price is a supergroup setting (PR-7). |
-| `messages-core.saved-dialog-delete` | P3 | Delete everything saved from one origin | waived until PR-3: Deleting a saved dialog is a dialog operation (PR-3). |
 | `messages-core.search-hashtag-stories` | P3 | Hashtag / location search in public stories | waived until PR-8: Hashtag search over public stories is the story surface (PR-8). |
 | `messages-core.search-recent-hashtags` | P3 | Recently searched hashtags / cashtags | waived until PR-3: The recent-hashtag list is search state, not a message operation (PR-3). |
 | `messages-core.search-sent-media` | P3 | Search recently sent media (outgoing documents) | waived until PR-3: Recently-sent media is a global search index (PR-3). |
-| `messages-core.translate-chat-toggle` | P3 | Show/hide the real-time translation bar for a chat | waived until PR-3: The per-chat translation bar is a chat setting; per-message translation is `message translate` (PR-3). |
 | `messages-core.url-authorization` | P3 | Seamless Telegram login when opening a link / login-url button | waived until PR-10: Seamless login-url authorisation is a bot surface (PR-10). |

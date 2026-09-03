@@ -83,15 +83,15 @@ class TestVerify:
             await preauth.verify_code(stub_account, "12345")
         assert "--password-env" in str(caught.value)
 
-    async def test_tlgr_never_creates_an_account(self, preauth, stub_account, world):
-        """§1.2: `auth.signUp` is never called, and the error says why."""
+    async def test_a_login_never_creates_an_account(self, preauth, stub_account, world):
+        """§1.2: a *login* never signs up; it stops and names the other command."""
         from telethon.errors import PhoneNumberUnoccupiedError
 
         await preauth.send_code(stub_account, "+989123456789")
         world.fail_next("sign_in", PhoneNumberUnoccupiedError(None))
         with pytest.raises(UsageError) as caught:
             await preauth.verify_code(stub_account, "12345")
-        assert "never creates one" in str(caught.value)
+        assert "auth sign-up" in str(caught.value)
 
 
 class TestPassword:

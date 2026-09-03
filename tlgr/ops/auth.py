@@ -126,10 +126,7 @@ async def _caller(ctx: OpContext, service: Any, alias: str) -> Any:
     pending = service.pending(alias)
     if pending is not None and pending.client is not None:
         return pending.client
-    sessions = getattr(getattr(ctx, "daemon", None), "sessions", None)
-    if sessions is None:  # pragma: no cover - the daemon always has one
-        return await service.client_for(alias)
-    session = await sessions.ensure(alias)
+    session = await _auth.sessions(ctx).ensure(alias)
     return await session.acquire(timeout=60)
 
 
@@ -1045,6 +1042,7 @@ SPEC_TOS = OperationSpec(
     response=Terms,
     impl=tos,
     summary="Show, accept or decline the Terms of Service",
+    aliases=("account.terms",),
     description=(
         "The daemon polls `help.getTermsOfServiceUpdate` at the returned "
         "`expires` and flags a pending update in its status; accepting is "

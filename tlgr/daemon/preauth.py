@@ -13,8 +13,9 @@ their phone. Here the pending login lives in the daemon, keyed by alias, with
 a ten-minute bound, and `auth send-code` / `auth verify-code` are two ordinary
 requests.
 
-`auth.signUp` is never called (§1.2). A number with no account is a USAGE
-error saying tlgr does not create accounts.
+`auth.signUp` is never called *from a login*: a number with no account stops
+with `signup_required` rather than quietly registering one. Registering is a
+separate, explicitly consented command (`tlgr auth sign-up --accept-tos`).
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ from tlgr.core.errors import (
     AuthPasswordRequiredError,
     UsageError,
 )
+from tlgr.core.paths import secure_session_files
 
 log = logging.getLogger("tlgr.daemon.preauth")
 
@@ -246,8 +248,8 @@ class PreAuthService:
                 ) from exc
             if type(exc).__name__ == "PhoneNumberUnoccupiedError":
                 raise UsageError(
-                    "that number has no Telegram account, and tlgr never creates one. "
-                    "Sign up in an official client first."
+                    "that number has no Telegram account. Registering one is a separate, "
+                    "explicit step: tlgr auth sign-up --first-name … --accept-tos"
                 ) from exc
             raise _auth_error(exc) from exc
         return await self._finish(alias)
@@ -296,6 +298,10 @@ class PreAuthService:
         me = await pending.client.get_me()
         with contextlib.suppress(Exception):
             await pending.client.disconnect()
+        # The session file is a complete account credential and Telethon
+        # writes it with whatever the umask allowed (SEC-07).
+        with contextlib.suppress(Exception):
+            secure_session_files(self.sessions.paths.session(alias))
         if pending.session is not None:
             pending.session.lock.release()
         self.sessions.accounts.update_account(

@@ -53,6 +53,7 @@ __all__ = [
     "resolve_alias",
     "secure_value_type",
     "session_model",
+    "sessions",
     "web_session_model",
     "with_password",
 ]
@@ -89,6 +90,22 @@ def accounts(ctx: Any) -> Any:
 
     base = getattr(getattr(ctx, "paths", None), "base", None)
     return AccountManager(base)
+
+
+def sessions(ctx: Any) -> Any:
+    """The daemon's session manager — the only thing that opens a session file.
+
+    Reached through the context rather than imported, because `ops/` may not
+    import `daemon/` (§2.2). An operation that needs it and does not have it
+    is being run outside the daemon, which is a daemon error, not a crash.
+    """
+    manager = getattr(getattr(ctx, "daemon", None), "sessions", None)
+    if manager is None:
+        raise DaemonError(
+            "this operation manages a session file, which only the daemon may open. "
+            "Start it with: tlgr daemon start"
+        )
+    return manager
 
 
 def preauth(ctx: Any) -> Any:

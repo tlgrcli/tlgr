@@ -468,6 +468,14 @@ def build_command(
         # document v1 wrote; the envelope appears only once JSON is requested.
         json_only = "json-only" in spec.tags
         fmt = "json" if json_only else state.fmt
+        if "text" in spec.tags and fmt != "json":
+            # An op tagged `text` produces one blob meant to be piped or
+            # pasted — a completion script, a key, a certificate. A key/value
+            # table of one very long cell is technically a rendering and
+            # practically unusable, so the `text` field is printed verbatim.
+            body = envelope.get("result") or {}
+            click.echo(body.get("text", "") if isinstance(body, dict) else body)
+            return
         renderer.render(
             envelope,
             fmt=fmt,

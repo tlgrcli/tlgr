@@ -531,13 +531,22 @@ async def _inline_query(ctx: Any, username: str, query: str, near: str | None) -
 
 
 async def _config_username(ctx: Any, field: str) -> str:
+    """The inline bot the server names for venue or weather lookups.
+
+    Venue search is in `help.getConfig`; the weather bot arrived later and
+    lives in `help.getAppConfig`, so both are consulted rather than assuming
+    one of them.
+    """
     from telethon.tl.functions import help as help_fn
+
+    from tlgr.core.errors import NotSupportedError
+    from tlgr.ops import _media
 
     config = await client(ctx)(help_fn.GetConfigRequest())
     username = getattr(config, field, None)
     if not username:
-        from tlgr.core.errors import NotSupportedError
-
+        username = (await _media.app_config(ctx)).get(field)
+    if not username:
         raise NotSupportedError(
             f"this account's server config names no {field}, so there is nowhere to ask"
         )
@@ -716,3 +725,19 @@ async def resolve_or_self(ctx: Any, ref: PeerRef | None) -> Any:
     if ref is None:
         return types.InputPeerSelf()
     return await _send.resolve(ctx, ref)
+
+
+async def peer_id_for(ctx: Any, peer: Any) -> int:
+    """The marked id of a resolved peer, resolving `InputPeerSelf` to my own.
+
+    `utils.get_peer_id` has no answer for `inputPeerSelf` — it is "whoever is
+    logged in" — and reporting the story of `peer: 0` would make `story post`
+    and `story export` disagree with every other command about what "me" is.
+    """
+    from tlgr.ops import _send
+
+    marked = _send.peer_id_of(peer)
+    if marked:
+        return marked
+    me = await client(ctx).get_me()
+    return int(getattr(me, "id", 0) or 0)

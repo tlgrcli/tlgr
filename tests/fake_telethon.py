@@ -20,6 +20,13 @@ against *history that moved*, not against a canned reply — `message send`
 followed by `message list` shows the message, because the fake really stored
 it.
 
+Stage E adds the story world: real `types.StoryItem`s per peer, a profile
+page and an archive that `story pin`/`story unpin` really move ids between,
+albums, viewer rows, the opaque feed state `stories.getAllStories` pages on,
+and the stealth-mode object. A story posted through `story post` is therefore
+findable with `story list`, and `story hide` really flips the `stories_hidden`
+flag the next `get_entity` reports.
+
 Stage D adds the dialog world: real `types.Dialog` rows with unread counters,
 notification settings, pin and archive state, plus the chat folders
 (`dialogFilter`) the folder group rewrites. `chat archive` therefore *moves*
@@ -34,7 +41,7 @@ from __future__ import annotations
 import asyncio
 import base64
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +63,7 @@ __all__ = [
     "make_photo",
     "make_sticker_document",
     "make_sticker_set",
+    "make_story",
     "make_user",
     "make_wallpaper",
     "make_web_authorization",
@@ -211,6 +219,43 @@ def make_photo(photo_id: int = 900, *, dc_id: int = 2) -> types.Photo:
         ],
         dc_id=dc_id,
         has_stickers=False,
+    )
+
+
+def make_story(
+    story_id: int,
+    *,
+    caption: str = "",
+    media: Any = None,
+    date: datetime | None = None,
+    expire: datetime | None = None,
+    public: bool = True,
+    pinned: bool = False,
+    close_friends: bool = False,
+    noforwards: bool = False,
+    out: bool = True,
+    privacy: list[Any] | None = None,
+    media_areas: list[Any] | None = None,
+    views: Any = None,
+    albums: list[int] | None = None,
+) -> types.StoryItem:
+    """A real `types.StoryItem`, so a serialiser meets the shape it will meet."""
+    now = date or datetime.now(timezone.utc)
+    return types.StoryItem(
+        id=story_id,
+        date=now,
+        expire_date=expire or now,
+        media=media or types.MessageMediaPhoto(photo=make_photo(900 + story_id)),
+        caption=caption or None,
+        pinned=pinned or None,
+        public=public or None,
+        close_friends=close_friends or None,
+        noforwards=noforwards or None,
+        out=out or None,
+        privacy=privacy,
+        media_areas=media_areas,
+        views=views,
+        albums=albums,
     )
 
 
@@ -607,8 +652,48 @@ class World:
     auto_save: dict[str, Any] = field(default_factory=dict)
     #: profile photo bytes, per marked chat id.
     profile_photos: dict[int, bytes] = field(default_factory=dict)
-    #: story id → `types.MessageMediaDocument`-shaped media.
-    stories: dict[int, Any] = field(default_factory=dict)
+    # -- the story world ---------------------------------------------------
+    #
+    # Keyed by *marked* peer id throughout, like every other id the fake
+    # stores, so a story world assertion and a dialog world assertion talk
+    # about the same number.
+
+    #: marked peer id → {story id: `types.StoryItem`}.
+    peer_stories: dict[int, dict[int, Any]] = field(default_factory=dict)
+    #: marked peer id → the ids kept on the profile page.
+    story_pinned: dict[int, set[int]] = field(default_factory=dict)
+    #: marked peer id → the pinned-to-top set, in order.
+    story_pinned_top: dict[int, list[int]] = field(default_factory=dict)
+    #: marked peer id → the ids in the private archive, newest last.
+    story_archive: dict[int, list[int]] = field(default_factory=dict)
+    #: marked peer id → {album id: {"title": str, "stories": [ids]}}.
+    story_albums: dict[int, dict[int, Any]] = field(default_factory=dict)
+    #: marked peer id → the album order shown on the profile.
+    story_album_order: dict[int, list[int]] = field(default_factory=dict)
+    #: (marked peer id, story id) → the rows the viewers screen shows.
+    story_viewers: dict[tuple[int, int], list[Any]] = field(default_factory=dict)
+    #: marked peer id → the highest story id this account has read.
+    story_read: dict[int, int] = field(default_factory=dict)
+    #: The peers whose stories are collapsed into the archive bar.
+    stories_hidden_peers: set[int] = field(default_factory=set)
+    all_stories_hidden: bool = False
+    #: The opaque state `stories.getAllStories` pages on.
+    story_feed_state: str = "feed-state-1"
+    story_feed_has_more: bool = False
+    #: `None` means "the fake answers a fresh AllStories"; set it to a state
+    #: string to make the server answer `storiesAllStoriesNotModified`.
+    story_feed_not_modified: str | None = None
+    stealth_mode: Any = None
+    #: The story-only blocklist ("Hide my stories from"), as raw user ids.
+    story_blocklist: list[int] = field(default_factory=list)
+    #: What `stories.canSendStory` answers; a count means "yes".
+    can_send_story: Any = None
+    story_albums_hash: int = 4242
+    #: `types.FoundStory` rows `stories.searchPosts` should return.
+    public_stories: list[Any] = field(default_factory=list)
+    #: marked peer id → the channels `stories.getChatsToSend` lists.
+    chats_to_send: list[Any] = field(default_factory=list)
+    next_story_id: int = 100
     inline_results: list[Any] = field(default_factory=list)
     saved_gif_limit: int = 200
     next_document_id: int = 7000
@@ -845,6 +930,65 @@ class World:
         return None
 
     # -- the dialog world --------------------------------------------------
+
+    # -- the story world ---------------------------------------------------
+
+    def add_story(
+        self,
+        peer_id: int,
+        story: Any = None,
+        *,
+        pinned: bool = False,
+        archived: bool = False,
+        album: int | None = None,
+        **fields: Any,
+    ) -> Any:
+        """Put a story on a peer, and on the shelves it belongs to.
+
+        `pinned` and `archived` are the two *places* a story can also be, not
+        properties of the item: the profile page and the private archive are
+        separate RPCs, and a test that wants `story list --archive` to find
+        something has to say so.
+        """
+        if story is None:
+            story_id = fields.pop("story_id", None)
+            if story_id is None:
+                self.next_story_id += 1
+                story_id = self.next_story_id
+            story = make_story(int(story_id), **fields)
+        self.peer_stories.setdefault(peer_id, {})[story.id] = story
+        if pinned:
+            self.story_pinned.setdefault(peer_id, set()).add(story.id)
+            story.pinned = True
+        if archived:
+            self.story_archive.setdefault(peer_id, []).append(story.id)
+        if album is not None:
+            self.story_albums.setdefault(peer_id, {}).setdefault(
+                album, {"title": f"Album {album}", "stories": []}
+            )["stories"].append(story.id)
+        return story
+
+    def stories_of(self, peer_id: int) -> dict[int, Any]:
+        return self.peer_stories.setdefault(peer_id, {})
+
+    def add_album(self, peer_id: int, album_id: int, title: str, stories: list[int]) -> Any:
+        self.story_albums.setdefault(peer_id, {})[album_id] = {
+            "title": title,
+            "stories": list(stories),
+        }
+        self.story_album_order.setdefault(peer_id, []).append(album_id)
+        return self.story_albums[peer_id][album_id]
+
+    def add_story_viewer(
+        self, peer_id: int, story_id: int, user_id: int, *, reaction: str | None = None
+    ) -> Any:
+        row = types.StoryView(
+            user_id=user_id,
+            date=datetime.now(timezone.utc),
+            reaction=types.ReactionEmoji(emoticon=reaction) if reaction else None,
+        )
+        self.story_viewers.setdefault((peer_id, story_id), []).append(row)
+        return row
 
     def add_dialog(self, chat_id: int, **state: Any) -> DialogState:
         """Give a chat a dialog row. Anything unset is the server's default."""
@@ -1764,6 +1908,10 @@ class FakeTelegramClient:
         )
 
     def _raw_SendReactionRequest(self, request: Any) -> types.Updates:
+        # `messages.sendReaction` and `stories.sendReaction` share a class
+        # name; the story one carries `story_id` and no `msg_id`.
+        if hasattr(request, "story_id"):
+            return self._story_reaction(request)
         chat_id = self._chat_id(request.peer)
         message = self.world.find(chat_id, int(request.msg_id))
         if message is not None:
@@ -4731,8 +4879,439 @@ class FakeTelegramClient:
             users=[],
         )
 
+    # -- the story world ---------------------------------------------------
+    #
+    # Stage E. Same rule as everywhere else: a request moves the world, so a
+    # test asserts against state that changed. `story pin` really adds the id
+    # to the profile page, `story delete` really removes the item, and
+    # `story hide` really flips the flag the next `get_entity` reports.
+
+    def _stories(self, peer: Any) -> dict[int, Any]:
+        return self.world.stories_of(self._chat_id(peer))
+
+    def _story_page(self, items: list[Any], *, pinned_to_top: list[int] | None = None) -> Any:
+        return types.stories.Stories(
+            count=len(items), stories=items, chats=[], users=[], pinned_to_top=pinned_to_top
+        )
+
     def _raw_GetStoriesByIDRequest(self, request: Any) -> Any:
-        return _FakeStories([self.world.stories[i] for i in request.id if i in self.world.stories])
+        stored = self._stories(request.peer)
+        return self._story_page([stored[i] for i in request.id if i in stored])
+
+    def _raw_GetPeerStoriesRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        stored = self.world.stories_of(chat_id)
+        archived = set(self.world.story_archive.get(chat_id, []))
+        active = [story for sid, story in sorted(stored.items()) if sid not in archived]
+        return types.stories.PeerStories(
+            stories=types.PeerStories(
+                peer=self._peer_of(chat_id),
+                stories=active,
+                max_read_id=self.world.story_read.get(chat_id, 0),
+            ),
+            chats=list(self.world.chats.values()),
+            users=list(self.world.users.values()),
+        )
+
+    def _raw_GetPinnedStoriesRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        stored = self.world.stories_of(chat_id)
+        ids = sorted(self.world.story_pinned.get(chat_id, set()))
+        if request.offset_id:
+            ids = [i for i in ids if i < request.offset_id]
+        ids = ids[: request.limit]
+        return self._story_page(
+            [stored[i] for i in ids if i in stored],
+            pinned_to_top=list(self.world.story_pinned_top.get(chat_id, [])),
+        )
+
+    def _raw_GetStoriesArchiveRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        stored = self.world.stories_of(chat_id)
+        ids = sorted(self.world.story_archive.get(chat_id, []), reverse=True)
+        if request.offset_id:
+            ids = [i for i in ids if i < request.offset_id]
+        return self._story_page([stored[i] for i in ids[: request.limit] if i in stored])
+
+    def _raw_GetAlbumStoriesRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        album = self.world.story_albums.get(chat_id, {}).get(request.album_id)
+        stored = self.world.stories_of(chat_id)
+        ids = list(album["stories"]) if album else []
+        window = ids[request.offset : request.offset + request.limit]
+        return self._story_page([stored[i] for i in window if i in stored])
+
+    def _raw_SendStoryRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.peer)
+        self.world.next_story_id += 1
+        story = make_story(
+            self.world.next_story_id,
+            caption=request.caption or "",
+            pinned=bool(request.pinned),
+            noforwards=bool(request.noforwards),
+            privacy=None,
+            media_areas=list(request.media_areas or []) or None,
+            albums=list(request.albums or []) or None,
+        )
+        story.entities = list(request.entities or []) or None
+        self.world.peer_stories.setdefault(chat_id, {})[story.id] = story
+        if request.pinned:
+            self.world.story_pinned.setdefault(chat_id, set()).add(story.id)
+        for album_id in request.albums or []:
+            self.world.story_albums.setdefault(chat_id, {}).setdefault(
+                album_id, {"title": f"Album {album_id}", "stories": []}
+            )["stories"].append(story.id)
+        return types.Updates(
+            updates=[
+                types.UpdateStoryID(id=story.id, random_id=request.random_id),
+                types.UpdateStory(peer=self._peer_of(chat_id), story=story),
+            ],
+            users=[],
+            chats=[],
+            date=datetime.now(timezone.utc),
+            seq=0,
+        )
+
+    def _raw_EditStoryRequest(self, request: Any) -> types.Updates:
+        story = self._stories(request.peer).get(request.id)
+        if story is None:
+            raise ValueError(f"no story {request.id}")
+        if request.caption is not None:
+            story.caption = request.caption
+            story.entities = list(request.entities or []) or None
+        if request.media_areas is not None:
+            story.media_areas = list(request.media_areas)
+        if request.media is not None:
+            story.media = self.realise(request.media, existing=story.media)
+        story.edited = True
+        return self._updates()
+
+    def _raw_DeleteStoriesRequest(self, request: Any) -> list[int]:
+        chat_id = self._chat_id(request.peer)
+        stored = self.world.stories_of(chat_id)
+        gone = [i for i in request.id if stored.pop(i, None) is not None]
+        self.world.story_pinned.get(chat_id, set()).difference_update(gone)
+        self.world.story_archive[chat_id] = [
+            i for i in self.world.story_archive.get(chat_id, []) if i not in gone
+        ]
+        return gone
+
+    def _raw_TogglePinnedRequest(self, request: Any) -> list[int]:
+        chat_id = self._chat_id(request.peer)
+        shelf = self.world.story_pinned.setdefault(chat_id, set())
+        changed: list[int] = []
+        for story_id in request.id:
+            if request.pinned and story_id not in shelf:
+                shelf.add(story_id)
+                changed.append(story_id)
+            elif not request.pinned and story_id in shelf:
+                shelf.discard(story_id)
+                changed.append(story_id)
+        return changed
+
+    def _raw_TogglePinnedToTopRequest(self, request: Any) -> bool:
+        self.world.story_pinned_top[self._chat_id(request.peer)] = list(request.id)
+        return True
+
+    def _raw_TogglePeerStoriesHiddenRequest(self, request: Any) -> bool:
+        chat_id = self._chat_id(request.peer)
+        entity = self._lookup(request.peer)
+        if entity is not None:
+            entity.stories_hidden = bool(request.hidden)
+        if request.hidden:
+            self.world.stories_hidden_peers.add(chat_id)
+        else:
+            self.world.stories_hidden_peers.discard(chat_id)
+        return True
+
+    def _raw_ToggleAllStoriesHiddenRequest(self, request: Any) -> bool:
+        self.world.all_stories_hidden = bool(request.hidden)
+        return True
+
+    def _raw_ReadStoriesRequest(self, request: Any) -> list[int]:
+        chat_id = self._chat_id(request.peer)
+        was = self.world.story_read.get(chat_id, 0)
+        if request.max_id <= was:
+            return []
+        self.world.story_read[chat_id] = request.max_id
+        return [i for i in sorted(self.world.stories_of(chat_id)) if was < i <= request.max_id]
+
+    def _raw_IncrementStoryViewsRequest(self, request: Any) -> bool:
+        return True
+
+    def _story_reaction(self, request: Any) -> types.Updates:
+        story = self._stories(request.peer).get(request.story_id)
+        if story is not None:
+            empty = type(request.reaction).__name__ == "ReactionEmpty"
+            story.sent_reaction = None if empty else request.reaction
+        return self._updates()
+
+    def _raw_CanSendStoryRequest(self, request: Any) -> Any:
+        return self.world.can_send_story or types.stories.CanSendStoryCount(count_remains=3)
+
+    def _raw_GetChatsToSendRequest(self, request: Any) -> Any:
+        return types.messages.Chats(chats=list(self.world.chats_to_send))
+
+    def _raw_ExportStoryLinkRequest(self, request: Any) -> Any:
+        entity = self._lookup(request.peer)
+        username = getattr(entity, "username", None) or "someone"
+        return types.ExportedStoryLink(link=f"https://t.me/{username}/s/{request.id}")
+
+    def _story_views(self, peer_id: int, story_id: int) -> types.StoryViews:
+        rows = self.world.story_viewers.get((peer_id, story_id), [])
+        return types.StoryViews(
+            views_count=len(rows),
+            has_viewers=True,
+            reactions_count=sum(1 for row in rows if getattr(row, "reaction", None)),
+            recent_viewers=[getattr(row, "user_id", 0) for row in rows][:3],
+        )
+
+    def _raw_GetStoriesViewsRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        return types.stories.StoryViews(
+            views=[self._story_views(chat_id, i) for i in request.id], users=[]
+        )
+
+    def _raw_GetStoryViewsListRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        rows = list(self.world.story_viewers.get((chat_id, request.id), []))
+        if request.q:
+            wanted = request.q.lower()
+            rows = [
+                row
+                for row in rows
+                if wanted
+                in (
+                    (self.world.users.get(getattr(row, "user_id", 0)) or make_user(0)).username
+                    or ""
+                )
+            ]
+        window = rows[: request.limit]
+        return types.stories.StoryViewsList(
+            count=len(rows),
+            views_count=len(rows),
+            forwards_count=0,
+            reactions_count=sum(1 for row in rows if getattr(row, "reaction", None)),
+            views=window,
+            chats=[],
+            users=list(self.world.users.values()),
+            next_offset="page2" if len(rows) > len(window) else None,
+        )
+
+    def _raw_GetStoryReactionsListRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        rows = [
+            types.StoryReaction(
+                peer_id=types.PeerUser(user_id=getattr(row, "user_id", 0)),
+                date=getattr(row, "date", None),
+                reaction=getattr(row, "reaction", None) or types.ReactionEmoji(emoticon="👍"),
+            )
+            for row in self.world.story_viewers.get((chat_id, request.id), [])
+        ]
+        return types.stories.StoryReactionsList(
+            count=len(rows),
+            reactions=rows[: request.limit],
+            chats=[],
+            users=list(self.world.users.values()),
+            next_offset=None,
+        )
+
+    # albums ---------------------------------------------------------------
+
+    def _album_type(self, album_id: int, entry: dict[str, Any]) -> Any:
+        return types.StoryAlbum(album_id=album_id, title=entry["title"])
+
+    def _raw_CreateAlbumRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        albums = self.world.story_albums.setdefault(chat_id, {})
+        album_id = max(albums, default=0) + 1
+        albums[album_id] = {"title": request.title, "stories": list(request.stories)}
+        self.world.story_album_order.setdefault(chat_id, []).append(album_id)
+        return self._album_type(album_id, albums[album_id])
+
+    def _raw_DeleteAlbumRequest(self, request: Any) -> bool:
+        chat_id = self._chat_id(request.peer)
+        self.world.story_albums.get(chat_id, {}).pop(request.album_id, None)
+        order = self.world.story_album_order.get(chat_id, [])
+        self.world.story_album_order[chat_id] = [i for i in order if i != request.album_id]
+        return True
+
+    def _raw_UpdateAlbumRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        entry = self.world.story_albums.setdefault(chat_id, {}).setdefault(
+            request.album_id, {"title": "", "stories": []}
+        )
+        if request.title is not None:
+            entry["title"] = request.title
+        for story_id in request.add_stories or []:
+            if story_id not in entry["stories"]:
+                entry["stories"].append(story_id)
+        for story_id in request.delete_stories or []:
+            if story_id in entry["stories"]:
+                entry["stories"].remove(story_id)
+        if request.order:
+            entry["stories"] = list(request.order)
+        return self._album_type(request.album_id, entry)
+
+    def _raw_GetAlbumsRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        if request.hash and request.hash == self.world.story_albums_hash:
+            return types.stories.AlbumsNotModified()
+        albums = self.world.story_albums.get(chat_id, {})
+        order = self.world.story_album_order.get(chat_id) or sorted(albums)
+        return types.stories.Albums(
+            hash=self.world.story_albums_hash,
+            albums=[self._album_type(i, albums[i]) for i in order if i in albums],
+        )
+
+    def _raw_ReorderAlbumsRequest(self, request: Any) -> bool:
+        self.world.story_album_order[self._chat_id(request.peer)] = list(request.order)
+        return True
+
+    # the feed -------------------------------------------------------------
+
+    def _raw_GetAllStoriesRequest(self, request: Any) -> Any:
+        stealth = self.world.stealth_mode or types.StoriesStealthMode()
+        if self.world.story_feed_not_modified is not None:
+            return types.stories.AllStoriesNotModified(
+                state=self.world.story_feed_not_modified, stealth_mode=stealth
+            )
+        hidden = bool(getattr(request, "hidden", False))
+        rows = []
+        for chat_id, stored in sorted(self.world.peer_stories.items()):
+            is_hidden = chat_id in self.world.stories_hidden_peers
+            if is_hidden != hidden:
+                continue
+            rows.append(
+                types.PeerStories(
+                    peer=self._peer_of(chat_id),
+                    stories=[stored[i] for i in sorted(stored)],
+                    max_read_id=self.world.story_read.get(chat_id, 0),
+                )
+            )
+        return types.stories.AllStories(
+            count=len(rows),
+            state=self.world.story_feed_state,
+            peer_stories=rows,
+            chats=list(self.world.chats.values()),
+            users=list(self.world.users.values()),
+            stealth_mode=stealth,
+            has_more=self.world.story_feed_has_more or None,
+        )
+
+    def _raw_GetPeerMaxIDsRequest(self, request: Any) -> Any:
+        out = []
+        for peer in request.id:
+            stored = self.world.stories_of(self._chat_id(peer))
+            out.append(types.RecentStory(max_id=max(stored, default=0)))
+        return out
+
+    def _raw_GetAllReadPeerStoriesRequest(self, request: Any) -> Any:
+        return types.Updates(
+            updates=[
+                types.UpdateReadStories(peer=self._peer_of(chat_id), max_id=max_id)
+                for chat_id, max_id in sorted(self.world.story_read.items())
+            ],
+            users=list(self.world.users.values()),
+            chats=list(self.world.chats.values()),
+            date=datetime.now(timezone.utc),
+            seq=0,
+        )
+
+    # stealth, search, blocklist, live -------------------------------------
+
+    def _raw_ActivateStealthModeRequest(self, request: Any) -> types.Updates:
+        now = datetime.now(timezone.utc)
+        self.world.stealth_mode = types.StoriesStealthMode(
+            active_until_date=now + timedelta(minutes=5),
+            cooldown_until_date=now + timedelta(hours=1),
+        )
+        return self._updates()
+
+    def _raw_SearchPostsRequest(self, request: Any) -> Any:
+        rows = list(self.world.public_stories)
+        return types.stories.FoundStories(
+            count=len(rows),
+            stories=rows[: request.limit],
+            chats=list(self.world.chats.values()),
+            users=list(self.world.users.values()),
+            next_offset="page2" if len(rows) > request.limit else None,
+        )
+
+    def _raw_GetBlockedRequest(self, request: Any) -> Any:
+        if not getattr(request, "my_stories_from", False):
+            return types.contacts.Blocked(blocked=[], chats=[], users=[])
+        rows = self.world.story_blocklist[request.offset : request.offset + request.limit]
+        return types.contacts.Blocked(
+            blocked=[
+                types.PeerBlocked(
+                    peer_id=types.PeerUser(user_id=user_id), date=datetime.now(timezone.utc)
+                )
+                for user_id in rows
+            ],
+            chats=[],
+            users=[self.world.users[u] for u in rows if u in self.world.users],
+        )
+
+    def _raw_UnblockRequest(self, request: Any) -> bool:
+        raw = self._chat_id(request.id)
+        if raw in self.world.story_blocklist:
+            self.world.story_blocklist.remove(raw)
+            return True
+        return False
+
+    def _raw_SetBlockedRequest(self, request: Any) -> bool:
+        self.world.story_blocklist = [self._chat_id(peer) for peer in request.id]
+        return True
+
+    def _raw_StartLiveRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.peer)
+        self.world.next_story_id += 1
+        story = make_story(self.world.next_story_id, caption=request.caption or "")
+        self.world.peer_stories.setdefault(chat_id, {})[story.id] = story
+        return types.Updates(
+            updates=[types.UpdateStoryID(id=story.id, random_id=request.random_id)],
+            users=[],
+            chats=[],
+            date=datetime.now(timezone.utc),
+            seq=0,
+        )
+
+    def _raw_GetGroupCallStreamRtmpUrlRequest(self, request: Any) -> Any:
+        return types.phone.GroupCallStreamRtmpUrl(url="rtmps://dc.tg/s/", key="secret-key")
+
+    # statistics -----------------------------------------------------------
+
+    def _raw_GetStoryStatsRequest(self, request: Any) -> Any:
+        return types.stats.StoryStats(
+            views_graph=types.StatsGraph(json=types.DataJSON(data='{"columns": []}')),
+            reactions_by_emotion_graph=types.StatsGraphAsync(token="graph-token"),
+        )
+
+    def _raw_LoadAsyncGraphRequest(self, request: Any) -> Any:
+        return types.StatsGraph(json=types.DataJSON(data='{"columns": ["reactions"]}'))
+
+    def _raw_GetStoryPublicForwardsRequest(self, request: Any) -> Any:
+        return types.stats.PublicForwards(
+            count=1,
+            forwards=[
+                types.PublicForwardStory(
+                    peer=types.PeerChannel(channel_id=555),
+                    story=make_story(7, caption="repost"),
+                )
+            ],
+            chats=list(self.world.chats.values()),
+            users=[],
+            next_offset=None,
+        )
+
+    def _peer_of(self, chat_id: int) -> Any:
+        """A marked id back as the `Peer*` the TL types carry."""
+        if chat_id < -1000000000000:
+            return types.PeerChannel(channel_id=-1000000000000 - chat_id)
+        if chat_id < 0:
+            return types.PeerChat(chat_id=-chat_id)
+        return types.PeerUser(user_id=chat_id)
 
     # -- sticker sets ------------------------------------------------------
 
@@ -5433,8 +6012,3 @@ def fake_client_factory(world: World | None = None) -> Any:
 
     factory.world = shared  # type: ignore[attr-defined]
     return factory
-
-
-class _FakeStories:
-    def __init__(self, stories: list[Any]) -> None:
-        self.stories = stories

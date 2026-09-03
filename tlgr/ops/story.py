@@ -348,7 +348,7 @@ async def post(ctx: OpContext, req: PostReq) -> Page[Story]:
         raise UsageError("give at least one FILE to post", field="file")
 
     peer = await _story.resolve_or_self(ctx, req.send_as)
-    peer_id = _send.peer_id_of(peer)
+    peer_id = await _story.peer_id_for(ctx, peer)
     text, entities = _send.body(req.caption, parse=req.parse, entities=req.entities)
     rules = await _story.privacy_rules(
         ctx,
@@ -373,7 +373,7 @@ async def post(ctx: OpContext, req: PostReq) -> Page[Story]:
     if req.repost_message:
         areas.append(await _repost_message_area(ctx, req.repost_message))
 
-    _warn_excluded_mentions(ctx, entities, req.exclude)
+    _warn_excluded_mentions(ctx, text, req.exclude)
 
     fwd_peer, fwd_story = (None, None)
     if req.repost:
@@ -422,22 +422,24 @@ async def post(ctx: OpContext, req: PostReq) -> Page[Story]:
     return Page(items=items, has_more=False, total=len(items))
 
 
-def _warn_excluded_mentions(ctx: OpContext, entities: Any, exclude: list[str]) -> None:
+def _warn_excluded_mentions(ctx: OpContext, caption: str, exclude: list[str]) -> None:
     """Warn when the caption @-mentions somebody the audience shuts out.
 
-    The GUI shows the same warning, and it is the difference between a story
-    that reads as a shout-out and one the person named never sees.
+    Read off the raw text rather than off the parsed entities: Telegram
+    resolves a plain `@handle` into a mention server-side, so at send time
+    there is no entity to inspect and the check would silently never fire.
     """
-    if not exclude:
+    if not exclude or not caption:
         return
-    excluded = {str(e).lstrip("@").lower() for e in exclude}
-    for entity in entities or []:
-        if getattr(entity, "type", "") == "mention":
-            ctx.warn(
-                "a mentioned user may be excluded by the privacy rules "
-                f"({', '.join(sorted(excluded))}); they will not see the story"
-            )
-            return
+    import re
+
+    mentioned = {match.lower() for match in re.findall(r"@([A-Za-z0-9_]{4,32})", caption)}
+    hit = sorted(mentioned & {str(e).lstrip("@").lower() for e in exclude})
+    if hit:
+        ctx.warn(
+            f"@{', @'.join(hit)} is excluded by the privacy rules and will not "
+            "see this story, even though the caption mentions them"
+        )
 
 
 async def _repost_message_area(ctx: OpContext, spec: str) -> Any:
@@ -613,32 +615,63 @@ def _limits(config: dict[str, Any], *, premium: bool) -> StoryLimits:
     return limits
 
 
-#: `canSendStoryResult*` → the reason string tlgr reports.
-_CANNOT: dict[str, str] = {
-    "CanSendStoryResultPremiumNeeded": "PREMIUM_ACCOUNT_REQUIRED",
-    "CanSendStoryResultBoostNeeded": "BOOSTS_REQUIRED",
-    "CanSendStoryResultActiveStoryLimitExceeded": "STORIES_TOO_MUCH",
-    "CanSendStoryResultWeeklyLimit": "STORY_SEND_FLOOD_WEEKLY",
-    "CanSendStoryResultMonthlyLimit": "STORY_SEND_FLOOD_MONTHLY",
-    "CanSendStoryResultLiveStoryIsActive": "STORY_LIVE_ALREADY",
-}
+#: The RPC errors `stories.canSendStory` answers a refusal with. Layer 227
+#: has no `canSendStoryResult*` union — the server raises — so the reason is
+#: read off the error rather than off a result type.
+_CANNOT: tuple[str, ...] = (
+    "PREMIUM_ACCOUNT_REQUIRED",
+    "BOOSTS_REQUIRED",
+    "CHAT_ADMIN_REQUIRED",
+    "STORIES_TOO_MUCH",
+    "STORY_SEND_FLOOD_WEEKLY",
+    "STORY_SEND_FLOOD_MONTHLY",
+    "STORY_LIVE_ALREADY",
+)
+
+
+def _refusal(exc: BaseException) -> tuple[str, int | None]:
+    """`(reason, the number the message carries)` for a canSendStory failure.
+
+    `STORY_SEND_FLOOD_WEEKLY_%d` and friends carry the wait in the name, and
+    reporting "an error occurred" while throwing that number away is what
+    makes a caller retry immediately and get flooded again.
+    """
+    from tlgr.core.errors import strip_numeric_suffix
+
+    raw = str(getattr(exc, "message", "") or exc).upper()
+    text, number = strip_numeric_suffix(raw)
+    for reason in _CANNOT:
+        if reason in text:
+            return reason, number
+    return "", number
+
+
+async def _check(ctx: OpContext, peer: Any) -> tuple[Any, str, int | None]:
+    """`(result, reason, number)` from `stories.canSendStory`."""
+    from telethon.errors import RPCError
+    from telethon.tl.functions import stories as fn
+
+    try:
+        return await client(ctx)(fn.CanSendStoryRequest(peer=peer)), "", None
+    except RPCError as exc:
+        reason, number = _refusal(exc)
+        if not reason:
+            raise
+        return None, reason, number
 
 
 async def _preflight(ctx: OpContext, peer: Any) -> None:
     """`stories.canSendStory`, translated into a refusal a human can act on."""
-    from telethon.tl.functions import stories as fn
-
-    result = await client(ctx)(fn.CanSendStoryRequest(peer=peer))
-    name = type(result).__name__
-    reason = _CANNOT.get(name)
-    if reason is None:
+    _result, reason, number = await _check(ctx, peer)
+    if not reason:
         return
-    retry = getattr(result, "retry_after", None) or getattr(result, "period", None)
-    detail = f" (retry after {retry}s)" if retry else ""
-    if reason == "BOOSTS_REQUIRED":
-        raise PermissionError_(f"posting a story here needs more boosts{detail}")
+    detail = f" ({number})" if number is not None else ""
     if reason == "PREMIUM_ACCOUNT_REQUIRED":
         raise PermissionError_("posting this story needs Telegram Premium")
+    if reason == "BOOSTS_REQUIRED":
+        raise PermissionError_(f"posting a story here needs more boosts{detail}")
+    if reason == "CHAT_ADMIN_REQUIRED":
+        raise PermissionError_("posting a story here needs the post_stories admin right")
     raise PermissionError_(f"cannot post a story right now: {reason}{detail}")
 
 
@@ -664,15 +697,14 @@ async def can_post(ctx: OpContext, req: CanPostReq) -> StoryPostCheck:
     from tlgr.ops import _media
 
     peer = await _story.resolve_or_self(ctx, req.send_as)
-    result = await client(ctx)(fn.CanSendStoryRequest(peer=peer))
-    name = type(result).__name__
+    outcome, reason, number = await _check(ctx, peer)
     check = StoryPostCheck(
-        can_post=name == "CanSendStoryCount",
-        reason=_CANNOT.get(name, ""),
-        count_remains=getattr(result, "count_remains", None),
-        free_slots=getattr(result, "count_remains", None),
-        retry_after=getattr(result, "retry_after", None) or getattr(result, "period", None),
-        boosts_required=getattr(result, "boosts_required", None) or getattr(result, "boosts", None),
+        can_post=outcome is not None,
+        reason=reason,
+        count_remains=getattr(outcome, "count_remains", None),
+        free_slots=getattr(outcome, "count_remains", None),
+        retry_after=number if reason.startswith("STORY_SEND_FLOOD") else None,
+        boosts_required=number if reason == "BOOSTS_REQUIRED" else None,
     )
 
     me = await client(ctx).get_me()
@@ -2776,11 +2808,12 @@ async def stats_get(ctx: OpContext, req: StatsGetReq) -> StoryStats:
                     }
                 )
             else:
-                entity = _peer_entity(getattr(row, "peer_id", None), table)
+                origin = getattr(row, "peer", None) or getattr(row, "peer_id", None)
+                entity = _peer_entity(origin, table)
                 forwards.append(
                     {
                         "kind": "story",
-                        "chat_id": peer_id_of(getattr(row, "peer_id", None)) or 0,
+                        "chat_id": peer_id_of(origin) or 0,
                         "story_id": int(getattr(getattr(row, "story", None), "id", 0) or 0),
                         "title": str(getattr(entity, "title", "") or ""),
                     }
@@ -2838,7 +2871,7 @@ async def live_get(ctx: OpContext, req: LiveGetReq) -> LiveStory:
     from telethon.tl.functions import stories as fn
 
     peer = await _story.resolve_or_self(ctx, req.chat)
-    peer_id = _send.peer_id_of(peer)
+    peer_id = await _story.peer_id_for(ctx, peer)
     result = await client(ctx)(fn.GetPeerStoriesRequest(peer=peer))
     stories = getattr(getattr(result, "stories", None), "stories", None) or []
     live = [item for item in stories if getattr(item, "live", False)]
@@ -2910,7 +2943,7 @@ async def live_start(ctx: OpContext, req: LiveStartReq) -> LiveStory:
     from telethon.tl.functions import stories as fn
 
     peer = await _story.resolve_or_self(ctx, req.chat)
-    peer_id = _send.peer_id_of(peer)
+    peer_id = await _story.peer_id_for(ctx, peer)
     if not req.rtmp:
         ctx.warn(
             "without --rtmp nothing will supply the video: tlgr has no media "
@@ -3018,7 +3051,7 @@ async def export(ctx: OpContext, req: ExportReq) -> StoryExport:
     from telethon.tl.functions import stories as fn
 
     peer = await _story.resolve_or_self(ctx, req.chat)
-    peer_id = _send.peer_id_of(peer)
+    peer_id = await _story.peer_id_for(ctx, peer)
     directory = Path(os.path.expanduser(req.out))
     directory.mkdir(parents=True, exist_ok=True)
 
@@ -3148,7 +3181,7 @@ def _story_event(event: Any) -> StoryEvent | None:
         reaction=payload.get("reaction"),
         max_read_id=payload.get("max_read_id"),
         stealth_mode=StealthMode(**stealth) if isinstance(stealth, dict) else None,
-        at=str(getattr(event, "at", "") or payload.get("at") or ""),
+        at=str(getattr(event, "ts", "") or ""),
     )
 
 

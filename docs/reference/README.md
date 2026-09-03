@@ -2,7 +2,7 @@
 
 # Command reference
 
-309 operations across 22 groups, generated from the operation registry. Groups still served by v1's hand-written commands are not listed here; they arrive with their own PR.
+317 operations across 23 groups, generated from the operation registry. Groups still served by v1's hand-written commands are not listed here; they arrive with their own PR.
 
 | Group | Operations | Reference |
 |---|---:|---|
@@ -18,6 +18,7 @@
 | `events` | 5 | [events.md](events.md) |
 | `folder` | 13 | [folder.md](folder.md) |
 | `gif` | 5 | [gif.md](gif.md) |
+| `job` | 8 | [job.md](job.md) |
 | `location` | 9 | [location.md](location.md) |
 | `media` | 28 | [media.md](media.md) |
 | `message` | 39 | [message.md](message.md) |

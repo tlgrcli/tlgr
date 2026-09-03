@@ -143,6 +143,7 @@ VERBS: frozenset[str] = frozenset(
         "uninstall",
         "restart",
         "reconnect",
+        "reload",
         "save-state",
         "replay",
         "decode",

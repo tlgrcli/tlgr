@@ -7,7 +7,7 @@ Coverage against the Telegram feature catalog, computed from the registry: every
 `covered` is implemented today. `acct%` is covered **plus** waived — an id that belongs to a group a later PR owns, named in `tlgr/data/parity_waivers.toml` with the PR that closes it. Ids whose feasibility is `not-applicable` or `prohibited` are excluded from the denominator once and never counted again.
 
 ```
-catalog 2026-09-02 — 309 operations, 459 invocable paths
+catalog 2026-09-02 — 317 operations, 467 invocable paths
 
 domain                        covered    req       %   acct%  ops
 auth_sessions_security             85     89   95.5%  100.0%  43
@@ -21,7 +21,7 @@ messages_core                     159    167   95.2%  100.0%  54
 polls_reactions_content           117    174   67.2%  100.0%  57
 profile_settings_privacy           20    178   11.2%  100.0%  19
 stories                            12    120   10.0%  100.0%  9
-updates_sync_network              136    189   72.0%  100.0%  25
+updates_sync_network              136    189   72.0%  100.0%  33
 
 priority                      covered    req       %   acct%
 P0                                113    178   63.5%  100.0%
@@ -49,7 +49,7 @@ uncovered: 846 (846 waived with a PR number)
 | `polls_reactions_content` | 117 | 174 | 67.2% | 100.0% | 57 |
 | `profile_settings_privacy` | 20 | 178 | 11.2% | 100.0% | 19 |
 | `stories` | 12 | 120 | 10.0% | 100.0% | 9 |
-| `updates_sync_network` | 136 | 189 | 72.0% | 100.0% | 25 |
+| `updates_sync_network` | 136 | 189 | 72.0% | 100.0% | 33 |
 
 ## By priority
 
@@ -97,7 +97,6 @@ uncovered: 846 (846 waived with a PR number)
 | `updates.invoke-with-layer` | `agent.capabilities` | states the policy and the layer bound; the switches themselves are `config set`, and recovery is `daemon reconnect`. |
 | `updates.net-connection-status` | `daemon.status` | reports the state; the network detail is `net status`, the freeze fields are `config app get`, and recovery is `daemon reconnect`. |
 | `updates.presence-read-receipts-policy` | `agent.capabilities` | states the policy and the layer bound; the switches themselves are `config set`, and recovery is `daemon reconnect`. |
-| `updates.stream-event-filtering` | `events.watch` | delivers every type; the catalogue half (what exists, what it means) is `events list`/`events get`, and gap recovery is the `sync` group. |
 | `updates.stream-webhook-delivery` | `daemon.dead-letter.delete` | the disposal half; delivery is the webhook pusher's. |
 | `updates.sync-channel-short-poll` | `events.watch` | delivers every type; the catalogue half (what exists, what it means) is `events list`/`events get`, and gap recovery is the `sync` group. |
 | `updates.sync-difference-too-long` | `events.watch` | delivers every type; the catalogue half (what exists, what it means) is `events list`/`events get`, and gap recovery is the `sync` group. |

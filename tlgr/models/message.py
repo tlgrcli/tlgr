@@ -36,7 +36,6 @@ __all__ = [
     "MessageEntity",
     "PaidMessageSettings",
     "PinResult",
-    "ReactResult",
     "ReactionSummary",
     "ReadReceipts",
     "ReadResult",
@@ -326,15 +325,6 @@ class ReadReceipts(Model):
     read_date_unix: int | None = None
     expired: bool = False
     unavailable_reason: str | None = None
-
-
-class ReactResult(Model):
-    chat_id: int
-    msg_id: int
-    emoji: str = ""
-    reacted: bool = False
-    already: bool = False
-    reactions: ReactionSummary | None = None
 
 
 class LinkResult(Model):

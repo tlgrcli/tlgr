@@ -33,6 +33,7 @@ __all__ = [
     "already",
     "client",
     "display_name",
+    "entity_id",
     "entity_map",
     "full_chat",
     "input_channel",
@@ -176,6 +177,24 @@ async def full_chat(ctx: OpContext, peer: Any) -> tuple[Any, Any, dict[int, Any]
     return full, entity, entities
 
 
+def entity_id(entity: Any) -> int:
+    """The marked id of an *entity* (`Chat`/`Channel`/`User`), or 0.
+
+    Not the same call as `_serialize.peer_id_of`, which reads a `Peer*`/
+    `InputPeer*` and answers None for an entity — an entity carries `id`,
+    not `channel_id`, so asking the wrong one of the two silently yields 0
+    for every row.
+    """
+    from telethon import utils
+
+    if entity is None:
+        return 0
+    try:
+        return int(utils.get_peer_id(entity))
+    except (TypeError, ValueError):
+        return 0
+
+
 def display_name(entity: Any) -> str:
     if entity is None:
         return ""
@@ -222,6 +241,11 @@ def effective_rights(default_banned: Rights | None, member: Rights | None) -> Ri
     for name in _rights.MEMBER_MASK:
         flag = name.replace("-", "_")
         flag = {"send_rounds": "send_roundvideos"}.get(flag, flag)
+        if not hasattr(out, flag):
+            # A layer-229 right the model has no field for. `chat permission
+            # list` names it as unsupported; inventing a field here would
+            # report a permission tlgr cannot actually read.
+            continue
         value: bool | None = None
         if default_banned is not None:
             value = getattr(default_banned, flag, None)

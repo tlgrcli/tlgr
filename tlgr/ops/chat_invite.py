@@ -610,9 +610,7 @@ async def open_invite(ctx: OpContext, req: InviteOpenReq) -> InvitePeek:
     chat = getattr(reply, "chat", None)
     limit = int(getattr(ctx, "limit", None) or 20)
     raw = [m async for m in handle.iter_messages(chat, limit=limit) if m is not None]
-    from tlgr.ops._serialize import peer_id_of
-
-    chat_id = peer_id_of(chat) or 0
+    chat_id = _admin.entity_id(chat)
     return InvitePeek(
         chat=entity_to_peer(chat) if chat is not None else None,
         chat_title=_admin.display_name(chat),

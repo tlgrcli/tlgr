@@ -111,7 +111,7 @@ async def list_similar(ctx: OpContext, req: SimilarReq) -> Page[SimilarChat]:
         reply = await handle(fn.GetChannelRecommendationsRequest(channel=channel))
     rows = [
         SimilarChat(
-            id=peer_id_of(chat) or 0,
+            id=_admin.entity_id(chat),
             title=str(getattr(chat, "title", "") or ""),
             username=getattr(chat, "username", None),
             participants_count=getattr(chat, "participants_count", None),
@@ -243,7 +243,7 @@ async def report_sponsored(ctx: OpContext, req: SponsoredReportReq) -> Sponsored
         )
     )
     kind = type(reply).__name__
-    if kind == "ChannelsSponsoredMessageReportResultChooseOption":
+    if kind == "SponsoredMessageReportResultChooseOption":
         return SponsoredReport(
             result="choose-option",
             title=str(getattr(reply, "title", "") or ""),
@@ -255,7 +255,7 @@ async def report_sponsored(ctx: OpContext, req: SponsoredReportReq) -> Sponsored
                 for item in (getattr(reply, "options", None) or [])
             ],
         )
-    if kind == "ChannelsSponsoredMessageReportResultAdsHidden":
+    if kind == "SponsoredMessageReportResultAdsHidden":
         return SponsoredReport(result="ads-hidden")
     return SponsoredReport(result="reported")
 

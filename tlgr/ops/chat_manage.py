@@ -227,7 +227,7 @@ async def create_chat(ctx: OpContext, req: CreateReq) -> CreatedChat:
         )
     chats = list(getattr(updates, "chats", None) or [])
     entity = chats[0] if chats else None
-    chat_id = peer_id_of(entity) if entity is not None else 0
+    chat_id = _admin.entity_id(entity)
     result = CreatedChat(
         id=chat_id or 0,
         type=req.type,
@@ -517,7 +517,7 @@ async def convert_chat(ctx: OpContext, req: ConvertReq) -> MigrateResult:
             chan_fn.ConvertToGigagroupRequest(channel=_admin.input_channel(peer))
         )
         chats = list(getattr(updates, "chats", None) or [])
-        new_id = peer_id_of(chats[0]) if chats else old_id
+        new_id = _admin.entity_id(chats[0]) if chats else old_id
         ctx.emit("chat_converted", {"chat_id": new_id, "type": "gigagroup"})
         return MigrateResult(old_chat_id=old_id, chat_id=new_id or old_id, type="gigagroup")
 
@@ -530,7 +530,7 @@ async def convert_chat(ctx: OpContext, req: ConvertReq) -> MigrateResult:
     new_id = old_id
     for chat in getattr(updates, "chats", None) or []:
         if type(chat).__name__ == "Channel":
-            new_id = peer_id_of(chat) or old_id
+            new_id = _admin.entity_id(chat) or old_id
     ctx.emit("chat_converted", {"chat_id": new_id, "type": "supergroup"})
     return MigrateResult(old_chat_id=old_id, chat_id=new_id, type="supergroup")
 
@@ -1579,7 +1579,7 @@ async def list_discussion_candidates(
         is_basic = type(chat).__name__ == "Chat"
         out.append(
             DiscussionCandidate(
-                id=peer_id_of(chat) or 0,
+                id=_admin.entity_id(chat),
                 title=str(getattr(chat, "title", "") or ""),
                 type="group" if is_basic else "supergroup",
                 needs_migration=is_basic,

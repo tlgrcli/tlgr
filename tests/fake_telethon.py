@@ -77,33 +77,6 @@ DH_PRIME = base64.b64decode(
 DH_G = 2
 
 
-class _ServerConfig:
-    """`help.getConfig`, reduced to the four call timeouts tlgr reads."""
-
-    call_receive_timeout_ms = 20000
-    call_ring_timeout_ms = 90000
-    call_connect_timeout_ms = 30000
-    call_packet_timeout_ms = 10000
-
-
-class _FullChat:
-    """`channels.getFullChannel` / `messages.getFullChat`, reduced to `.call`."""
-
-    def __init__(self, call: Any) -> None:
-        self.full_chat = _FullChatInner(call)
-        self.chats: list[Any] = []
-        self.users: list[Any] = []
-
-
-class _FullChatInner:
-    def __init__(self, call: Any) -> None:
-        self.call = (
-            types.InputGroupCall(id=call.id, access_hash=call.access_hash)
-            if call is not None
-            else None
-        )
-
-
 class _FullUser:
     """`users.getFullUser`, reduced to the three call-availability flags."""
 
@@ -118,21 +91,6 @@ class _FullUserInner:
         self.phone_calls_available = available
         self.video_calls_available = available
         self.phone_calls_private = not available
-
-
-def _json_value(value: Any) -> Any:
-    """A Python value as the `JSONValue` tree `help.getAppConfig` returns."""
-    if isinstance(value, bool):
-        return types.JsonBool(value=value)
-    if isinstance(value, (int, float)):
-        return types.JsonNumber(value=float(value))
-    if isinstance(value, str):
-        return types.JsonString(value=value)
-    if isinstance(value, list):
-        return types.JsonArray(value=[_json_value(item) for item in value])
-    if isinstance(value, dict):
-        return _json_object(value)
-    return types.JsonNull()
 
 
 def _json_object(mapping: dict[str, Any]) -> Any:
@@ -592,7 +550,6 @@ class World:
     sensitive_can_change: bool = True
     auto_download: dict[str, dict[str, Any]] = field(default_factory=dict)
     auto_save: dict[str, Any] = field(default_factory=dict)
-    app_config: dict[str, Any] = field(default_factory=dict)
     #: profile photo bytes, per marked chat id.
     profile_photos: dict[int, bytes] = field(default_factory=dict)
     #: story id → `types.MessageMediaDocument`-shaped media.
@@ -1304,12 +1261,6 @@ class FakeTelegramClient:
     def _raw_GetCallConfigRequest(self, request: Any) -> Any:
         return types.DataJSON(data='{"audio_max_bitrate": 32000}')
 
-    def _raw_GetConfigRequest(self, request: Any) -> Any:
-        return _ServerConfig()
-
-    def _raw_GetAppConfigRequest(self, request: Any) -> Any:
-        return types.help.AppConfig(hash=1, config=_json_object(self.world.app_config))
-
     def _phone_call(self, call: Any) -> Any:
         return types.phone.PhoneCall(phone_call=call, users=list(self.world.users.values()))
 
@@ -1398,15 +1349,6 @@ class FakeTelegramClient:
             date=datetime.now(timezone.utc),
             seq=0,
         )
-
-    def _raw_GetFullChannelRequest(self, request: Any) -> Any:
-        raw = int(getattr(request.channel, "channel_id", 0) or 0)
-        call_id = self.world.chat_calls.get(-1000000000000 - raw)
-        return _FullChat(self.world.group_calls.get(call_id) if call_id else None)
-
-    def _raw_GetFullChatRequest(self, request: Any) -> Any:
-        call_id = self.world.chat_calls.get(-int(request.chat_id))
-        return _FullChat(self.world.group_calls.get(call_id) if call_id else None)
 
     def _raw_CreateGroupCallRequest(self, request: Any) -> types.Updates:
         chat_id = self._chat_id(request.peer)
@@ -1508,13 +1450,6 @@ class FakeTelegramClient:
             users=[self.world.me],
         )
 
-    def _raw_GetSendAsRequest(self, request: Any) -> Any:
-        return types.channels.SendAsPeers(
-            peers=[types.SendAsPeer(peer=types.PeerUser(user_id=self.world.me.id))],
-            chats=[],
-            users=[self.world.me],
-        )
-
     def _raw_CheckGroupCallRequest(self, request: Any) -> list[int]:
         return list(request.sources[:1])
 
@@ -1565,23 +1500,6 @@ class FakeTelegramClient:
             invite_link="https://t.me/call/AbCdEf",
         )
         return self._group_updates(call)
-
-    def _raw_SearchRequest(self, request: Any) -> Any:
-        """Only the Calls-tab shape: `inputMessagesFilterPhoneCalls`."""
-        rows = list(self.world.call_log)
-        if getattr(request.filter, "missed", False):
-            rows = [
-                row
-                for row in rows
-                if type(getattr(row.action, "reason", None)).__name__
-                == "PhoneCallDiscardReasonMissed"
-            ]
-        if request.offset_id:
-            rows = [row for row in rows if row.id < request.offset_id]
-        rows = sorted(rows, key=lambda row: row.id, reverse=True)[: request.limit]
-        return types.messages.Messages(
-            messages=rows, topics=[], chats=[], users=list(self.world.users.values())
-        )
 
     def _raw_DeletePhoneCallHistoryRequest(self, request: Any) -> Any:
         removed = [row.id for row in self.world.call_log]
@@ -2157,6 +2075,8 @@ class FakeTelegramClient:
         return self._slice(found[: int(request.limit)])
 
     def _raw_SearchRequest(self, request: Any) -> Any:
+        if type(getattr(request, "filter", None)).__name__ == "InputMessagesFilterPhoneCalls":
+            return self._call_log_search(request)
         chat_id = self._chat_id(request.peer)
         found = [
             message
@@ -2164,6 +2084,23 @@ class FakeTelegramClient:
             if not request.q or request.q.lower() in (message.message or "").lower()
         ]
         return self._slice(sorted(found, key=lambda m: m.id, reverse=True)[: int(request.limit)])
+
+    def _call_log_search(self, request: Any) -> Any:
+        """The Calls tab: `messages.search` under `inputMessagesFilterPhoneCalls`."""
+        rows = list(self.world.call_log)
+        if getattr(request.filter, "missed", False):
+            rows = [
+                row
+                for row in rows
+                if type(getattr(row.action, "reason", None)).__name__
+                == "PhoneCallDiscardReasonMissed"
+            ]
+        if request.offset_id:
+            rows = [row for row in rows if row.id < request.offset_id]
+        rows = sorted(rows, key=lambda row: row.id, reverse=True)[: request.limit]
+        return types.messages.Messages(
+            messages=rows, topics=[], chats=[], users=list(self.world.users.values())
+        )
 
     def _raw_SearchPostsRequest(self, request: Any) -> Any:
         return self._slice(list(self.world.public_posts)[: int(request.limit)], next_rate=7)
@@ -2177,6 +2114,14 @@ class FakeTelegramClient:
         )
 
     # -- reaction policy, tags and paid reactions --------------------------
+
+    def _running_call(self, chat_id: int) -> Any:
+        """The `inputGroupCall` a chat's full info advertises, if one is running."""
+        call_id = self.world.chat_calls.get(chat_id)
+        call = self.world.group_calls.get(call_id) if call_id else None
+        if call is None:
+            return None
+        return types.InputGroupCall(id=call.id, access_hash=call.access_hash)
 
     def _full_channel(self, chat_id: int) -> Any:
         return types.ChannelFull(
@@ -2192,6 +2137,7 @@ class FakeTelegramClient:
             available_reactions=self.world.chat_reactions.get(chat_id) or types.ChatReactionsNone(),
             reactions_limit=self.world.reactions_limit.get(chat_id),
             paid_reactions_available=self.world.paid_enabled.get(chat_id),
+            call=self._running_call(chat_id),
         )
 
     def _raw_GetFullChannelRequest(self, request: Any) -> Any:
@@ -2209,6 +2155,7 @@ class FakeTelegramClient:
                 available_reactions=self.world.chat_reactions.get(-chat_id)
                 or types.ChatReactionsNone(),
                 reactions_limit=self.world.reactions_limit.get(-chat_id),
+                call=self._running_call(-chat_id),
             ),
             chats=[],
             users=[],
@@ -2308,7 +2255,7 @@ class FakeTelegramClient:
         return types.channels.SendAsPeers(
             peers=[types.SendAsPeer(peer=types.PeerUser(user_id=self.world.me.id))],
             chats=[],
-            users=[],
+            users=[self.world.me],
         )
 
     def _raw_GetMessagesReactionsRequest(self, request: Any) -> types.Updates:
@@ -2424,10 +2371,10 @@ class FakeTelegramClient:
             rating_e_decay=1,
             stickers_recent_limit=200,
             channels_read_media_period=1,
-            call_receive_timeout_ms=1,
-            call_ring_timeout_ms=1,
-            call_connect_timeout_ms=1,
-            call_packet_timeout_ms=1,
+            call_receive_timeout_ms=20000,
+            call_ring_timeout_ms=90000,
+            call_connect_timeout_ms=30000,
+            call_packet_timeout_ms=10000,
             me_url_prefix="https://t.me/",
             caption_length_max=1024,
             message_length_max=4096,

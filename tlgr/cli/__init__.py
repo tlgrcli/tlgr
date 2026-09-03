@@ -233,15 +233,11 @@ from tlgr.cli.gen import build_click_tree  # noqa: E402
 from tlgr.cli.legacy.chat import chat_create, chat_members  # noqa: E402
 from tlgr.cli.legacy.config_cmd import config_group  # noqa: E402
 from tlgr.cli.legacy.contact import contact_group  # noqa: E402
-from tlgr.cli.legacy.daemon_cmd import daemon_group  # noqa: E402
-from tlgr.cli.legacy.job import job_group  # noqa: E402
 from tlgr.cli.legacy.profile import profile_group  # noqa: E402
 from tlgr.cli.legacy.user import user_group  # noqa: E402
 
 cli.add_command(contact_group, "contact")
 cli.add_command(profile_group, "profile")
-cli.add_command(daemon_group, "daemon")
-cli.add_command(job_group, "job")
 cli.add_command(config_group, "config")
 cli.add_command(user_group, "user")
 
@@ -249,13 +245,6 @@ cli.add_command(user_group, "user")
 # ---------------------------------------------------------------------------
 # Top-level action shortcuts (desire paths)
 # ---------------------------------------------------------------------------
-
-
-@cli.command("status")
-@click.pass_context
-def shortcut_status(ctx: click.Context) -> None:
-    """Show daemon status (shortcut for 'daemon status')."""
-    ctx.invoke(daemon_group.commands["status"])
 
 
 @cli.command("contacts")
@@ -271,10 +260,10 @@ def shortcut_contacts(ctx: click.Context) -> None:
 
 
 #: Commands that still live in `cli/legacy` *inside* a group the registry now
-#: generates. Each entry is a promise to delete. PR-2 took `agent whoami` out
-#: of it: the command needs the account manager, so it migrated with the
-#: account group. What is left is the sanctioned, enumerated overlap for the
-#: group PRs still to come.
+#: generates. Each entry is a promise to delete, and an enumerated list is
+#: the only kind of overlap that is a decision rather than an accident. PR-2
+#: took `agent whoami` out of it, PR-4 took `daemon` and `job`; what is left
+#: is the sanctioned overlap for the group PRs still to come.
 LEGACY_EXTRAS: dict[str, list[click.Command]] = {
     # `chat create` and `chat members` are member/admin operations and
     # migrate with the groups-and-channels group (PR-7).
@@ -285,12 +274,17 @@ LEGACY_EXTRAS: dict[str, list[click.Command]] = {
 def build_cli() -> click.Group:
     """Compose the generated command tree with the v1 groups still hand-written.
 
-    A group must be defined in exactly one of the two places. Being defined in
-    both would mean a migration half-landed — one path generated, one path
-    still hand-written, silently disagreeing — so it fails the import rather
-    than the user's next command (§12.4). The one sanctioned overlap is
-    LEGACY_EXTRAS, which is an explicit, enumerated list rather than an
-    accident.
+    A *command* must be defined in exactly one of the two places. Being
+    defined in both would mean a migration half-landed — one path generated,
+    one still hand-written, silently disagreeing — so it fails the import
+    rather than the user's next command (§12.4).
+
+    A *group* may legitimately be shared while a migration is in flight, in
+    both directions: LEGACY_EXTRAS puts a v1 command inside a generated group
+    (`agent whoami` until PR-2 moves it), and merging puts a generated command
+    inside a v1 group (`account status`, whose group migrates in PR-2). Both
+    are enumerated by the code that does the merging, and a name that appears
+    twice is still a hard failure.
     """
     import tlgr.ops  # noqa: F401  — importing it is what populates the registry
     from tlgr.cli.gen import set_dispatcher
@@ -302,17 +296,26 @@ def build_cli() -> click.Group:
     set_dispatcher(make_dispatcher(), make_stream_dispatcher())
 
     generated = build_click_tree()
-    clash = sorted(set(generated) & set(cli.commands))
-    if clash:
-        raise RuntimeError(
-            f"these command groups are defined both by the registry and by "
-            f"tlgr/cli/legacy: {clash}. Delete the legacy module."
-        )
     for name, command in generated.items():
         for extra in LEGACY_EXTRAS.get(name, []):
             if isinstance(command, click.Group):
                 command.add_command(extra, extra.name)
-        cli.add_command(command, name)
+        existing = cli.commands.get(name)
+        if existing is None:
+            cli.add_command(command, name)
+            continue
+        if not (isinstance(existing, click.Group) and isinstance(command, click.Group)):
+            raise RuntimeError(
+                f"the command {name!r} is defined both by the registry and by "
+                f"tlgr/cli/legacy. Delete the legacy module."
+            )
+        for sub_name, sub in command.commands.items():
+            if sub_name in existing.commands:
+                raise RuntimeError(
+                    f"{name} {sub_name} is defined both by the registry and by "
+                    f"tlgr/cli/legacy. Delete the legacy command."
+                )
+            existing.add_command(sub, sub_name)
     return cli
 
 

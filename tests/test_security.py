@@ -96,6 +96,47 @@ class TestReadsDoNotCreate:
         assert not (fresh / "accounts").exists()
 
 
+class TestProductionHome:
+    """A marked home belongs to somebody's running daemon. Keep out.
+
+    Two processes on one tlgr home share session files, and Telegram treats a
+    second client on the same auth key as a compromised session and revokes
+    it — so a development build started against a live home does not degrade
+    it, it breaks it. The marker is a hard stop with one deliberate override.
+    """
+
+    def test_an_unmarked_home_is_fine(self, tlgr_home: Path):
+        from tlgr.core.paths import is_production_home, refuse_production_home
+
+        assert is_production_home(tlgr_home) is False
+        refuse_production_home(tlgr_home)
+
+    def test_a_marked_home_is_refused_and_says_how_to_proceed(self, tlgr_home: Path):
+        from tlgr.core.errors import ConfigurationError
+        from tlgr.core.paths import PRODUCTION_MARKER, refuse_production_home
+
+        (tlgr_home / PRODUCTION_MARKER).write_text("live install\n")
+        with pytest.raises(ConfigurationError) as caught:
+            refuse_production_home(tlgr_home)
+        assert "TLGR_ALLOW_PRODUCTION_HOME" in str(caught.value)
+
+    def test_the_override_is_an_explicit_environment_variable(self, tlgr_home: Path, monkeypatch):
+        from tlgr.core.paths import PRODUCTION_MARKER, refuse_production_home
+
+        (tlgr_home / PRODUCTION_MARKER).write_text("live install\n")
+        monkeypatch.setenv("TLGR_ALLOW_PRODUCTION_HOME", "1")
+        refuse_production_home(tlgr_home)
+
+    def test_the_daemon_refuses_to_start_on_one(self, tlgr_home: Path):
+        """Exit 10 (CONFIG), before the lock and before anything is created."""
+        from tlgr.core.paths import PRODUCTION_MARKER
+        from tlgr.daemon.main import main
+
+        (tlgr_home / PRODUCTION_MARKER).write_text("live install\n")
+        assert main(["--base", str(tlgr_home), "--foreground"]) == 10
+        assert not (tlgr_home / "daemon.lock").exists()
+
+
 class TestPrivateWrites:
     def test_write_private_is_never_briefly_world_readable(self, tlgr_home: Path):
         target = tlgr_home / "secret.json"

@@ -239,9 +239,16 @@ class WebhookPusher:
 
     def _dead_letter(self, body: bytes, headers: dict[str, str], reason: str) -> None:
         self.dead_letters += 1
+        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         record = {
-            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "ts": now,
             "reason": reason,
+            # `source` names the consumer that failed. One store is shared by
+            # the pusher and the gateway actions, and an operator draining it
+            # has to be able to re-drive one without the other.
+            "source": "webhook",
+            "attempts": max(1, self.config.retry.max_attempts if self.config.retry.enabled else 1),
+            "first_failed_at": now,
             "delivery_id": headers.get("X-Tlgr-Delivery", ""),
             "seq": headers.get("X-Tlgr-Seq", ""),
             "event": headers.get("X-Tlgr-Event", ""),
@@ -287,6 +294,65 @@ class WebhookPusher:
             except json.JSONDecodeError:
                 continue
         return entries
+
+    @property
+    def dead_letter_path(self) -> Path:
+        return self._dead_letter_path
+
+    def write_dead_letters(self, entries: list[dict[str, Any]]) -> None:
+        """Replace the store. Private mode, one write, no partial file."""
+        body = "".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries)
+        write_private(self._dead_letter_path, body)
+        self.dead_letters = len(entries)
+
+    async def deliver_once(self, entry: dict[str, Any], *, url: str = "") -> tuple[bool, str]:
+        """One delivery attempt for a stored entry. Returns `(ok, error)`.
+
+        Re-delivery reuses the original `X-Tlgr-Delivery` id, so a receiver
+        keyed on it sees a duplicate rather than a new event — which is the
+        difference between a safe replay and a double-processed message.
+        """
+        import aiohttp
+
+        target = url or self.config.url
+        if not target:
+            return False, "no webhook URL is configured"
+        body = str(entry.get("body", "")).encode("utf-8")
+        headers = {
+            "Content-Type": "application/json",
+            "X-Tlgr-Delivery": str(entry.get("delivery_id", "")),
+            "X-Tlgr-Seq": str(entry.get("seq", "")),
+            "X-Tlgr-Event": str(entry.get("event", "")),
+            "X-Tlgr-Account": str(entry.get("account", "")),
+            "X-Tlgr-Redelivery": "1",
+        }
+        secret = self.config.signing_key
+        if secret:
+            headers["X-Tlgr-Signature"] = sign_body(secret, body)
+        if self.config.token:
+            headers["Authorization"] = f"Bearer {self.config.token}"
+        session = self._session
+        close_after = session is None
+        if session is None:
+            session = aiohttp.ClientSession()
+        try:
+            async with session.post(
+                target,
+                data=body,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=self.config.timeout),
+            ) as response:
+                if response.status < 400:
+                    self.delivered += 1
+                    return True, ""
+                return False, f"HTTP {response.status}"
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            return False, f"{type(exc).__name__}: {exc}"
+        finally:
+            if close_after:
+                await session.close()
 
     def purge_dead_letters(self) -> int:
         if not self._dead_letter_path.exists():

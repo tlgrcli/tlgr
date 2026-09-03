@@ -2,15 +2,46 @@
 
 # `tlgr agent`
 
-5 operations. Every one takes the global flags (`--json`, `--plain`, `-a/--account`, `--results-only`, `--select`, `--dry-run`, `--yes`, `--no-input`, `--flood-wait-max`, `-v`) anywhere on the line.
+6 operations. Every one takes the global flags (`--json`, `--plain`, `-a/--account`, `--results-only`, `--select`, `--dry-run`, `--yes`, `--no-input`, `--flood-wait-max`, `-v`) anywhere on the line.
 
 | Command | Summary |
 |---|---|
+| [`agent capabilities`](#tlgr-agent-capabilities) | Report what this build can do, cannot do, and will not do |
 | [`agent completion`](#tlgr-agent-completion) | Print the shell completion script for bash, zsh or fish |
-| [`agent exit-codes`](#tlgr-agent-exit-codes) | Print the stable exit codes for automation |
+| [`agent exit-codes`](#tlgr-agent-exit-codes) | Print the stable exit codes, and the RPC error to exit-code mapping |
 | [`agent parity`](#tlgr-agent-parity) | Report feature-parity coverage against the Telegram catalog |
 | [`agent schema`](#tlgr-agent-schema) | Print the machine-readable schema of the CLI |
-| [`agent whoami`](#tlgr-agent-whoami) | Report the active account, daemon status and environment |
+| [`agent whoami`](#tlgr-agent-whoami) | Report the active account, daemon health and client identity |
+
+### `agent capabilities`
+
+Report what this build can do, cannot do, and will not do.
+
+Three different things, deliberately separated. `unsupported_*` is what this Telethon layer cannot parse; `premium_gated`/`bot_only`/`admin_only` is what this *account* may not reach; `prohibited` is what tlgr refuses on purpose, with the reason. Only the first is a gap somebody might close.
+
+```
+tlgr agent capabilities [OPTIONS]
+```
+
+**idempotent (reports `already`) · runs without an account · returns `Capabilities`**
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--section` | protocol|policy|gates|events|limits |  | Restrict the report. |
+
+```console
+$ tlgr agent capabilities --section policy --json
+```
+
+<details><summary>Catalog coverage (2 full, 4 partial)</summary>
+
+Full: `updates.session-pfs`, `updates.sync-disable-updates`
+
+Partial: `updates.invoke-with-layer`, `updates.ops-single-updates-consumer`, `updates.presence-read-receipts-policy`, `updates.sync-old-layer-socket-reset`
+
+states the policy and the layer bound; the switches themselves are `config set`, and recovery is `daemon reconnect`.
+
+</details>
 
 ### `agent completion`
 
@@ -34,9 +65,9 @@ $ tlgr completion bash --json
 
 ### `agent exit-codes`
 
-Print the stable exit codes for automation.
+Print the stable exit codes, and the RPC error to exit-code mapping.
 
-Every tlgr command exits with one of these codes. They are a compatibility contract: a code never changes meaning.
+Every tlgr command exits with one of these codes. They are a compatibility contract: a code never changes meaning. `--errors` adds the row above them — which Telethon exception becomes which code, whether it is retryable, and the parameter a regex error carries (`FLOOD_WAIT_42` is a wait of 42 seconds, not a distinct error).
 
 ```
 tlgr agent exit-codes [OPTIONS]
@@ -44,11 +75,22 @@ tlgr agent exit-codes [OPTIONS]
 
 **idempotent (reports `already`) · runs without an account · returns `ExitCodes`**
 
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--errors` | flag |  | Also print the RPC error to exit-code mapping. |
+| `--search` | text |  | Filter the error table. |
+
 Also invocable as: `tlgr exit-codes`
 
 ```console
 $ tlgr agent exit-codes --json
 ```
+
+<details><summary>Catalog coverage (2 full, 0 partial)</summary>
+
+Full: `updates.net-error-taxonomy`, `updates.net-migrate-errors`
+
+</details>
 
 ### `agent parity`
 
@@ -100,16 +142,24 @@ $ tlgr schema message --json
 
 ### `agent whoami`
 
-Report the active account, daemon status and environment.
+Report the active account, daemon health and client identity.
 
-The orientation call. `output_schema_version` is 2 for this build; branch on it rather than probing for a renamed field.
+The first call an agent should make. `output_schema_version` says which output contract it is talking to, and `layer` says how far behind Telegram's current schema this build is.
 
 ```
 tlgr agent whoami [OPTIONS]
 ```
 
-**idempotent (reports `already`) · runs without an account · returns `Whoami`**
+**idempotent (reports `already`) · runs without an account · returns `WhoAmI`**
 
 ```console
 $ tlgr agent whoami --json
 ```
+
+<details><summary>Catalog coverage (0 full, 2 partial)</summary>
+
+Partial: `updates.invoke-init-connection`, `updates.invoke-with-layer`
+
+reports the identity and layer this build declares; setting them is `config set`, and `status` reports the connection.
+
+</details>

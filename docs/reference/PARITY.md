@@ -7,12 +7,12 @@ Coverage against the Telegram feature catalog, computed from the registry: every
 `covered` is implemented today. `acct%` is covered **plus** waived — an id that belongs to a group a later PR owns, named in `tlgr/data/parity_waivers.toml` with the PR that closes it. Ids whose feasibility is `not-applicable` or `prohibited` are excluded from the denominator once and never counted again.
 
 ```
-catalog 2026-09-02 — 280 operations, 408 invocable paths
+catalog 2026-09-02 — 289 operations, 429 invocable paths
 
 domain                        covered    req       %   acct%  ops
 auth_sessions_security             85     89   95.5%  100.0%  43
 bots_inline_payments               13    175    7.4%  100.0%  5
-calls_voicechats                  108    133   81.2%  100.0%  40
+calls_voicechats                  125    133   94.0%  100.0%  49
 contacts_users                     17    121   14.0%  100.0%  12
 dialogs_chats                     112    146   76.7%  100.0%  54
 groups_channels_admin              26    162   16.0%  100.0%  15
@@ -25,13 +25,13 @@ updates_sync_network                4    189    2.1%  100.0%  3
 
 priority                      covered    req       %   acct%
 P0                                 95    178   53.4%  100.0%
-P1                                198    379   52.2%  100.0%
-P2                                250    610   41.0%  100.0%
-P3                                247    630   39.2%  100.0%
+P1                                201    379   53.0%  100.0%
+P2                                256    610   42.0%  100.0%
+P3                                255    630   40.5%  100.0%
 
-TOTAL                             790   1797   44.0%  100.0%
+TOTAL                             807   1797   44.9%  100.0%
 excluded: not-applicable 79, prohibited 40
-uncovered: 1007 (1007 waived with a PR number)
+uncovered: 990 (990 waived with a PR number)
 ```
 
 ## By domain
@@ -40,7 +40,7 @@ uncovered: 1007 (1007 waived with a PR number)
 |---|---:|---:|---:|---:|---:|
 | `auth_sessions_security` | 85 | 89 | 95.5% | 100.0% | 43 |
 | `bots_inline_payments` | 13 | 175 | 7.4% | 100.0% | 5 |
-| `calls_voicechats` | 108 | 133 | 81.2% | 100.0% | 40 |
+| `calls_voicechats` | 125 | 133 | 94.0% | 100.0% | 49 |
 | `contacts_users` | 17 | 121 | 14.0% | 100.0% | 12 |
 | `dialogs_chats` | 112 | 146 | 76.7% | 100.0% | 54 |
 | `groups_channels_admin` | 26 | 162 | 16.0% | 100.0% | 15 |
@@ -56,9 +56,9 @@ uncovered: 1007 (1007 waived with a PR number)
 | Priority | Covered | Required | % | Accounted % |
 |---|---:|---:|---:|---:|
 | P0 | 95 | 178 | 53.4% | 100.0% |
-| P1 | 198 | 379 | 52.2% | 100.0% |
-| P2 | 250 | 610 | 41.0% | 100.0% |
-| P3 | 247 | 630 | 39.2% | 100.0% |
+| P1 | 201 | 379 | 53.0% | 100.0% |
+| P2 | 256 | 610 | 42.0% | 100.0% |
+| P3 | 255 | 630 | 40.5% | 100.0% |
 
 ## Partial coverage
 
@@ -69,6 +69,13 @@ uncovered: 1007 (1007 waived with a PR number)
 | `bots.rich-message-view` | `message.get` | --rich is refused with NOT_SUPPORTED until Telethon carries layer 229. |
 | `calls.emoji-fingerprint` | `call.get` | the four verification values are reported as indices into Telegram's 333-emoji table; tlgr does not bundle the table, and guessing it for a security check would be worse than not printing it |
 | `calls.migrate-to-conference` | `call.invite` | the migration and the invitations are complete; creating the conference needs a signed e2e.chain block, which tlgr accepts (--block) but cannot build |
+| `conference.broadcast-nonce` | `conference.send` | tlgr is the transport: it carries a payload an external E2E implementation produced, and cannot encrypt or sign one itself |
+| `conference.create-and-join` | `conference.create` | creating the link is complete; joining at creation needs a signed e2e.chain block, which tlgr accepts (--block) but cannot build |
+| `conference.encrypted-message` | `conference.send` | tlgr is the transport: it carries a payload an external E2E implementation produced, and cannot encrypt or sign one itself |
+| `conference.join-by-invite-message` | `conference.join` | the request is built and sent; the signed join block it needs is an e2e.chain builder tlgr does not have and accepts from outside instead |
+| `conference.kick-participant` | `conference.remove` | the request is built and sent; the removal block that rotates the shared key is an e2e.chain builder tlgr does not have and accepts from outside |
+| `conference.link-qr` | `conference.get` | `--qr` returns the exact text to encode; drawing the code needs a QR encoder tlgr does not bundle |
+| `conference.prune-left` | `conference.remove` | the request is built and sent; the removal block that rotates the shared key is an e2e.chain builder tlgr does not have and accepts from outside |
 | `contacts-users.contacts-sort` | `chat.list` | Peer search here is a substring match over the dialog list; the global one is `contact search`. `--sort` orders chats, not contacts. |
 | `contacts-users.user-leave-common-groups` | `chat.leave` | `--common-with` leaves the shared groups; listing them is `user chat list`. |
 | `dialogs.search-peers` | `chat.list` | Peer search here is a substring match over the dialog list; the global one is `contact search`. `--sort` orders chats, not contacts. |
@@ -98,9 +105,6 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `profile.photo-set` | P0 | Set profile photo | waived until PR-12: Setting your profile photo is `profile photo set` (PR-12). |
 | `calls.privacy-p2p` | P1 | Privacy: peer-to-peer calls | waived until PR-11: call, vc and conference land in PR-11. |
 | `chat.photo-set` | P1 | Set group / channel photo (photo, video or emoji/sticker avatar) | waived until PR-7: A group or channel photo is `chat photo set` (PR-7). |
-| `conference.create-link` | P1 | Create a call link (conference call) | waived until PR-11: call, vc and conference land in PR-11. |
-| `conference.decline-invite` | P1 | Decline a conference invitation | waived until PR-11: call, vc and conference land in PR-11. |
-| `conference.invite-user` | P1 | Invite a user into a conference (ring them) | waived until PR-11: call, vc and conference land in PR-11. |
 | `contact.receive-card` | P1 | Add a received contact card to your address book | waived until PR-5: contact cards, notes and birthdays are the `contact` surface (PR-5). |
 | `dialogs.actionbar-add-contact` | P1 | Add to contacts from the action bar | waived until PR-5: The bar's Add-contact button is `contact add` (PR-5). |
 | `dialogs.block-stories` | P1 | Hide my stories from a user (story blocklist) | waived until PR-5: The story blocklist is a privacy surface on the user group (PR-5). |
@@ -111,12 +115,6 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `stars.balance` | P1 | Telegram Stars balance | waived until PR-12: the Star balance and top-up packages are the `stars` surface (PR-12). |
 | `attach.menu-bots` | P2 | Attachment-menu / side-menu mini-app bots: list, info, add, remove | waived until PR-10: Attachment-menu bots are the `bot` group (PR-10). |
 | `auth.url-auth-bot-button` | P2 | Log in to a website via a bot's login button (Seamless Telegram Login) | waived until PR-10: Seamless Telegram Login is a bot keyboard button (messages.requestUrlAuth / acceptUrlAuth); it lands with the bots group in PR-10. |
-| `conference.create-and-join` | P2 | Create a conference and join it immediately | waived until PR-11: call, vc and conference land in PR-11. |
-| `conference.get-link` | P2 | Copy / share the conference invite link | waived until PR-11: call, vc and conference land in PR-11. |
-| `conference.invite-link-fallback` | P2 | Send the call link when a user cannot be invited | waived until PR-11: call, vc and conference land in PR-11. |
-| `conference.join-by-invite-message` | P2 | Join a conference from the invitation message | waived until PR-11: call, vc and conference land in PR-11. |
-| `conference.join-by-slug` | P2 | Join a conference from a link | waived until PR-11: call, vc and conference land in PR-11. |
-| `conference.revoke-link` | P2 | Revoke the conference link | waived until PR-11: call, vc and conference land in PR-11. |
 | `contact.note` | P2 | Private note on a contact | waived until PR-5: contact cards, notes and birthdays are the `contact` surface (PR-5). |
 | `contact.share-token` | P2 | Share your contact via a link | waived until PR-5: contact cards, notes and birthdays are the `contact` surface (PR-5). |
 | `contact.suggest-birthday` | P2 | Suggest a birthday for a contact | waived until PR-5: contact cards, notes and birthdays are the `contact` surface (PR-5). |
@@ -172,13 +170,6 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `bot.profile-photo-set` | P3 | Set profile photo of an owned bot | waived until PR-10: Setting an owned bot's photo is the `bot` group (PR-10). |
 | `calls.reset-top-caller` | P3 | Remove a peer from call suggestions | waived until PR-11: call, vc and conference land in PR-11. |
 | `calls.top-callers` | P3 | Frequently-called contacts suggestions | waived until PR-11: call, vc and conference land in PR-11. |
-| `conference.broadcast-nonce` | P3 | Emoji key verification (commit-reveal broadcast) | waived until PR-11: call, vc and conference land in PR-11. |
-| `conference.chain-blocks` | P3 | Poll the conference E2E blockchain | waived until PR-11: call, vc and conference land in PR-11. |
-| `conference.encrypted-message` | P3 | E2E-encrypted in-call messages and reactions | waived until PR-11: call, vc and conference land in PR-11. |
-| `conference.kick-participant` | P3 | Remove an active conference participant | waived until PR-11: call, vc and conference land in PR-11. |
-| `conference.link-qr` | P3 | QR code for a call link | waived until PR-11: call, vc and conference land in PR-11. |
-| `conference.prune-left` | P3 | Prune participants that already left the conference | waived until PR-11: call, vc and conference land in PR-11. |
-| `conference.size-limit` | P3 | Conference participant limit | waived until PR-11: call, vc and conference land in PR-11. |
 | `contact.birthday-accept` | P3 | Accept a suggested birthday | waived until PR-5: contact cards, notes and birthdays are the `contact` surface (PR-5). |
 | `contact.birthdays` | P3 | Contacts' birthdays (gift prompts) | waived until PR-5: contact cards, notes and birthdays are the `contact` surface (PR-5). |
 | `dialogs.blocked-set-bulk` | P3 | Replace the whole blocklist | waived until PR-5: Replacing the whole blocklist is `user block --from-file` (PR-5). |
@@ -226,7 +217,6 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `giveaway.prize-stars` | P3 | Receive a Stars prize | waived until PR-4: a Stars prize arrives as an update (PR-4). |
 | `giveaway.results` | P3 | Giveaway results message | waived until PR-12: giveaways and channel boosts are the `giveaway`/`boost` surface (PR-12). |
 | `giveaway.user-boosts` | P3 | Boosts a specific user gave a channel | waived until PR-7: giveaways and channel boosts are the `giveaway`/`boost` surface (PR-7). |
-| `groupcall.stop-ringing` | P3 | Stop ringing an invited user / cancel invite | waived until PR-11: call, vc and conference land in PR-11. |
 | `livestory.streamer-info` | P3 | Who is streaming the live story | waived until PR-11: call, vc and conference land in PR-11. |
 | `location.business-address` | P3 | Business account location | waived until PR-12: a business account's address is the `business` surface (PR-12). |
 | `location.channel-geo` | P3 | Set a location for a geo-group | waived until PR-7: a geo-group's location is set through the channel admin surface (PR-7). |

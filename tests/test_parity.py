@@ -22,13 +22,13 @@ from tlgr.registry import REGISTRY
 
 ROOT = Path(__file__).resolve().parent.parent
 
-#: Every P0 catalog id the registry claims. Raised by each group PR, never
+#: Every P0 catalog id the landed PRs claim. Raised by each group PR, never
 #: lowered. ARCHITECTURE §1.3: "P0 coverage may never decrease and must reach
 #: 100 % before 2.0.0 final".
-P0_FLOOR = 64
+P0_FLOOR = 72
 
 #: The floor for total covered ids. Same rule, weaker guarantee.
-COVERED_FLOOR = 453
+COVERED_FLOOR = 559
 
 #: Every P0 catalog id PR-1's own operations cover, named rather than
 #: counted, so a swap (one dropped, one added) cannot pass a count check
@@ -124,7 +124,29 @@ PR9_P0_IDS = frozenset(
     }
 )
 
-PR9_GROUPS = ("poll.", "reaction.", "todo.", "location.", "search.")
+#: Every P0 catalog id PR-2's own operations cover. Named rather than counted
+#: for the same reason as PR-1's list: a swap (one dropped, one added) must
+#: not slip past a count check.
+PR2_P0_IDS = frozenset(
+    {
+        "auth.2fa-login",
+        "auth.code-type-app",
+        "auth.log-out",
+        "auth.multi-account",
+        "auth.phone-login-send-code",
+        "password.set",
+        "sessions.list",
+        "sessions.terminate",
+    }
+)
+
+#: `(group prefixes, the P0 ids those groups claim)` for each landed PR.
+P0_OWNERS = (
+    (("message.", "draft."), PR1_P0_IDS),
+    (("auth.", "account.", "passport."), PR2_P0_IDS),
+    (("chat.", "folder."), PR3_P0_IDS),
+    (("poll.", "reaction.", "todo.", "location.", "search."), PR9_P0_IDS),
+)
 
 
 @pytest.fixture(scope="module")
@@ -188,15 +210,15 @@ class TestTheGate:
         assert report.covered >= COVERED_FLOOR
 
     def test_every_p0_id_this_pr_owns_is_covered(self):
-        missing = sorted((PR1_P0_IDS | PR9_P0_IDS) - _covered_ids())
-        assert missing == [], f"coverage of {missing} was dropped"
+        owned: set[str] = set()
+        for _, expected in P0_OWNERS:
+            owned |= set(expected)
+        missing = sorted(owned - _covered_ids())
+        assert missing == [], f"a landed PR dropped coverage of {missing}"
 
-    def test_every_p0_id_the_chat_group_owns_is_covered(self):
-        missing = sorted(PR3_P0_IDS - _covered_ids())
-        assert missing == [], f"PR-3 dropped coverage of {missing}"
-
-    def test_the_floor_is_the_whole_truth(self):
-        """The named list is exactly the P0 set `message`/`draft` claim.
+    @pytest.mark.parametrize("prefixes,expected", P0_OWNERS, ids=["pr1", "pr2", "pr3", "pr9"])
+    def test_the_floor_is_the_whole_truth(self, prefixes, expected):
+        """Each named list is exactly the P0 set its own groups claim.
 
         A floor that is a subset is a floor with holes in it: an op could drop
         a P0 id nobody wrote down and the gate would stay green. Computing the
@@ -204,25 +226,36 @@ class TestTheGate:
         to be added to the list on purpose.
         """
         catalogue = catalog()
+        actual = {
+            cid
+            for op_id, spec in REGISTRY.items()
+            if op_id.startswith(prefixes)
+            for cid in (*spec.covers, *spec.covers_partial)
+            if cid in catalogue and catalogue[cid].priority == "P0"
+        }
+        assert actual == set(expected)
 
-        def p0_of(prefixes: tuple[str, ...]) -> set[str]:
-            return {
-                cid
-                for op_id, spec in REGISTRY.items()
-                if op_id.startswith(prefixes)
-                for cid in (*spec.covers, *spec.covers_partial)
-                if cid in catalogue and catalogue[cid].priority == "P0"
-            }
-
-        assert p0_of(("message.", "draft.")) == set(PR1_P0_IDS)
-        assert p0_of(("chat.", "folder.")) == set(PR3_P0_IDS)
-        assert p0_of(PR9_GROUPS) == set(PR9_P0_IDS)
-        assert len(PR1_P0_IDS | PR3_P0_IDS | PR9_P0_IDS) == P0_FLOOR
+    def test_the_floor_is_the_sum_of_what_the_landed_prs_own(self):
+        """The floor is not a number somebody typed: it is those lists, added up."""
+        named: set[str] = set()
+        for _, expected in P0_OWNERS:
+            named |= set(expected)
+        assert len(named) == P0_FLOOR
 
     def test_every_uncovered_id_is_waived_with_a_pr_number(self, report):
         """No silent gaps: the gate is meaningful from day one, not at the end."""
         unwaived = [u for u in report.uncovered if not u["reason"].startswith("waived")]
         assert unwaived == [], f"{len(unwaived)} ids are uncovered and unwaived: {unwaived[:5]}"
+
+    def test_the_auth_domain_is_fully_accounted_for(self, report):
+        """PR-2's own domain: implemented, or waived to a named later PR.
+
+        The domain waiver that used to cover all 89 ids is gone. Leaving it
+        would have meant PR-2 could land nothing and still read as done.
+        """
+        stats = report.by_domain["auth_sessions_security"]
+        assert stats["accounted_percent"] == 100.0
+        assert stats["covered"] >= 85
 
     def test_messages_core_is_fully_accounted_for(self, report):
         """PR-1's own domain: implemented, or waived to a named later PR."""

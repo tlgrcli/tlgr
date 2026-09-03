@@ -18,11 +18,6 @@ final_pr = 12
 # ---------------------------------------------------------------------------
 
 [[domain]]
-name = "auth_sessions_security"
-pr = 2
-reason = "auth, account, session, security and password land together in PR-2."
-
-[[domain]]
 name = "updates_sync_network"
 pr = 4
 reason = "events, watch, daemon, sync, proxy and export land in PR-4."
@@ -654,3 +649,29 @@ reason = "the Star balance and top-up packages are the `stars` surface (PR-12)."
 id = "stars.topup-options"
 pr = 12
 reason = "the Star balance and top-up packages are the `stars` surface (PR-12)."
+
+# ---------------------------------------------------------------------------
+# PR-2 landed the auth/sessions/security domain. Four of its 89 ids belong to
+# a *different* group's command surface, so they are named individually rather
+# than left behind a domain waiver that is no longer true.
+# ---------------------------------------------------------------------------
+
+[[id]]
+id = "auth.countries-list"
+pr = 4
+reason = "help.getCountriesList is config/help plumbing shared with phone formatting; it lands with `config` in PR-4."
+
+[[id]]
+id = "auth.prelogin-language"
+pr = 4
+reason = "The suggested login-screen language comes from the language pack, which is the `config`/langpack surface in PR-4."
+
+[[id]]
+id = "auth.oauth-deep-link"
+pr = 10
+reason = "A tg://oauth request is a bot authorization flow (messages.requestUrlAuth); it lands with the bots group in PR-10."
+
+[[id]]
+id = "auth.url-auth-bot-button"
+pr = 10
+reason = "Seamless Telegram Login is a bot keyboard button (messages.requestUrlAuth / acceptUrlAuth); it lands with the bots group in PR-10."

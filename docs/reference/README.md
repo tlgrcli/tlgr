@@ -2,16 +2,19 @@
 
 # Command reference
 
-135 operations across 10 groups, generated from the operation registry. Groups still served by v1's hand-written commands are not listed here; they arrive with their own PR.
+188 operations across 13 groups, generated from the operation registry. Groups still served by v1's hand-written commands are not listed here; they arrive with their own PR.
 
 | Group | Operations | Reference |
 |---|---:|---|
-| `agent` | 3 | [agent.md](agent.md) |
+| `account` | 35 | [account.md](account.md) |
+| `agent` | 5 | [agent.md](agent.md) |
+| `auth` | 11 | [auth.md](auth.md) |
 | `chat` | 34 | [chat.md](chat.md) |
 | `draft` | 3 | [draft.md](draft.md) |
 | `folder` | 13 | [folder.md](folder.md) |
 | `location` | 9 | [location.md](location.md) |
 | `message` | 39 | [message.md](message.md) |
+| `passport` | 5 | [passport.md](passport.md) |
 | `poll` | 9 | [poll.md](poll.md) |
 | `reaction` | 17 | [reaction.md](reaction.md) |
 | `search` | 3 | [search.md](search.md) |

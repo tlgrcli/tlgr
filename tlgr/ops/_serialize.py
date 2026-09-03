@@ -13,6 +13,7 @@ import base64
 from typing import Any
 
 from tlgr.core.timefmt import fmt_dt, to_unix
+from tlgr.models.dialog import ActionBar, ChatTheme, NotifySettings, Wallpaper
 from tlgr.models.message import (
     MediaSummary,
     Message,
@@ -24,15 +25,20 @@ from tlgr.models.message import (
 from tlgr.models.peer import Peer, Photo
 
 __all__ = [
+    "action_bar",
+    "chat_theme",
     "entity_to_peer",
     "marked_id",
     "media_summary",
     "message_entities",
     "message_to_model",
+    "notify_settings",
+    "peer_id_of",
     "photo_summary",
     "reactions_summary",
     "service_action",
     "tl_snake",
+    "wallpaper",
 ]
 
 _CHANNEL_MARK = -1000000000000
@@ -489,4 +495,110 @@ def message_to_model(
         forwards=getattr(message, "forwards", None),
         edit_hide=bool(getattr(message, "edit_hide", False)),
         link=link,
+    )
+
+
+# ---------------------------------------------------------------------------
+# The chat-list shapes
+# ---------------------------------------------------------------------------
+
+
+#: `NotificationSound*` → the string `chat notify set --sound` accepts back.
+def _sound(value: Any) -> str | None:
+    name = type(value).__name__
+    if value is None:
+        return None
+    if name == "NotificationSoundDefault":
+        return "default"
+    if name == "NotificationSoundNone":
+        return "none"
+    if name == "NotificationSoundLocal":
+        return f"local:{getattr(value, 'title', '') or ''}"
+    if name == "NotificationSoundRingtone":
+        return str(getattr(value, "id", "") or "")
+    return None
+
+
+def notify_settings(raw: Any) -> NotifySettings | None:
+    """`peerNotifySettings` as a model, keeping the tri-state intact.
+
+    An unset field means "inherit the scope default", which is a third state
+    next to on and off. It is preserved as `None` rather than folded into
+    `False`, because folding it is how a chat that inherits a muted scope
+    gets reported as unmuted.
+    """
+    if raw is None:
+        return None
+    until = getattr(raw, "mute_until", None)
+    unix = to_unix(until)
+    return NotifySettings(
+        muted=bool(unix and unix > 0),
+        mute_until=fmt_dt(until),
+        mute_until_unix=unix,
+        silent=getattr(raw, "silent", None),
+        show_previews=getattr(raw, "show_previews", None),
+        sound=_sound(getattr(raw, "sound", None)),
+        stories_muted=getattr(raw, "stories_muted", None),
+        stories_hide_sender=getattr(raw, "stories_hide_sender", None),
+        stories_sound=_sound(getattr(raw, "stories_sound", None)),
+    )
+
+
+def action_bar(raw: Any, *, chat_id: int = 0) -> ActionBar:
+    """`peerSettings` as the action bar a client draws above a chat."""
+    return ActionBar(
+        chat_id=chat_id,
+        report_spam=bool(getattr(raw, "report_spam", False)),
+        add_contact=bool(getattr(raw, "add_contact", False)),
+        block_contact=bool(getattr(raw, "block_contact", False)),
+        share_contact=bool(getattr(raw, "share_contact", False)),
+        need_contacts_exception=bool(getattr(raw, "need_contacts_exception", False)),
+        report_geo=bool(getattr(raw, "report_geo", False)),
+        autoarchived=bool(getattr(raw, "autoarchived", False)),
+        invite_members=bool(getattr(raw, "invite_members", False)),
+        request_chat_title=getattr(raw, "request_chat_title", None),
+        request_chat_date=fmt_dt(getattr(raw, "request_chat_date", None)),
+        request_chat_broadcast=bool(getattr(raw, "request_chat_broadcast", False)),
+        business_bot_id=getattr(raw, "business_bot_id", None),
+        business_bot_paused=bool(getattr(raw, "business_bot_paused", False)),
+        business_bot_can_reply=bool(getattr(raw, "business_bot_can_reply", False)),
+        charge_paid_message_stars=getattr(raw, "charge_paid_message_stars", None),
+        registration_month=getattr(raw, "registration_month", None),
+        phone_country=getattr(raw, "phone_country", None),
+        name_change_date=fmt_dt(getattr(raw, "name_change_date", None)),
+        photo_change_date=fmt_dt(getattr(raw, "photo_change_date", None)),
+        geo_distance=getattr(raw, "geo_distance", None),
+    )
+
+
+def chat_theme(raw: Any) -> ChatTheme | None:
+    """A `chatTheme` / `theme` / unique-gift theme as one shape."""
+    if raw is None:
+        return None
+    emoticon = getattr(raw, "emoticon", None)
+    gift = getattr(raw, "gift", None) or getattr(raw, "unique_gift", None)
+    return ChatTheme(
+        emoticon=emoticon,
+        gift_id=getattr(gift, "id", None) if gift is not None else getattr(raw, "gift_id", None),
+        gift_slug=getattr(gift, "slug", None) if gift is not None else getattr(raw, "slug", None),
+        title=str(getattr(raw, "title", "") or getattr(gift, "title", "") or emoticon or ""),
+        premium_required=bool(getattr(raw, "premium_required", False)),
+    )
+
+
+def wallpaper(raw: Any) -> Wallpaper | None:
+    """A `wallPaper` (or `wallPaperNoFile`) reduced to what a CLI can echo."""
+    if raw is None:
+        return None
+    settings = getattr(raw, "settings", None)
+    return Wallpaper(
+        id=getattr(raw, "id", None),
+        slug=getattr(raw, "slug", None),
+        dark=bool(getattr(raw, "dark", False)),
+        pattern=bool(getattr(raw, "pattern", False)),
+        blur=bool(getattr(settings, "blur", False)),
+        intensity=getattr(settings, "intensity", None),
+        background_color=getattr(settings, "background_color", None),
+        second_background_color=getattr(settings, "second_background_color", None),
+        emoticon=getattr(settings, "emoticon", None),
     )

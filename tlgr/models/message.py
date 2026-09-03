@@ -146,8 +146,10 @@ class Button(Model):
     type: str
     #: Flat row-major index across the whole markup. `bot press --button <n>`
     #: takes exactly this number, which is why it is printed rather than left
-    #: for the caller to count.
-    n: int = 0
+    #: for the caller to count. The default is -1 rather than 0 because
+    #: `omit_defaults` would drop the first button's index otherwise, and an
+    #: index that disappears for exactly one button is worse than none.
+    n: int = -1
     data_b64: str | None = None
     url: str | None = None
     query: str | None = None

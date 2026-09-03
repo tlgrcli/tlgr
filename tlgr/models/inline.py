@@ -31,7 +31,9 @@ class InlineResult(Model):
     """One result out of `messages.getInlineBotResults`."""
 
     #: Flat row-major index within the page — what `inline send --pick` takes.
-    n: int = 0
+    #: -1 rather than 0 as the default, because `omit_defaults` would
+    #: otherwise drop the first result's index and only the first result's.
+    n: int = -1
     id: str = ""
     type: str = ""
     title: str | None = None
@@ -39,7 +41,8 @@ class InlineResult(Model):
     url: str | None = None
     thumb: str | None = None
     #: `url` for a `botInlineResult`, `media` for a `botInlineMediaResult`.
-    content: str = "url"
+    #: Always emitted: it is the one field that says where the bytes live.
+    content: str = ""
     #: The kind of message this result would send: text, media_auto, geo,
     #: venue, contact, invoice, webpage, game or rich.
     send_message: str | None = None

@@ -84,7 +84,10 @@ def _result_model(entry: Any, index: int, query_id: int, results: Any = None) ->
     document = getattr(entry, "document", None)
     photo = getattr(entry, "photo", None)
     thumb = getattr(entry, "thumb", None)
-    media = document is not None or photo is not None
+    # The constructor, not the payload: a media result with neither a photo
+    # nor a document is still a media result, and saying "url" would send a
+    # caller looking for a URL that is not there.
+    media = type(entry).__name__ == "BotInlineMediaResult"
     return InlineResult(
         n=index,
         id=str(getattr(entry, "id", "") or ""),

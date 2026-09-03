@@ -27,6 +27,7 @@ from tlgr.core.errors import NotFoundError, PermissionError_, UsageError
 from tlgr.core.timefmt import fmt_dt
 from tlgr.models.base import Request
 from tlgr.models.bot import BotApiResult
+from tlgr.models.page import Page
 from tlgr.models.peer import PeerRef
 from tlgr.models.webapp import (
     WebAppDownload,
@@ -467,12 +468,21 @@ async def watch(ctx: OpContext, req: WatchReq) -> Any:
             reason = f"{type(exc).__name__} {exc}".upper().replace("_", "")
             if "QUERYIDINVALID" not in reason:
                 raise
-            yield WebAppProlong(
-                query_id=req.query_id, alive=False, reason="the session has expired"
+            yield Page(
+                items=[
+                    WebAppProlong(
+                        query_id=req.query_id, alive=False, reason="the session has expired"
+                    )
+                ],
+                has_more=False,
             )
             return
-        yield WebAppProlong(query_id=req.query_id, prolonged_at=fmt_dt(_now()), alive=True)
-        if deadline is not None and time.monotonic() >= deadline:
+        last = deadline is not None and time.monotonic() >= deadline
+        yield Page(
+            items=[WebAppProlong(query_id=req.query_id, prolonged_at=fmt_dt(_now()), alive=True)],
+            has_more=not last,
+        )
+        if last:
             return
         await asyncio.sleep(interval)
 
@@ -486,7 +496,7 @@ def _now() -> Any:
 SPEC_WATCH = OperationSpec(
     id="webapp.watch",
     request=WatchReq,
-    response=WebAppProlong,
+    response=Page[WebAppProlong],
     impl=watch,
     summary="Keep an open mini-app session alive",
     aliases=("app.session.prolong",),
@@ -495,7 +505,7 @@ SPEC_WATCH = OperationSpec(
     timeout_s=900,
     columns=("query_id", "prolonged_at", "alive"),
     headers=("Query", "At", "Alive"),
-    example={"query_id": "987654321", "alive": True},
+    example={"items": [{"query_id": "987654321", "alive": True}], "has_more": False},
     example_args="webapp watch @my_helper_bot --query-id 987654321",
     covers=("bots.prolong-webview",),
 )

@@ -85,8 +85,9 @@ class PaymentForm(Model):
     can_save_credentials: bool = False
     password_missing: bool = False
     expires_at: str | None = None
-    #: Always false. `reason` says which policy refuses to charge here.
-    payable_here: bool = False
+    #: Always false, and always *emitted*: an omitted flag would leave a
+    #: caller to infer the policy, and `reason` says which one it is.
+    payable_here: bool | None = None
     reason: str = ""
 
 
@@ -112,20 +113,20 @@ class Receipt(Model):
 class PaymentInfo(Model):
     """My saved order information and saved cards. Never a card number."""
 
-    has_saved_credentials: bool = False
+    has_saved_credentials: bool | None = None
     credentials: list[dict[str, Any]] = []
     saved_info: dict[str, Any] | None = None
     name: str | None = None
     phone: str | None = None
     email: str | None = None
     shipping: dict[str, Any] | None = None
-    has_saved_info: bool = False
+    has_saved_info: bool | None = None
     cleared: bool = False
 
 
 class PaymentInfoCleared(Model):
-    credentials_cleared: bool = False
-    info_cleared: bool = False
+    credentials_cleared: bool | None = None
+    info_cleared: bool | None = None
 
 
 class InvoiceLink(Model):
@@ -152,11 +153,11 @@ class StarSubscription(Model):
     until_date: str | None = None
     until_date_unix: int | None = None
     pricing: dict[str, int] | None = None
-    cancelled: bool = False
+    cancelled: bool | None = None
     #: Re-joining a lapsed subscription debits Stars, so tlgr reports that the
     #: server would allow it and still refuses to do it.
-    can_refulfill: bool = False
-    missing_balance: bool = False
+    can_refulfill: bool | None = None
+    missing_balance: bool | None = None
     invoice_slug: str | None = None
     chat_invite_hash: str | None = None
     title: str | None = None
@@ -167,5 +168,5 @@ class SubscriptionChange(Model):
     subscription_id: str | None = None
     user_id: int | None = None
     charge_id: str | None = None
-    cancelled: bool = False
+    cancelled: bool | None = None
     until_date: str | None = None

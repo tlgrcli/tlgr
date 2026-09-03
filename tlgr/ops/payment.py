@@ -883,7 +883,7 @@ async def subscription_set(ctx: OpContext, req: SubscriptionSetReq) -> Subscript
         fn.ChangeStarsSubscriptionRequest(
             peer=types.InputPeerSelf(),
             subscription_id=req.subscription_id,
-            canceled=not resume,
+            canceled=(not resume) or None,
         )
     )
     return SubscriptionChange(subscription_id=req.subscription_id, cancelled=not resume)

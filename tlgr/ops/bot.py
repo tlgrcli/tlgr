@@ -149,7 +149,9 @@ def _menu_button(button: Any, *, user_id: int | None = None) -> MenuButton | Non
 def _commands(
     raw: Any, *, bot_id: int, scope: str | None = None, lang: str | None = None
 ) -> list[BotCommand]:
-    entries = list(getattr(raw, "commands", None) or raw or [])
+    entries = list(
+        (getattr(raw, "commands", None) or []) if hasattr(raw, "commands") else (raw or [])
+    )
     names = {str(getattr(c, "command", "") or "") for c in entries}
     return [
         BotCommand(
@@ -198,16 +200,44 @@ def _verification(full: Any, user: Any) -> BotVerification | None:
 
 
 def _access(settings: Any) -> BotAccess:
+    """`bots.accessSettings` as the model. The allow-list is `add_users`."""
     return BotAccess(
         restricted=bool(getattr(settings, "restricted", False)),
         allowed_users=[
-            int(getattr(u, "user_id", 0) or getattr(u, "id", 0) or 0)
-            for u in (getattr(settings, "users", None) or [])
+            int(getattr(u, "id", 0) or getattr(u, "user_id", 0) or 0)
+            for u in (getattr(settings, "add_users", None) or [])
         ],
         allowed_chats=[
-            int(getattr(c, "id", 0) or 0) for c in (getattr(settings, "chats", None) or [])
+            int(getattr(c, "id", 0) or 0) for c in (getattr(settings, "add_chats", None) or [])
         ],
     )
+
+
+#: `businessBotRights` is its own flag set, not `chatAdminRights`; the fields
+#: are listed rather than scanned so a new one cannot appear as a right the
+#: bot silently already has.
+BUSINESS_RIGHTS: tuple[str, ...] = (
+    "reply",
+    "read_messages",
+    "delete_sent_messages",
+    "delete_received_messages",
+    "edit_name",
+    "edit_bio",
+    "edit_profile_photo",
+    "edit_username",
+    "view_gifts",
+    "sell_gifts",
+    "change_gift_settings",
+    "transfer_and_upgrade_gifts",
+    "transfer_stars",
+    "manage_stories",
+)
+
+
+def _business_rights(rights: Any) -> list[str]:
+    if rights is None:
+        return []
+    return [name for name in BUSINESS_RIGHTS if bool(getattr(rights, name, False))]
 
 
 # ---------------------------------------------------------------------------
@@ -1165,7 +1195,7 @@ async def menu_get(ctx: OpContext, req: MenuGetReq) -> MenuButton:
     peer = await _send.resolve(ctx, req.bot)
     full, _user = await _full(ctx, peer)
     info = getattr(full, "bot_info", None)
-    return _menu_button(getattr(info, "menu_button", None)) or MenuButton()
+    return _menu_button(getattr(info, "menu_button", None)) or MenuButton(kind="commands")
 
 
 SPEC_MENU_GET = OperationSpec(
@@ -1641,7 +1671,7 @@ async def _dispatch(
     if kind == "request_geo":
         if not req.share_geo:
             _refuse("send the bot your location", "--share-geo")
-        lat, lon = _latlon(req.share_geo)
+        lat, lon = _latlon(str(req.share_geo))
         sent = await handle(
             fn.SendMediaRequest(
                 peer=peer,
@@ -1712,6 +1742,7 @@ def _poll_media(req: PressReq) -> Any:
     return types.InputMediaPoll(
         poll=types.Poll(
             id=0,
+            hash=0,
             question=types.TextWithEntities(text=question.strip(), entities=[]),
             answers=[
                 types.PollAnswer(
@@ -2594,7 +2625,7 @@ async def connection_get(ctx: OpContext, req: ConnectionGetReq) -> BusinessConne
         dc_id=getattr(connection, "dc_id", None),
         date=fmt_dt(date),
         date_unix=to_unix(date),
-        rights=_bots.rights_keywords(getattr(connection, "rights", None)),
+        rights=_business_rights(getattr(connection, "rights", None)),
         disabled=bool(getattr(connection, "disabled", False)),
     )
 
@@ -3070,7 +3101,8 @@ async def token_export(ctx: OpContext, req: TokenExportReq) -> BotToken:
 
     bot = await _bots.input_user(ctx, req.bot)
     peer = await _send.resolve(ctx, req.bot)
-    token = str(await client(ctx)(fn.ExportBotTokenRequest(bot=bot, revoke=req.revoke)) or "")
+    exported = await client(ctx)(fn.ExportBotTokenRequest(bot=bot, revoke=req.revoke))
+    token = str(getattr(exported, "token", "") or "")
     result = BotToken(bot_id=_send.peer_id_of(peer), revoked=req.revoke)
 
     if req.out:
@@ -3514,6 +3546,7 @@ async def preview_edit(ctx: OpContext, req: PreviewEditReq) -> PreviewChange:
 
     if (req.index is None) == (req.order is None):
         raise UsageError("give either --index with --file, or --order", field="index")
+    index = req.index if req.index is not None else -1
 
     bot = await _bots.input_user(ctx, req.bot)
     current = await _current_previews(ctx, bot)
@@ -3540,13 +3573,13 @@ async def preview_edit(ctx: OpContext, req: PreviewEditReq) -> PreviewChange:
 
     if not req.file:
         raise UsageError("--index needs --file", field="file")
-    if not 0 <= req.index < len(current):
-        raise NotFoundError(f"there is no preview media at position {req.index}")
+    if not 0 <= index < len(current):
+        raise NotFoundError(f"there is no preview media at position {index}")
     await handle(
         fn.EditPreviewMediaRequest(
             bot=bot,
             lang_code=req.lang,
-            media=_as_input_media(current[req.index]),
+            media=_as_input_media(current[index]),
             new_media=await _uploaded_media(ctx, req.file),
         )
     )
@@ -4102,7 +4135,7 @@ async def recent_set(ctx: OpContext, req: RecentSetReq) -> RecentBots:
         await handle(fn.ToggleTopPeersRequest(enabled=req.state == "on"))
 
     category_name = _TOP_PEER_CATEGORIES[req.kind]
-    category = getattr(types, category_name, None)
+    category: Any = getattr(types, category_name, None)
     if category is None:  # pragma: no cover - layer 227 has every category we name
         _bots.unsupported(f"--kind {req.kind}")
     if req.forget is not None:

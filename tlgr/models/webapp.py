@@ -75,10 +75,10 @@ class WebAppSent(Model):
 
 
 class WebAppDownload(Model):
-    allowed: bool = False
+    allowed: bool | None = None
     file_name: str = ""
     url: str = ""
-    downloaded: bool = False
+    downloaded: bool | None = None
     path: str | None = None
 
 

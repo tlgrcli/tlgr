@@ -132,9 +132,14 @@ class BotCommand(Model):
 
 
 class MenuButton(Model):
-    """The button left of the message input: commands, a mini app, or default."""
+    """The button left of the message input: commands, a mini app, or default.
 
-    kind: str = "commands"
+    `kind` has no default: "commands" is a real answer the server gives, and a
+    field omitted because it happened to equal a default would make "the bot
+    shows its commands" indistinguishable from "tlgr did not look".
+    """
+
+    kind: str = ""
     text: str | None = None
     url: str | None = None
     user_id: int | None = None
@@ -166,9 +171,14 @@ class StarRefProgram(Model):
 
 
 class BotAccess(Model):
-    """Who may use a managed bot."""
+    """Who may use a managed bot.
 
-    restricted: bool = False
+    `restricted` is a tri-state on the wire on purpose: `omit_defaults` would
+    drop a plain `False`, and "anyone may use this bot" is an answer, not the
+    absence of one.
+    """
+
+    restricted: bool | None = None
     allowed_users: list[int] = []
     allowed_chats: list[int] = []
 
@@ -226,14 +236,15 @@ class BotIds(Model):
 
     mtproto_id: int = 0
     bot_api_id: int = 0
-    kind: str = "user"
+    kind: str = ""
     has_access_hash: bool = False
     username: str | None = None
 
 
 class BotUsernameCheck(Model):
     username: str = ""
-    available: bool = False
+    #: None only if nothing was checked; a real answer is always emitted.
+    available: bool | None = None
     reason: str | None = None
 
 
@@ -274,8 +285,8 @@ class DefaultRights(Model):
 
 class BotPermission(Model):
     bot_id: int = 0
-    can_send_messages: bool = False
-    emoji_status_allowed: bool = False
+    can_send_messages: bool | None = None
+    emoji_status_allowed: bool | None = None
     key: str | None = None
     state: str | None = None
     already: bool = False
@@ -283,7 +294,7 @@ class BotPermission(Model):
 
 class BotVerified(Model):
     peer_id: int = 0
-    verified: bool = False
+    verified: bool | None = None
     description: str | None = None
 
 
@@ -463,8 +474,8 @@ class AttachMenuBot(Model):
 
 class ToggledAttachMenu(Model):
     bot_id: int = 0
-    installed: bool = False
-    write_allowed: bool = False
+    installed: bool | None = None
+    write_allowed: bool | None = None
 
 
 class RecentBots(Model):
@@ -475,8 +486,8 @@ class RecentBots(Model):
 
 class SponsoredRead(Model):
     random_id: str = ""
-    viewed: bool = False
-    clicked: bool = False
+    viewed: bool | None = None
+    clicked: bool | None = None
 
 
 class ReportOutcome(Model):

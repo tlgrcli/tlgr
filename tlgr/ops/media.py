@@ -50,10 +50,10 @@ from tlgr.models.media import (
     ContentSettings,
     ContentSettingsSaved,
     Downloaded,
-    ExportResult,
     FileRef,
     MediaEdited,
     MediaEvent,
+    MediaExportResult,
     MediaInfo,
     MediaItem,
     MediaLimits,
@@ -2676,7 +2676,7 @@ class ExportReq(Request):
     ] = True
 
 
-async def export(ctx: OpContext, req: ExportReq) -> ExportResult:
+async def export(ctx: OpContext, req: ExportReq) -> MediaExportResult:
     """Archive a chat's media with a resumable ledger.
 
     Always a *plan* first: a big channel is tens of thousands of
@@ -2710,7 +2710,7 @@ async def export(ctx: OpContext, req: ExportReq) -> ExportResult:
                 continue
             planned.append((tab, message))
 
-    result = ExportResult(chat_id=chat_id, planned=len(planned), manifest=None)
+    result = MediaExportResult(chat_id=chat_id, planned=len(planned), manifest=None)
     if getattr(ctx, "dry_run", False):
         result.bytes = sum(
             int(getattr(_media.document_of(m.media), "size", 0) or 0) for _, m in planned
@@ -2779,7 +2779,7 @@ async def export(ctx: OpContext, req: ExportReq) -> ExportResult:
 SPEC_EXPORT = OperationSpec(
     id="media.export",
     request=ExportReq,
-    response=ExportResult,
+    response=MediaExportResult,
     impl=export,
     summary="Archive a chat's media to disk with a resumable ledger",
     description=(

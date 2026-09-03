@@ -32,13 +32,19 @@ paths and their `dl`/`up` shortcuts still work; `tlgr/cli/legacy/media.py`,
 the `/media/*` IPC routes and the two `ClientWrapper` methods behind them are
 deleted rather than shadowed.
 
+The update transport follows: `events`, `watch`, `daemon`, `sync`, `net`,
+`proxy`, `config`, `job`, `webhook`, `export` and `agent` — 66 more
+operations, 114 event types, and the `updates_sync_network` domain fully
+accounted for.
+
 ### Breaking
 
 Every change below applies **only to commands generated from the operation
 registry** — in this release that is the `message`, `draft`, `chat`,
-`folder`, `auth`, `account`, `passport`, `media`, `sticker`, `gif` and
-`emoji` groups, `tlgr completion`, `tlgr agent exit-codes`,
-`tlgr agent whoami`, `tlgr agent parity` and `tlgr schema`. Commands still
+`folder`, `auth`, `account`, `passport`, `media`, `sticker`, `gif`, `emoji`,
+`events`, `watch`, `daemon`, `sync`, `net`, `proxy`, `config`, `job`,
+`webhook` and `export` groups, `tlgr completion`, `tlgr status`,
+`tlgr schema` and the `agent` group. Commands still
 hand-written under `tlgr/cli/legacy/` behave exactly as they did in v1 until
 their own migration PR, at which point these rules apply to them too.
 
@@ -66,6 +72,17 @@ thirteen changes in the table below, which is the whole list.
 
 | 8 | `media.download` | `{path, msg_id}` for one file | `Page[Downloaded]`: `{items: [{msg_id, path, bytes, kind, …}], has_more}` | both v1 keys survive on every item; one invocation can now name several ids, an album or `--all`. `--results-only \| jq -r '.items[0].path'` is the one-file case |
 | 9 | `media.upload` | `{id, chat_id}` | `{chat_id, msg_id, msg_ids, kind, …}` | rename only: `id` became `msg_id`, beside `msg_ids` for an album. `--select msg_id` reaches it |
+
+Five more shapes changed in the update-transport groups, all of them list or
+status envelopes:
+
+| # | Change | v1 | v2 | Migration |
+|---|---|---|---|---|
+| 8 | `events.watch` | one line per new message, `{event_type, chat_id, data}` | the full envelope: `{seq, ts, account, type, payload, chat_id, sender_id, self_origin}`, plus `meta`/`end`/`heartbeat`/`gap`/`lag` control frames | `--results-only` prints v1's exact line shape and drops the control frames |
+| 9 | `daemon.status` | `{running, pid, uptime_seconds, accounts, connections, disconnected, healthy, jobs}` | the same keys plus `ready`, `version`, `protocol`, `layer`, and a per-account state machine under `accounts` | `accounts` is a list of objects rather than of aliases; `connections` and `disconnected` are unchanged, and `--select connections` reaches the old shape |
+| 10 | `job.list` | `{jobs: [...]}` | `Page[JobState]` | `--results-only` yields `{items, has_more, next_cursor, total}` |
+| 11 | `config.list` | the raw TOML document | `Page[ConfigEntry]`, one row per key with `value`, `default` and `source`; secrets redacted | `--defaults` includes keys still at their default; `config get <key>` is the point lookup |
+| 12 | `config.keys` | `{keys: {name: {section, key, description}}}` | `Page[ConfigKey]` with `type`, `default`, `scope`, `requires_restart` and `help` | key names gained a section prefix (`idle_timeout` → `daemon.idle_timeout`); both spellings are accepted by `config get`/`set`/`unset` |
 
 `tlgr agent whoami --json` reports `output_schema_version: 2`, so an agent can
 branch on the two sets without probing for each change.
@@ -121,6 +138,77 @@ Two more, outside the documented output shapes:
 - **`location preview`** renders a map thumbnail from the webfile data centre,
   and **`poll stats get`** follows the `STATS_MIGRATE` redirect to the stats
   DC — both through a borrowed sender, as Telethon's own `get_stats` does.
+- **The `events`, `watch`, `daemon`, `sync`, `net`, `proxy`, `config`, `job`,
+  `webhook`, `export` and `agent` groups, generated from the registry.** 66
+  operations. `tlgr/cli/legacy/watch.py`, `daemon_cmd.py`, `job.py`,
+  `config_cmd.py` and `agent.py` are deleted, along with the v1 `/daemon/*`
+  and `/job/*` IPC routes.
+- **The complete event taxonomy.** 114 types covering every one of the 163
+  `Update*` constructors Telethon 1.44 can parse, plus the five Telegram has
+  added since; four containers are listed internal with a reason, and a test
+  checks the table against the installed Telethon so an upgrade that adds a
+  constructor fails in the run that upgrades it. `tlgr events list` prints it,
+  `tlgr events get <type>` prints one row with its payload and sequence box,
+  and `docs/design/EVENTS.md` is the prose form.
+- **`tlgr watch`, push-driven.** The daemon holds one `events.Raw` handler per
+  account and a watcher is a bounded queue on the bus. Select by type, group,
+  `raw:Constructor` or `all`; `--since <seq>` replays the ring buffer with a
+  `gap` frame when it cannot reach that far back; `--exclude`, `--chat`,
+  `--sender`, `--topic`, `--account all`, heartbeats, `lag` frames and
+  `--print-cursor`.
+- **`tlgr events replay`, `events decode`.** Replay a buffered range without
+  following it, or decode a raw TL update — or an encrypted push payload,
+  which `events decode --push` decrypts and classifies (`SESSION_REVOKE`
+  means this session was terminated).
+- **`tlgr sync status | catch-up | difference | reset | backfill`.** The
+  update transport, made inspectable: pts/qts/seq, the per-channel table with
+  `access_hash_known` (a channel without one is skipped by catch-up and looks
+  idle rather than broken), an explicitly-run `getDifference` that does *not*
+  advance the stored pts unless asked, a re-baseline for a corrupted state,
+  and id-range backfill for a box that overflowed.
+- **`tlgr net status | ping | dc list | dc nearest | usage get`.** Which DC,
+  which transport, which proxy, and how far this host's clock has drifted — a
+  drift over 30 s is warned about, because MTProto derives `msg_id` from local
+  time and the server drops anything outside its window with no error.
+- **`tlgr proxy add | list | set | remove | test | link`.** SOCKS5, HTTP and
+  MTProxy, `tg://proxy` and `t.me/proxy` links both parsed, credentials in a
+  0600 store and never in argv. `proxy test` probes through a throwaway
+  in-memory session so it cannot become the account's update connection.
+- **`tlgr config keys | list | get | set | unset | validate`** over a
+  machine-readable catalogue of 34 documented keys with types, defaults and
+  restart requirements, and **`config server get`, `config app get`,
+  `config info get`, `config country list`, `config promo get`** for
+  Telegram's own configuration. `config app get --frozen` surfaces the freeze
+  fields that turn a bare `FROZEN_METHOD_INVALID` into an appeal link. The
+  server's suggestion list stayed where the account group put it, as
+  `account suggestion list`; PR-4 added `--chat` to it for the per-chat
+  nudges.
+- **`tlgr daemon status | reconnect | save-state | flood list | flood clear |
+  dead-letter list | send | delete`.** `running`, `ready` and `healthy` are
+  three answers to three questions; the flood store Telethon forgets on exit
+  is listable and clearable; the dead-letter file is drainable.
+- **`tlgr job add` without an editor.** Flags, `--from-file -`, or `--edit`
+  for the v1 behaviour, and **`job test`**, which names every filter node and
+  why it passed or rejected — the missing piece when a rule silently never
+  fires.
+- **`tlgr export start | status | end | message download | account download`.**
+  Takeout as the mode it is: the session wraps every later call in
+  `invokeWithTakeout`, and `TAKEOUT_INIT_DELAY` is reported as
+  `RATE_LIMITED` with `retry_after` rather than slept through.
+- **`tlgr agent capabilities`** separates what this build *cannot* do (the
+  layer gap) from what this account may not reach (premium, bot, admin) from
+  what tlgr *will not* do (fake a read receipt, suppress typing status,
+  misrepresent presence, pass an integrity attestation, execute a payment) —
+  with the reason for each.
+- **`tlgr schema events | config | errors | exit-codes | all`**, and
+  `tlgr agent exit-codes --errors`, which prints the RPC-error taxonomy with
+  the field a regex error captures (`FLOOD_WAIT_42` is a wait of 42 seconds,
+  not a distinct error).
+- **A production-home guard.** A tlgr home carrying a `.production` marker is
+  refused unless `TLGR_ALLOW_PRODUCTION_HOME=1`: two processes on one home
+  share session files, and Telegram revokes an auth key it sees two clients
+  on, so a development build pointed at a live home breaks it rather than
+  degrading it.
 
 - **The `message` group and `draft`, generated from the registry.** 43
   operations, 77 command paths, 30 aliases: alongside v1's ten `message`
@@ -303,6 +391,25 @@ Two more, outside the documented output shapes:
 - A test that forgot the `tlgr_home` fixture operated on the developer's real
   `~/.tlgr`. `tests/conftest.py` now points `TLGR_HOME` at a throwaway
   directory whenever it is unset.
+- **`tlgr watch` no longer polls.** v1 asked the daemon for `chat list` every
+  two seconds and then `message list` per chat — thirty round trips a minute
+  whether or not anything happened — and could only ever report new messages.
+  An edit, a deletion, a read receipt, a reaction and every service message
+  were invisible.
+- **`tlgr daemon status` distinguishes alive from working.** v1 reported the
+  clients the daemon *held*, so a client whose connection had died was still
+  listed and the daemon still called itself healthy (COR-13, COR-37).
+- **A config key with a typo is an error, not a default.** v1 read the file
+  with `raw.get(key, default)` at every call site, so a misspelled key or a
+  wrong type silently did nothing.
+- **An unknown event name is refused where it is written.** `jobs.yaml` and
+  `webhook.toml` dropped a name they did not recognise, so a typo produced a
+  job or a webhook that never fired and never said why.
+- **An empty paginated result is `[]`.** It was the page object itself, which
+  reads as one row of metadata.
+- **`sync difference` matched the wrong TL class names**, so every reply
+  looked like a slice and the probe looped.
+
 - `.gitignore`'s blanket `*.yaml` rule was swallowing `.github/workflows`
   siblings, documentation YAML and test fixtures (PKG-04).
 - Errors raised anywhere now map to the exit-code table in one place, so an

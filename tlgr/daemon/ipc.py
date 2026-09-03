@@ -12,7 +12,6 @@ failure being IPC_ERROR/exit 12 (COR-06).
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from typing import TYPE_CHECKING, Any
@@ -112,9 +111,10 @@ class LegacyRoutes:
         self._register_routes(app)
 
     def _register_routes(self, app: web.Application) -> None:
-        # Daemon
-        app.router.add_get("/daemon/status", self._daemon_status)
-        app.router.add_post("/daemon/stop", self._daemon_stop)
+        # The daemon and job routes are gone: `daemon status`, `daemon stop`
+        # and the whole `job` group are registry operations now, reachable at
+        # `POST /v1/op` and — for a v1 caller — at the same command paths
+        # through `legacy_paths` (§12.4).
 
         # Chats
         app.router.add_post("/chat/create", self._chat_create)
@@ -137,22 +137,6 @@ class LegacyRoutes:
         app.router.add_post("/profile/update", self._profile_update)
 
         # Media
-
-        # Jobs
-        app.router.add_get("/job/list", self._job_list)
-        app.router.add_post("/job/remove", self._job_remove)
-        app.router.add_post("/job/enable", self._job_enable)
-        app.router.add_post("/job/disable", self._job_disable)
-        app.router.add_post("/job/reload", self._job_reload)
-
-    # -- Daemon --
-
-    async def _daemon_status(self, request: web.Request) -> web.Response:
-        return _json_response(self.daemon.status())
-
-    async def _daemon_stop(self, request: web.Request) -> web.Response:
-        asyncio.get_event_loop().call_soon(self.daemon.request_shutdown)
-        return _json_response({"stopping": True})
 
     # -- Chats --
 
@@ -323,33 +307,6 @@ class LegacyRoutes:
                 bio=body.get("bio"),
                 photo=body.get("photo"),
             )
-            return _json_response(result)
-        except Exception as e:
-            return _handle_exception(e)
-
-    # -- Jobs --
-
-    async def _job_list(self, request: web.Request) -> web.Response:
-        return _json_response({"jobs": self.daemon.list_jobs()})
-
-    async def _job_remove(self, request: web.Request) -> web.Response:
-        body = await _get_body(request)
-        ok = await self.daemon.remove_job(body["name"])
-        return _json_response({"removed": ok})
-
-    async def _job_enable(self, request: web.Request) -> web.Response:
-        body = await _get_body(request)
-        ok = await self.daemon.enable_job(body["name"])
-        return _json_response({"enabled": ok})
-
-    async def _job_disable(self, request: web.Request) -> web.Response:
-        body = await _get_body(request)
-        ok = await self.daemon.disable_job(body["name"])
-        return _json_response({"disabled": ok})
-
-    async def _job_reload(self, request: web.Request) -> web.Response:
-        try:
-            result = await self.daemon.reload_jobs()
             return _json_response(result)
         except Exception as e:
             return _handle_exception(e)

@@ -14,7 +14,7 @@ import asyncio
 import types
 import typing
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -44,6 +44,7 @@ __all__ = [
     "LocalContext",
     "build_click_tree",
     "build_command",
+    "run_live",
     "run_op",
     "set_dispatcher",
 ]
@@ -63,6 +64,12 @@ class LocalContext:
     request_id: str = ""
     warnings: list[str] = field(default_factory=list)
     command_tree: Callable[[Sequence[str], bool], dict[str, Any] | None] | None = None
+    #: `--limit`/`--cursor`/`--all` are transport-level and never request
+    #: fields (registry lint L5), so a local paginated operation reads them
+    #: off the context exactly as a daemon-side one does.
+    limit: int | None = None
+    cursor: str | None = None
+    fetch_all: bool = False
 
     def warn(self, message: str) -> None:
         self.warnings.append(message)
@@ -75,18 +82,44 @@ class LocalContext:
 
 
 Dispatcher = Callable[[OperationSpec, msgspec.Struct, CliState], dict[str, Any]]
+StreamDispatcher = Callable[[OperationSpec, msgspec.Struct, CliState], Iterator[dict[str, Any]]]
 _dispatch: Dispatcher | None = None
+_stream_dispatch: StreamDispatcher | None = None
 
 
-def set_dispatcher(dispatcher: Dispatcher | None) -> None:
+def set_dispatcher(
+    dispatcher: Dispatcher | None, stream_dispatcher: StreamDispatcher | None = None
+) -> None:
     """Install the daemon transport.
 
     Stage A registers only local operations; the daemon surface arrives with
     the transport, and until then asking for it is a daemon error rather than
     a traceback.
+
+    The stream dispatcher is separate because a live stream cannot be folded
+    into an envelope: `watch` that only prints when it ends is not a watch.
     """
-    global _dispatch
+    global _dispatch, _stream_dispatch
     _dispatch = dispatcher
+    _stream_dispatch = stream_dispatcher
+
+
+def run_live(spec: OperationSpec, request: msgspec.Struct, state: CliState) -> int:
+    """Drive a `live-stream` operation, printing frames as they arrive."""
+    if state.enable_commands and not policy_allows(state.enable_commands, spec.id):
+        raise PermissionError_(
+            f"operation {spec.id!r} is not enabled (add it to --enable-commands to allow it)",
+        )
+    if _stream_dispatch is None:
+        raise DaemonError(f"{spec.id} streams from the daemon, and no transport is wired up")
+    state.account = resolve_account(state) if spec.needs_account else state.account
+    frames = _stream_dispatch(spec, request, state)
+    return renderer.render_stream(
+        frames,
+        fmt=state.fmt,
+        results_only=state.results_only,
+        select=state.select,
+    )
 
 
 def _command_tree(path: Sequence[str], include_hidden: bool) -> dict[str, Any] | None:
@@ -131,15 +164,35 @@ def run_op(spec: OperationSpec, request: msgspec.Struct, state: CliState) -> dic
         return _dispatch(spec, request, state)
 
     context = LocalContext(
-        account=account, dry_run=state.dry_run, request_id=request_id, command_tree=_command_tree
+        account=account,
+        dry_run=state.dry_run,
+        request_id=request_id,
+        command_tree=_command_tree,
+        limit=state.limit,
+        cursor=state.cursor,
+        fetch_all=state.fetch_all,
     )
     result = asyncio.run(spec.impl(context, request))
+    body = msgspec.to_builtins(result)
     envelope: dict[str, Any] = {
         "ok": True,
         "op": spec.id,
-        "result": msgspec.to_builtins(result),
+        "result": body,
         "meta": {"request_id": request_id, "warnings": context.warnings},
     }
+    if spec.paginated is not None and isinstance(body, dict):
+        # The same projection the daemon does (`daemon/dispatch._envelope`).
+        # Without it a paginated *local* operation would hand back the page
+        # object where every other one hands back the items, and `--select`
+        # would need a different path depending on where the op happened to
+        # run — which is exactly the kind of difference the registry exists to
+        # remove.
+        envelope["result"] = body.get("items", [])
+        envelope["page"] = {
+            "has_more": bool(body.get("has_more")),
+            "next_cursor": body.get("next_cursor"),
+            "total": body.get("total"),
+        }
     if account:
         envelope["account"] = account
     return envelope
@@ -461,6 +514,10 @@ def build_command(
                 hint=f"pass --yes to confirm {spec.id}",
             )
         request = _build_request(spec, fields, values)
+        if "live-stream" in spec.tags:
+            # No envelope: the frames *are* the output, and they arrive over
+            # minutes or hours.
+            ctx.exit(run_live(spec, request, state))
         envelope = run_op(spec, request, state)
         # A schema document is JSON whether or not anybody asked: there is no
         # table shape for it, and v1 printed JSON here unconditionally. When

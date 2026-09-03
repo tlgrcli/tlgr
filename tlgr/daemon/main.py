@@ -26,8 +26,8 @@ from pathlib import Path
 from tlgr.core.config import load_app_config
 from tlgr.core.errors import ConfigurationError
 from tlgr.core.paths import TlgrPaths, require_safe_permissions
+from tlgr.core.process import daemonize, setup_logging, write_pid
 from tlgr.daemon.app import Daemon
-from tlgr.daemon.lifecycle import daemonize, setup_logging, write_pid
 from tlgr.daemon.singleton import FileLock, LockBusy
 
 log = logging.getLogger("tlgr.daemon")
@@ -87,7 +87,18 @@ def main(argv: list[str] | None = None) -> int:
     os.umask(0o077)
 
     base = Path(args.base).expanduser() if args.base else None
-    paths = TlgrPaths(base)
+
+    # `TlgrPaths` refuses a home marked `.production`, and that refusal has to
+    # be an exit code rather than a traceback: two daemons on one home share
+    # session files, and Telegram treats a second client on the same auth key
+    # as a compromised session and revokes it. A development build started
+    # against somebody's live home does not degrade it, it breaks it.
+    try:
+        paths = TlgrPaths(base)
+    except ConfigurationError as exc:
+        print(f"tlgr daemon: {exc}", file=sys.stderr)
+        return 10
+
     paths.ensure_base()
 
     try:

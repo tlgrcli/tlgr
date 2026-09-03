@@ -18,11 +18,6 @@ final_pr = 12
 # ---------------------------------------------------------------------------
 
 [[domain]]
-name = "updates_sync_network"
-pr = 4
-reason = "events, watch, daemon, sync, proxy and export land in PR-4."
-
-[[domain]]
 name = "contacts_users"
 pr = 5
 reason = "contact, user and blocking land in PR-5."
@@ -292,6 +287,26 @@ reason = "The default auto-delete timer is an account-wide chat setting (PR-3)."
 id = "messages-core.translate-channel-autotranslation"
 pr = 3
 reason = "Channel auto-translation is a channel setting (PR-3)."
+
+# ---------------------------------------------------------------------------
+# updates_sync_network (PR-4). The domain waiver is gone; these three ids are
+# each owned by another group's command and are waived to that group's PR.
+# ---------------------------------------------------------------------------
+
+[[id]]
+id = "updates.config-terms-of-service"
+pr = 2
+reason = "Accepting the Terms of Service is part of sign-up; `auth tos` owns it (PR-2)."
+
+[[id]]
+id = "updates.invoke-business-connection"
+pr = 12
+reason = "Acting on behalf of a connected business account is the business surface (PR-12)."
+
+[[id]]
+id = "updates.presence-group-online-count"
+pr = 7
+reason = "The live 'N online' counter is a group-membership read (PR-7)."
 
 [[id]]
 id = "messages-core.message-watch-events"

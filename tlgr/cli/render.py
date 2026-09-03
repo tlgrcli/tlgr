@@ -14,6 +14,7 @@ the "primary" one, which is how v1 came to print a bare `2` for
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -34,6 +35,7 @@ __all__ = [
     "render_human",
     "render_json",
     "render_plain",
+    "render_stream",
     "results_payload",
 ]
 
@@ -354,3 +356,63 @@ def render(
         no_header=no_header,
         stream=stream,
     )
+
+
+#: Frames that describe the *stream* rather than something that happened. A
+#: consumer filtering on the event type has to be able to tell them apart,
+#: which is why they are named here rather than recognised by their absence.
+CONTROL_FRAMES = frozenset(
+    {"meta", "end", "heartbeat", "lag", "gap", "watching", "cursor", "page", "item"}
+)
+
+
+def render_stream(
+    frames: Iterable[dict[str, Any]],
+    *,
+    fmt: str = "human",
+    results_only: bool = False,
+    select: str | None = None,
+    stream: Any = None,
+) -> int:
+    """Print an NDJSON stream as it arrives, and return the exit code.
+
+    Flushed per frame, deliberately: a `watch` piped into `jq` that only
+    appears once a 4 KB buffer fills is indistinguishable from a daemon that
+    is not delivering anything.
+
+    `--results-only` restores v1's line shape — `{"event_type", "chat_id",
+    "data"}` — and drops the control frames, because that is what a script
+    written against v1's `tlgr watch` already parses (§12.4).
+    """
+    out = stream or sys.stdout
+    fields = _split_fields(select)
+    exit_code = 0
+    for frame in frames:
+        kind = str(frame.get("type", ""))
+        if kind == "end" and not frame.get("ok", True):
+            from tlgr.core.errors import EXIT_RETRYABLE
+
+            body = frame.get("error") or {}
+            exit_code = int(body.get("exit_code", EXIT_RETRYABLE))
+            click.echo(f"Error: {body.get('message') or 'the stream ended'}", err=True)
+            continue
+        if results_only:
+            if kind in CONTROL_FRAMES:
+                continue
+            frame = {
+                "event_type": kind,
+                "chat_id": frame.get("chat_id"),
+                "data": frame.get("payload", {}),
+                "seq": frame.get("seq"),
+                "account": frame.get("account"),
+            }
+        if fields:
+            frame = project(frame, fields)
+        _write_frame(frame, out)
+    return exit_code
+
+
+def _write_frame(frame: Any, out: Any) -> None:
+    out.write(json.dumps(frame, ensure_ascii=False, default=str) + "\n")
+    with contextlib.suppress(AttributeError, ValueError, OSError):  # a closed pipe
+        out.flush()

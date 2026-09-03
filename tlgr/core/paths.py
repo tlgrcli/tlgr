@@ -31,6 +31,7 @@ __all__ = [
     "TlgrPaths",
     "audit_permissions",
     "default_base",
+    "is_production_home",
     "refuse_production_home",
     "secure_session_files",
     "validate_alias",
@@ -58,6 +59,14 @@ def default_base() -> Path:
 #: A home directory carrying this marker belongs to a live deployment.
 PRODUCTION_MARKER = ".production"
 _ALLOW_PRODUCTION_ENV = "TLGR_ALLOW_PRODUCTION_HOME"
+
+
+def is_production_home(base: Path) -> bool:
+    """Is *base* marked as a live deployment?"""
+    try:
+        return (base / PRODUCTION_MARKER).exists()
+    except OSError:  # pragma: no cover - an unreadable home is not ours to judge
+        return False
 
 
 def refuse_production_home(base: Path) -> None:
@@ -200,6 +209,11 @@ class TlgrPaths:
         return self.base / "identity.json"
 
     @property
+    def proxies(self) -> Path:
+        """Saved proxies, including their passwords and MTProxy secrets (0600)."""
+        return self.base / "proxies.json"
+
+    @property
     def dead_letter(self) -> Path:
         return self.base / "dead_letter.jsonl"
 
@@ -283,6 +297,7 @@ _SECRET_GLOBS = (
     "ipc.token",
     "cursor.key",
     "webhook.toml",
+    "proxies.json",
 )
 
 _SECRET_MODE = 0o600

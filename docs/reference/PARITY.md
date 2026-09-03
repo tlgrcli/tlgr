@@ -7,58 +7,58 @@ Coverage against the Telegram feature catalog, computed from the registry: every
 `covered` is implemented today. `acct%` is covered **plus** waived — an id that belongs to a group a later PR owns, named in `tlgr/data/parity_waivers.toml` with the PR that closes it. Ids whose feasibility is `not-applicable` or `prohibited` are excluded from the denominator once and never counted again.
 
 ```
-catalog 2026-09-02 — 289 operations, 429 invocable paths
+catalog 2026-09-02 — 355 operations, 532 invocable paths
 
 domain                        covered    req       %   acct%  ops
-auth_sessions_security             85     89   95.5%  100.0%  43
-bots_inline_payments               13    175    7.4%  100.0%  5
+auth_sessions_security             87     89   97.8%  100.0%  44
+bots_inline_payments               17    175    9.7%  100.0%  7
 calls_voicechats                  126    133   94.7%  100.0%  49
-contacts_users                     17    121   14.0%  100.0%  12
-dialogs_chats                     112    146   76.7%  100.0%  54
+contacts_users                     18    121   14.9%  100.0%  13
+dialogs_chats                     114    146   78.1%  100.0%  55
 groups_channels_admin              26    162   16.0%  100.0%  15
 media_files                       121    143   84.6%  100.0%  60
-messages_core                     158    167   94.6%  100.0%  53
-polls_reactions_content           114    174   65.5%  100.0%  56
-profile_settings_privacy           20    178   11.2%  100.0%  19
+messages_core                     159    167   95.2%  100.0%  54
+polls_reactions_content           117    174   67.2%  100.0%  57
+profile_settings_privacy           25    178   14.0%  100.0%  24
 stories                            12    120   10.0%  100.0%  9
-updates_sync_network                4    189    2.1%  100.0%  3
+updates_sync_network              188    189   99.5%  100.0%  67
 
 priority                      covered    req       %   acct%
-P0                                 95    178   53.4%  100.0%
-P1                                201    379   53.0%  100.0%
-P2                                256    610   42.0%  100.0%
-P3                                256    630   40.6%  100.0%
+P0                                116    178   65.2%  100.0%
+P1                                240    379   63.3%  100.0%
+P2                                320    610   52.5%  100.0%
+P3                                334    630   53.0%  100.0%
 
-TOTAL                             808   1797   45.0%  100.0%
+TOTAL                            1010   1797   56.2%  100.0%
 excluded: not-applicable 79, prohibited 40
-uncovered: 989 (989 waived with a PR number)
+uncovered: 787 (787 waived with a PR number)
 ```
 
 ## By domain
 
 | Domain | Covered | Required | % | Accounted % | Ops |
 |---|---:|---:|---:|---:|---:|
-| `auth_sessions_security` | 85 | 89 | 95.5% | 100.0% | 43 |
-| `bots_inline_payments` | 13 | 175 | 7.4% | 100.0% | 5 |
+| `auth_sessions_security` | 87 | 89 | 97.8% | 100.0% | 44 |
+| `bots_inline_payments` | 17 | 175 | 9.7% | 100.0% | 7 |
 | `calls_voicechats` | 126 | 133 | 94.7% | 100.0% | 49 |
-| `contacts_users` | 17 | 121 | 14.0% | 100.0% | 12 |
-| `dialogs_chats` | 112 | 146 | 76.7% | 100.0% | 54 |
+| `contacts_users` | 18 | 121 | 14.9% | 100.0% | 13 |
+| `dialogs_chats` | 114 | 146 | 78.1% | 100.0% | 55 |
 | `groups_channels_admin` | 26 | 162 | 16.0% | 100.0% | 15 |
 | `media_files` | 121 | 143 | 84.6% | 100.0% | 60 |
-| `messages_core` | 158 | 167 | 94.6% | 100.0% | 53 |
-| `polls_reactions_content` | 114 | 174 | 65.5% | 100.0% | 56 |
-| `profile_settings_privacy` | 20 | 178 | 11.2% | 100.0% | 19 |
+| `messages_core` | 159 | 167 | 95.2% | 100.0% | 54 |
+| `polls_reactions_content` | 117 | 174 | 67.2% | 100.0% | 57 |
+| `profile_settings_privacy` | 25 | 178 | 14.0% | 100.0% | 24 |
 | `stories` | 12 | 120 | 10.0% | 100.0% | 9 |
-| `updates_sync_network` | 4 | 189 | 2.1% | 100.0% | 3 |
+| `updates_sync_network` | 188 | 189 | 99.5% | 100.0% | 67 |
 
 ## By priority
 
 | Priority | Covered | Required | % | Accounted % |
 |---|---:|---:|---:|---:|
-| P0 | 95 | 178 | 53.4% | 100.0% |
-| P1 | 201 | 379 | 53.0% | 100.0% |
-| P2 | 256 | 610 | 42.0% | 100.0% |
-| P3 | 256 | 630 | 40.6% | 100.0% |
+| P0 | 116 | 178 | 65.2% | 100.0% |
+| P1 | 240 | 379 | 63.3% | 100.0% |
+| P2 | 320 | 610 | 52.5% | 100.0% |
+| P3 | 334 | 630 | 53.0% | 100.0% |
 
 ## Partial coverage
 
@@ -110,7 +110,6 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `dialogs.block-stories` | P1 | Hide my stories from a user (story blocklist) | waived until PR-5: The story blocklist is a privacy surface on the user group (PR-5). |
 | `dialogs.dialog-exists` | P1 | Does a dialog with this peer exist | waived until PR-5: `user dialog-status` answers this and migrates with the user group (PR-5). |
 | `dialogs.notify-exceptions` | P1 | List notification exceptions | waived until PR-12: The exceptions *list* is `notify exceptions` (PR-12); one chat's exception is `chat notify`. |
-| `messages-core.message-watch-events` | P1 | Live stream of new / edited / deleted messages and read receipts | waived until PR-4: The live message stream is the event bus surface (PR-4). |
 | `profile.photos-list-history` | P1 | View own / another user's profile photo history | waived until PR-12: Profile photo history is the `profile` group (PR-12). |
 | `stars.balance` | P1 | Telegram Stars balance | waived until PR-12: the Star balance and top-up packages are the `stars` surface (PR-12). |
 | `attach.menu-bots` | P2 | Attachment-menu / side-menu mini-app bots: list, info, add, remove | waived until PR-10: Attachment-menu bots are the `bot` group (PR-10). |
@@ -127,8 +126,6 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `dialogs.hide-stories-peer` | P2 | Hide a peer's stories from the strip | waived until PR-8: Hiding a peer's stories is the story strip (PR-8). |
 | `dialogs.notify-scope-defaults` | P2 | Default notification settings per chat type | waived until PR-12: Scope-wide defaults are `notify set` (PR-12). |
 | `dialogs.presence-watch` | P2 | Peer online status / last seen | waived until PR-4: Online/last-seen is an update stream (PR-4). |
-| `dialogs.typing-watch` | P2 | See who is typing | waived until PR-4: Watching who is typing is an update stream (PR-4); sending one is `chat typing`. |
-| `dialogs.watch-dialog-events` | P2 | Live dialog-level events | waived until PR-4: Live dialog events are the event bus (PR-4). |
 | `emoji.status-set` | P2 | Set / clear own emoji status (custom emoji or collectible gift), with expiry | waived until PR-12: Setting your own emoji status is `profile status set` (PR-12). |
 | `gift.catalog` | P2 | Browse available gifts | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
 | `gift.convert-to-stars` | P2 | Convert a gift back into Stars | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
@@ -163,9 +160,7 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `auction.active-list` | P3 | Auctions I am bidding in | waived until PR-12: collectible-gift auctions are the `gift` surface (PR-12). |
 | `auction.position-estimate` | P3 | My position in the auction | waived until PR-12: collectible-gift auctions are the `gift` surface (PR-12). |
 | `auction.state` | P3 | Auction state and bid ladder | waived until PR-12: collectible-gift auctions are the `gift` surface (PR-12). |
-| `auth.countries-list` | P3 | Country code list and phone number patterns | waived until PR-4: help.getCountriesList is config/help plumbing shared with phone formatting; it lands with `config` in PR-4. |
 | `auth.oauth-deep-link` | P3 | Authorize an OAuth login request from a website/app (tg://oauth deep link) | waived until PR-10: A tg://oauth request is a bot authorization flow (messages.requestUrlAuth); it lands with the bots group in PR-10. |
-| `auth.prelogin-language` | P3 | Suggested interface language on the login screen | waived until PR-4: The suggested login-screen language comes from the language pack, which is the `config`/langpack surface in PR-4. |
 | `bot.media-previews` | P3 | Manage a bot's Mini App media previews (owned bots) | waived until PR-10: A bot's Mini App previews are the `bot` group (PR-10). |
 | `bot.profile-photo-set` | P3 | Set profile photo of an owned bot | waived until PR-10: Setting an owned bot's photo is the `bot` group (PR-10). |
 | `calls.reset-top-caller` | P3 | Remove a peer from call suggestions | waived until PR-5: contacts.resetTopPeerRating is the same surface as top-callers (PR-5). |
@@ -214,14 +209,11 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `gift.upgrade-preview` | P3 | Preview a gift upgrade | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
 | `giveaway.boosts-unrestrict` | P3 | Let boosters bypass group restrictions | waived until PR-7: giveaways and channel boosts are the `giveaway`/`boost` surface (PR-7). |
 | `giveaway.list-prepaid` | P3 | Prepaid giveaways on a channel | waived until PR-12: giveaways and channel boosts are the `giveaway`/`boost` surface (PR-12). |
-| `giveaway.prize-stars` | P3 | Receive a Stars prize | waived until PR-4: a Stars prize arrives as an update (PR-4). |
 | `giveaway.results` | P3 | Giveaway results message | waived until PR-12: giveaways and channel boosts are the `giveaway`/`boost` surface (PR-12). |
 | `giveaway.user-boosts` | P3 | Boosts a specific user gave a channel | waived until PR-7: giveaways and channel boosts are the `giveaway`/`boost` surface (PR-7). |
 | `location.business-address` | P3 | Business account location | waived until PR-12: a business account's address is the `business` surface (PR-12). |
 | `location.channel-geo` | P3 | Set a location for a geo-group | waived until PR-7: a geo-group's location is set through the channel admin surface (PR-7). |
 | `location.geogroup-create` | P3 | Create a location-based group | waived until PR-7: creating a location-based group is `chat create` (PR-7). |
-| `location.proximity-alert-event` | P3 | Proximity reached notification | waived until PR-4: a proximity alert arrives as an update, not a command (PR-4). |
-| `location.viewed-receipt` | P3 | Live location viewed receipt | waived until PR-4: a live-location view receipt arrives as an update (PR-4). |
 | `messages-core.chat-welcome-messages` | P3 | Chat welcome messages (empty-chat cards) | waived until PR-3: Empty-chat welcome cards are a chat setting (PR-3). |
 | `messages-core.paid-messages-group-price` | P3 | Charge Stars per message in a supergroup / channel direct messages | waived until PR-7: The per-group Star price is a supergroup setting (PR-7). |
 | `messages-core.search-hashtag-stories` | P3 | Hashtag / location search in public stories | waived until PR-8: Hashtag search over public stories is the story surface (PR-8). |
@@ -234,3 +226,4 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `ringtone.set-for-chat` | P3 | Set notification sound for a chat or chat category | waived until PR-12: Per-chat notification sounds are the `notify` group (PR-12). |
 | `stars.topup-options` | P3 | Star purchase packages | waived until PR-12: the Star balance and top-up packages are the `stars` surface (PR-12). |
 | `theme.cloud-themes` | P3 | Cloud themes (list, install, create, update, upload theme file) | waived until PR-12: Cloud themes are the `settings` group (PR-12). |
+| `updates.invoke-business-connection` | P3 | Act on behalf of a connected business account | waived until PR-12: Acting on behalf of a connected business account is the business surface (PR-12). |

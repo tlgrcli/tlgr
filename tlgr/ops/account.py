@@ -2433,6 +2433,10 @@ class SuggestionListReq(Request):
     dismiss: Annotated[
         str | None, opt("--dismiss", metavar="NAME", help="Dismiss this suggestion.")
     ] = None
+    chat: Annotated[
+        PeerRef | None,
+        opt("--chat", metavar="CHAT", kind="peer", help="Dismiss a per-chat suggestion."),
+    ] = None
     hide_promo: Annotated[
         PeerRef | None,
         opt("--hide-promo", metavar="CHAT", kind="peer", help="Hide the promoted dialog."),
@@ -2456,9 +2460,13 @@ async def suggestion_list(ctx: OpContext, req: SuggestionListReq) -> Page[Sugges
                 f"{req.dismiss} cannot be dismissed; the server re-issues it until it is done",
                 field="dismiss",
             )
-        await client(
-            fn.DismissSuggestionRequest(peer=types.InputPeerEmpty(), suggestion=req.dismiss)
+        # A suggestion can be scoped to one chat (`PREMIUM_UPGRADE` on a
+        # channel, say); `--chat` dismisses that one rather than the
+        # account-wide nudge of the same name.
+        peer = (
+            await _send.resolve(ctx, req.chat) if req.chat is not None else types.InputPeerEmpty()
         )
+        await client(fn.DismissSuggestionRequest(peer=peer, suggestion=req.dismiss))
     if req.hide_promo:
         await client(fn.HidePromoDataRequest(peer=await _send.resolve(ctx, req.hide_promo)))
 
@@ -2505,7 +2513,7 @@ SPEC_SUGGESTION_LIST = OperationSpec(
     columns=("suggestion", "dismissible", "promo_peer"),
     example={"items": [{"suggestion": "VALIDATE_PASSWORD", "dismissible": True}]},
     example_args="account suggestion list",
-    covers=("account.promo-data", "auth.security-suggestions"),
+    covers=("account.promo-data", "auth.security-suggestions", "updates.config-suggestions"),
     covers_partial=("password.check-remembered",),
     coverage_note="Actually checking the password is `account password get --verify`.",
 )

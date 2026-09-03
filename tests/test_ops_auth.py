@@ -708,7 +708,10 @@ class TestInfoAndSync:
         world.add_channel(make_channel(9000, title="News"))
         answer = await result(client, in_thread, "account.sync", {})
         assert answer["ok"] is True
-        assert answer["pts"] == 90210
+        # The common box the fake session holds; `updates.getState` answers
+        # from it rather than from a constant, so `sync status` and this
+        # agree about what the account's pts is.
+        assert answer["pts"] == 91824
 
 
 # ---------------------------------------------------------------------------

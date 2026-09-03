@@ -523,10 +523,17 @@ class DaemonClient:
         *,
         account: str,
         types: str = "",
-        since: int | None = None,
+        since: int | str | None = None,
         chats: str = "",
         timeout: int = 3600,
+        **extra: Any,
     ) -> Iterator[dict[str, Any]]:
+        """`GET /v1/events` — the push stream, as NDJSON frames.
+
+        A GET-shaped alias of `POST /v1/op {op: events.watch}`: the daemon
+        decodes the query into the same request struct and runs the same
+        implementation, so there is one filter vocabulary rather than two.
+        """
         params: dict[str, Any] = {"account": account, "timeout": timeout}
         if types:
             params["types"] = types
@@ -534,6 +541,7 @@ class DaemonClient:
             params["since"] = since
         if chats:
             params["chats"] = chats
+        params.update({k: v for k, v in extra.items() if v is not None})
         return self.stream("GET", "/v1/events", params=params, timeout=timeout + 30)
 
     def status(self) -> dict[str, Any]:
@@ -600,6 +608,21 @@ def _stringify(value: Any) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     return str(value)
+
+
+def _query_value(value: Any) -> str:
+    """One request field as one query value.
+
+    A repeated `--chat` is a list of parsed `PeerRef`s; the query carries the
+    references the user typed, comma-separated, and the daemon parses them
+    with the same parser the CLI used. Sending the parsed dicts would mean two
+    peer parsers that could disagree about what `-100…` means.
+    """
+    if isinstance(value, dict) and "raw" in value:
+        return str(value["raw"])
+    if isinstance(value, (list, tuple)):
+        return ",".join(_query_value(item) for item in value)
+    return _stringify(value)
 
 
 def _decode(raw: bytes, status_code: int) -> Any:
@@ -742,6 +765,50 @@ def make_dispatcher(base: Path | None = None) -> Any:
         if spec.stream or common["fetch_all"]:
             return _collect(client.op_stream(spec.id, request, **common), spec.id)
         return client.op(spec.id, request, idempotent=spec.idempotent, **common)
+
+    return dispatch
+
+
+def make_stream_dispatcher(base: Path | None = None) -> Any:
+    """The dispatcher a live-stream command uses: frames, as they arrive.
+
+    `make_dispatcher` folds a walk back into one envelope, which is right for
+    `--all` and wrong for `watch`: a stream that only prints when it ends is
+    not a stream. This one yields, and the CLI writes each frame.
+
+    `events.watch` goes over `GET /v1/events` rather than `POST /v1/op`
+    because that is the documented endpoint for the push stream and it is
+    reachable with `curl`; the daemon serves both from the same operation.
+    """
+
+    def dispatch(spec: Any, request: Any, state: Any) -> Iterator[dict[str, Any]]:
+        client = DaemonClient(
+            base,
+            timeout=float(state.timeout) if state.timeout else float(spec.timeout_s),
+            no_restart=bool(state.no_daemon_restart),
+        )
+        body = _as_builtins(request)
+        if spec.id == "events.watch":
+            follow_for = int(body.pop("follow_for", 3600) or 3600)
+            return client.events(
+                account=state.account or "",
+                timeout=follow_for,
+                **{
+                    key: _query_value(value)
+                    for key, value in body.items()
+                    if value is not None and value != []
+                },
+            )
+        return client.op_stream(
+            spec.id,
+            request,
+            account=state.account or "",
+            dry_run=bool(state.dry_run),
+            flood_wait_max=state.flood_wait_max,
+            limit=getattr(state, "limit", None),
+            cursor=getattr(state, "cursor", None),
+            fetch_all=bool(getattr(state, "fetch_all", False)),
+        )
 
     return dispatch
 

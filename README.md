@@ -348,11 +348,68 @@ KDF that would re-encrypt it.
 ### Daemon
 
 ```bash
-tlgr daemon start                     # --foreground
+tlgr daemon start                     # --foreground, --catch-up/--no-catch-up
 tlgr daemon stop                      # drains in-flight work rather than killing it
-tlgr daemon status                    # running/ready/healthy/disconnected/version/protocol
-tlgr daemon logs                      # --follow
+tlgr daemon status                    # running/ready/healthy, per-account state and lag
+tlgr daemon restart                   # --grace 10s
+tlgr daemon reconnect                 # force a reconnect and a catch-up
+tlgr daemon save-state                # flush pts/qts and the entity cache now
+tlgr daemon logs --follow --level warning
+tlgr daemon flood list                # rate-limit deadlines this install still owes
+tlgr daemon dead-letter list          # events no consumer could be given
+tlgr daemon install                   # LaunchAgent on macOS, systemd --user on Linux
 ```
+
+### Watching events
+
+```bash
+tlgr watch                            # v1's default: new messages
+tlgr watch --events all --account all # everything, every connected account
+tlgr watch --events read,message_reactions --chat @alice
+tlgr watch --since 91820 --print-cursor
+tlgr events list --group message      # the vocabulary --events accepts
+tlgr events get message_new           # payload, source constructors, sequence box
+```
+
+Push-driven from the daemon's event bus, not polled: the daemon already holds
+the update socket, so a watcher is a bounded queue on it. 114 event types
+cover every `Update*` constructor the pinned Telethon can parse — a message
+edit, a deletion, a read receipt, a reaction, a typing indicator and every
+service message included. v1's `watch` polled `chat list` and `message list`
+every two seconds and could only report new messages.
+
+Frames are NDJSON, one per line: exactly one `meta` first, exactly one `end`
+last, and events, `heartbeat`, `gap` and `lag` in between. A `gap` frame says
+how many events the replay window lost — a number rather than silence.
+`--results-only` prints v1's `{event_type, chat_id, data}` line shape.
+
+### Update state
+
+```bash
+tlgr sync status --channels           # pts/qts/seq, per-channel table, lag
+tlgr sync catch-up                    # replay what was missed while offline
+tlgr sync difference --chat @news      # run getDifference by hand (read-only)
+tlgr sync reset                       # give up on the gap and re-baseline
+tlgr sync backfill @news --from-id 91800 --to-id 91900
+```
+
+`catch-up` replays a gap; `reset` gives up on one. Neither is `chat catchup`,
+which is the unread digest a human reads.
+
+### Network and proxies
+
+```bash
+tlgr net status                       # DC, transport, proxy, latency, clock offset
+tlgr net ping --probes 5
+tlgr net dc list --ipv6
+tlgr proxy add 'tg://proxy?server=1.2.3.4&port=443&secret=dd00' --set
+tlgr proxy test --every --reorder
+```
+
+SOCKS5, HTTP and MTProxy; `tg://proxy` and `t.me/proxy` links both parsed.
+Credentials live in `~/.tlgr/proxies.json` at mode 0600 and never reach argv
+or a listing. `proxy test` probes through a throwaway in-memory session, so a
+probe can never become the account's update-receiving connection.
 
 #### Protocol v2
 
@@ -370,10 +427,14 @@ world-writable with no authentication at all.
   refuses instead (exit 11). Two `tlgr` commands racing with no daemon
   running produce exactly one daemon.
 - **`status` distinguishes alive from working.** `running` is a live process;
-  `ready` is a daemon that can serve. An account whose connection dropped is
-  `degraded` and its requests answer exit 8 with a hint instead of
-  `Cannot send requests while disconnected`; a revoked session is
-  `needs_login` and answers exit 4.
+  `ready` is a daemon that can serve; `healthy` is one whose accounts are
+  actually working. An account whose connection dropped is `degraded` and its
+  requests answer exit 8 with a hint instead of `Cannot send requests while
+  disconnected`; a revoked session is `needs_login` and answers exit 4.
+- **A live home is protected.** A tlgr home with a `.production` marker file
+  is refused unless `TLGR_ALLOW_PRODUCTION_HOME=1`: two processes sharing one
+  home share session files, and Telegram revokes an auth key it sees two
+  clients on.
 
 ### Global Flags
 
@@ -415,34 +476,47 @@ flowchart LR
     CLI --> TG
 ```
 
-Configure in `~/.tlgr/webhook.toml`:
+Configure it with `tlgr webhook set`, which validates every event name against
+the taxonomy — a name nobody recognises used to be dropped silently, so the
+webhook delivered nothing and never said why:
 
-```toml
-[webhook]
-enabled = true
-url = "http://127.0.0.1:18789/hooks/agent"
-token = "shared-secret"
-events = ["new_message", "message_edited", "message_deleted"]
-
-[webhook.retry]
-enabled = true
-max_attempts = 3
-backoff_base = 2
-
-[webhook.filters]
-chats = ["@important_channel"]
+```bash
+tlgr webhook set --url https://example.com/hooks/agent \
+                 --events message_new,message_edited,message_deleted \
+                 --secret-env TLGR_WEBHOOK_SECRET --enabled
+tlgr webhook get           # configuration and delivery health; secrets redacted
+tlgr webhook test          # one delivery, with the exact headers it sent
 ```
 
-Events arrive as JSON with `Authorization: Bearer <token>`:
+Or edit `~/.tlgr/webhook.toml` directly. Deliveries carry:
+
+| Header | Meaning |
+|---|---|
+| `X-Tlgr-Signature` | `sha256=<hmac of the exact body>` — verify over the bytes you received |
+| `X-Tlgr-Delivery` | unique per attempt; reused on a re-drive, so it is an idempotency key |
+| `X-Tlgr-Seq` | the event's per-account sequence number |
+| `X-Tlgr-Event` | the event type |
+| `X-Tlgr-Account` | the account alias |
+
+Events arrive as `{"event": <envelope>, "delivery_id": "..."}`:
 
 ```json
 {
-  "event_type": "new_message",
-  "timestamp": "2025-03-06T12:00:00Z",
-  "account": "main",
-  "data": { "..." }
+  "event": {
+    "seq": 91824,
+    "ts": "2026-09-03T09:14:07Z",
+    "account": "main",
+    "type": "message_new",
+    "payload": { "...": "..." },
+    "chat_id": -1001234567890
+  },
+  "delivery_id": "0f3c…"
 }
 ```
+
+A delivery that fails every attempt is dead-lettered rather than dropped;
+`tlgr daemon dead-letter list` shows them and `daemon dead-letter send`
+re-drives them.
 
 ## Gateway -- Background Jobs
 

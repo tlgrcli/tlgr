@@ -186,6 +186,39 @@ class FloodMemory:
     def snapshot(self) -> dict[str, int]:
         return {key: deadline.remaining for key, deadline in self._deadlines.items()}
 
+    def entries(self, *, include_expired: bool = False) -> list[FloodDeadline]:
+        """Every remembered deadline, for `tlgr daemon flood list`.
+
+        Expired ones are hidden by default and available on request: "this
+        account hit a wait an hour ago" is diagnosis, not a live constraint,
+        and mixing the two makes a healthy account look throttled.
+        """
+        now = time.time()
+        return [
+            deadline
+            for deadline in self._deadlines.values()
+            if include_expired or deadline.until > now
+        ]
+
+    def forget(self, *, method: str = "", peer: Any = None) -> int:
+        """Drop the deadlines matching *method*/*peer*; returns how many.
+
+        Clearing a live server-side FLOOD_WAIT does not lift it — the next
+        call re-trips it. This exists for after the cause is fixed, and to
+        reset a breaker an operator has investigated.
+        """
+        removed = 0
+        for key, deadline in list(self._deadlines.items()):
+            if method and deadline.method != method:
+                continue
+            if peer is not None and deadline.peer != str(peer):
+                continue
+            del self._deadlines[key]
+            removed += 1
+        if removed:
+            self.save()
+        return removed
+
     @property
     def next_deadline(self) -> float | None:
         alive = [d.until for d in self._deadlines.values() if d.until > time.time()]

@@ -16,6 +16,7 @@ worth a crash, and both are worth a log line that names the cause.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from collections.abc import Callable
 from typing import Any
@@ -25,10 +26,13 @@ log = logging.getLogger("tlgr.compat")
 __all__ = [
     "TOO_LONG_CHANNEL",
     "TOO_LONG_GLOBAL",
+    "entity_count",
     "install_reconnect_hook",
     "install_too_long_hook",
     "probe",
     "save_state",
+    "session_state",
+    "set_session_state",
     "telethon_version",
 ]
 
@@ -203,6 +207,79 @@ def clear_config_cache(client: Any) -> bool:
         return True
     _warn_once("_config")
     return False
+
+
+def session_state(client: Any) -> tuple[dict[str, Any], dict[int, int]]:
+    """`({pts, qts, seq, date}, {channel_id: pts})` from the session.
+
+    Telethon 1.44 has no public accessor for its update state: the common box
+    lives in the session's `update_state` table under entity id 0 and the
+    per-channel boxes under their channel ids. Reading it here — once, behind
+    a name — is what lets `sync status` answer "how far behind is this
+    account" without every caller reaching into a private table.
+    """
+    common: dict[str, Any] = {}
+    channels: dict[int, int] = {}
+    session = getattr(client, "session", None)
+    getter = getattr(session, "get_update_states", None)
+    if not callable(getter):
+        _warn_once("session.get_update_states")
+        return common, channels
+    try:
+        rows = list(getter())
+    except Exception as exc:  # pragma: no cover - depends on session backend
+        log.debug("update state read failed: %s", exc)
+        return common, channels
+    for entity_id, state in rows:
+        if int(entity_id) == 0:
+            date = getattr(state, "date", None)
+            common = {
+                "pts": getattr(state, "pts", None),
+                "qts": getattr(state, "qts", None),
+                "seq": getattr(state, "seq", None),
+                "date": date.strftime("%Y-%m-%dT%H:%M:%SZ") if date is not None else None,
+                "date_unix": int(date.timestamp()) if date is not None else None,
+                "unread_count": getattr(state, "unread_count", None),
+            }
+        else:
+            channels[int(entity_id)] = int(getattr(state, "pts", 0) or 0)
+    return common, channels
+
+
+def set_session_state(client: Any, state: Any, entity_id: int = 0) -> bool:
+    """Write one update-state row. The `sync reset` half of the pair above."""
+    session = getattr(client, "session", None)
+    setter = getattr(session, "set_update_state", None)
+    if not callable(setter):
+        _warn_once("session.set_update_state")
+        return False
+    try:
+        setter(entity_id, state)
+    except Exception as exc:  # pragma: no cover - depends on session backend
+        log.debug("update state write failed: %s", exc)
+        return False
+    return True
+
+
+def entity_count(client: Any) -> int:
+    """How many peers the session has an access hash for.
+
+    Not a statistic: an entity missing from here is a channel `catch_up()`
+    will silently skip, because `getChannelDifference` needs the access hash
+    and Telethon will not ask for one it does not have.
+    """
+    session = getattr(client, "session", None)
+    cursor = getattr(session, "_cursor", None)
+    if callable(cursor):
+        try:
+            row = cursor().execute("select count(*) from entities").fetchone()
+            return int(row[0]) if row else 0
+        except Exception as exc:  # pragma: no cover - depends on session backend
+            log.debug("entity count failed: %s", exc)
+    cache = getattr(client, "_entity_cache", None)
+    with contextlib.suppress(TypeError):
+        return len(cache) if cache is not None else 0
+    return 0
 
 
 def flood_waited_requests(client: Any) -> dict[int, float]:

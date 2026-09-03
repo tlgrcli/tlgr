@@ -71,6 +71,38 @@ V1_PATHS = [
 #: groups-and-channels group (PR-7), and must keep working until they do.
 V1_HAND_WRITTEN = [("chat", "members"), ("chat", "create")]
 
+#: The v1 paths PR-4 replaced. Every module behind them is deleted; every one
+#: of them still resolves, because §12.4 makes that absolute.
+V1_PR4_PATHS = [
+    ("watch",),
+    ("status",),
+    ("schema",),
+    ("exit-codes",),
+    ("agent", "whoami"),
+    ("agent", "exit-codes"),
+    ("daemon", "start"),
+    ("daemon", "stop"),
+    ("daemon", "restart"),
+    ("daemon", "status"),
+    ("daemon", "install"),
+    ("daemon", "uninstall"),
+    ("daemon", "logs"),
+    ("job", "list"),
+    ("job", "add"),
+    ("job", "remove"),
+    ("job", "enable"),
+    ("job", "disable"),
+    ("job", "reload"),
+    ("config", "init"),
+    ("config", "validate"),
+    ("config", "path"),
+    ("config", "keys"),
+    ("config", "list"),
+    ("config", "get"),
+    ("config", "set"),
+    ("config", "unset"),
+]
+
 #: op id → the keys v1's AGENT.md showed in the response, minus the ones the
 #: deliberate-change table below accounts for.
 V1_KEYS: dict[str, set[str]] = {
@@ -95,6 +127,15 @@ V1_KEYS: dict[str, set[str]] = {
 #: The changes CHANGELOG.md lists under "Breaking". Anything not in here has
 #: to survive unchanged.
 DELIBERATE_CHANGES = {
+    "events.watch": "`tlgr watch` streams the whole event taxonomy instead of "
+    "polling for new messages; `--results-only` keeps v1's line shape",
+    "daemon.status": "`{running, accounts, healthy}` gained `ready` and a "
+    "per-account state machine; `connections`/`disconnected` are unchanged",
+    "job.list": "`{jobs: [...]}` became `Page[JobState]`",
+    "config.list": "`{section: {key: value}}` became `Page[ConfigEntry]` with "
+    "a `source` per key; secrets are redacted",
+    "config.keys": "`{keys: {...}}` became `Page[ConfigKey]` carrying types, "
+    "defaults and `requires_restart`",
     "message.list": "`{messages: [...]}` became the `Page[Message]` envelope; "
     "`--results-only` yields `{items, has_more, next_cursor}`",
     "message.search": "same as message.list",
@@ -125,12 +166,14 @@ def _walk(path: tuple[str, ...]) -> Any:
     return node
 
 
-@pytest.mark.parametrize("path", V1_PATHS + V1_HAND_WRITTEN, ids=lambda p: " ".join(p))
+@pytest.mark.parametrize(
+    "path", V1_PATHS + V1_HAND_WRITTEN + V1_PR4_PATHS, ids=lambda p: " ".join(p)
+)
 def test_every_documented_v1_path_is_still_invocable(path):
     assert _walk(path) is not None, f"tlgr {' '.join(path)} disappeared"
 
 
-@pytest.mark.parametrize("path", V1_PATHS, ids=lambda p: " ".join(p))
+@pytest.mark.parametrize("path", V1_PATHS + V1_PR4_PATHS, ids=lambda p: " ".join(p))
 def test_every_documented_v1_path_resolves_to_an_operation(path):
     assert ALIASES.get(".".join(path)) is not None
 
@@ -140,6 +183,36 @@ def test_the_chat_list_shortcuts_still_resolve():
     assert ALIASES["chats"] == "chat.list"
     assert ALIASES["inbox"] == "chat.list"
     assert ALIASES["catchup"] == "chat.catchup"
+
+
+def test_the_v1_watch_line_shape_survives_results_only():
+    """A script reading `tlgr watch` parses `event_type`, `chat_id`, `data`."""
+    import io
+    import json
+
+    from tlgr.cli.render import render_stream
+
+    out = io.StringIO()
+    render_stream(
+        [
+            {"type": "meta", "protocol": 2},
+            {"type": "message_new", "seq": 3, "chat_id": -100, "payload": {"id": 7}},
+            {"type": "heartbeat", "ts": "2026-09-03T09:14:07Z"},
+            {"type": "end", "ok": True},
+        ],
+        results_only=True,
+        stream=out,
+    )
+    lines = [json.loads(line) for line in out.getvalue().splitlines()]
+    assert lines == [
+        {
+            "event_type": "message_new",
+            "chat_id": -100,
+            "data": {"id": 7},
+            "seq": 3,
+            "account": None,
+        }
+    ]
 
 
 def test_the_shortcuts_still_reach_message_send():

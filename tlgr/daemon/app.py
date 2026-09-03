@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -50,7 +51,7 @@ from tlgr.daemon.peercred import current_uid, peer_of, token_matches
 from tlgr.daemon.policy import Policy
 from tlgr.daemon.preauth import PreAuthService
 from tlgr.daemon.sessions import SessionManager
-from tlgr.daemon.stream import NdjsonResponse, pump_events, walk_pages
+from tlgr.daemon.stream import NdjsonResponse, walk_pages
 from tlgr.daemon.transfers import TransferStore
 from tlgr.daemon.webhook import WebhookPusher
 from tlgr.version import HEADER_PROTOCOL, HEADER_TOKEN, MIN_DAEMON_PROTOCOL, PROTOCOL
@@ -174,17 +175,14 @@ class Daemon:
         try:
             from telethon import events as tl_events
 
-            for builder in (
-                tl_events.NewMessage(),
-                tl_events.MessageEdited(),
-                tl_events.MessageDeleted(),
-                tl_events.MessageRead(),
-                tl_events.ChatAction(),
-                tl_events.UserUpdate(),
-            ):
-                register(on_update, builder)
+            # One `Raw` handler, not six high-level ones. The high-level
+            # builders drop service messages, topic ids and every action kind
+            # Telethon does not model, so a stream built on them can only ever
+            # show a subset of what the GUI shows; `normalise` names all 163
+            # update constructors instead (docs/design/EVENTS.md).
+            register(on_update, tl_events.Raw())
         except Exception as exc:  # pragma: no cover - a fake client has no builders
-            log.debug("could not register Telethon handlers for %s: %s", alias, exc)
+            log.debug("could not register the raw Telethon handler for %s: %s", alias, exc)
             register(on_update)
 
     # -- v1 compatibility surface -----------------------------------------
@@ -281,11 +279,14 @@ class Daemon:
         }
 
     def status(self) -> dict[str, Any]:
-        """v1's `/daemon/status` body, unchanged (it is a documented shape).
+        """v1's `/daemon/status` body. The route is gone; the shape is not.
 
-        `connections` and `healthy` exist because the wrapper existing and the
+        `daemon status` is a registry operation now and answers from
+        `/v1/status`, so nothing serves this over HTTP any more. It stays
+        because `connections`/`healthy` are the COR-37 fix stated at the level
+        the `ClientWrapper` bridge works at — the wrapper existing and the
         wrapper being usable are different facts, and v1 reported only the
-        first — a fully dead daemon looked healthy.
+        first — and both go together at PR-12.
         """
         uptime = int(time.time() - self._start_time)
         connections = {alias: client.is_connected for alias, client in self._clients.items()}
@@ -624,13 +625,24 @@ async def handle_op(request: web.Request) -> web.StreamResponse:
     daemon: Daemon = request.app[DAEMON_KEY]
     raw = await request.read()
     op_request = dispatch_module.decode_request(raw)
-    if op_request.stream or op_request.all:
+    if op_request.stream or op_request.all or _is_stream_op(op_request.op):
+        # A streaming operation is streamed whether or not the caller
+        # remembered to say so: its result is an async iterator, and answering
+        # a plain POST with "cannot encode an async_generator" would report a
+        # tlgr bug as the caller's mistake.
         return await _handle_op_stream(request, daemon, op_request)
     envelope = await dispatch_module.dispatch(daemon, op_request)
     return web.Response(
         body=json.dumps(envelope, ensure_ascii=False, default=str).encode("utf-8"),
         content_type="application/json",
     )
+
+
+def _is_stream_op(op_id: str) -> bool:
+    from tlgr.registry import ALIASES, REGISTRY
+
+    spec = REGISTRY.get(ALIASES.get(op_id.replace(" ", "."), op_id))
+    return bool(spec is not None and spec.stream)
 
 
 async def _handle_op_stream(
@@ -649,7 +661,18 @@ async def _handle_op_stream(
         # `spec` is the same object `resolve_spec` returned above; the
         # execute() call is what runs the policy/account/timeout prologue.
         _, context, result = await dispatch_module.execute(daemon, op_request)
-        if hasattr(result, "__aiter__"):
+        if "frames" in spec.tags and hasattr(result, "__aiter__"):
+            # A frame-producing operation writes its own NDJSON vocabulary —
+            # events, `gap`, `lag`, `heartbeat`. Wrapping those in `item`
+            # frames would make a heartbeat indistinguishable from an event
+            # for anybody reading the stream one line at a time.
+            count = 0
+            async for frame in result:
+                if not isinstance(frame, dict):  # pragma: no cover - impl contract
+                    continue
+                await stream.write(frame)
+                count += 1
+        elif hasattr(result, "__aiter__"):
             # A `--all` walk paces itself against the account's own limiter,
             # inside the daemon: v1 looped in the client and hammered the
             # socket with no backpressure between pages (ROB-01).
@@ -686,6 +709,35 @@ async def _stream_result(stream: NdjsonResponse, result: Any) -> int:
     return len(items)
 
 
+#: v1's `/v1/events` query names → the `events.watch` request fields they are
+#: now spelled as. The endpoint predates the operation; §12.4 says a
+#: documented shape does not disappear because the code behind it moved.
+_EVENTS_QUERY_ALIASES = {"types": "events", "chats": "chat", "timeout": "follow_for"}
+
+
+def _events_request(query: Any) -> dict[str, Any]:
+    """`GET /v1/events?…` → the `events.watch` request body.
+
+    The endpoint is a GET-shaped alias of `POST /v1/op {op: events.watch}`:
+    one implementation, one filter vocabulary, one set of frames. Two code
+    paths reading the same bus with two ideas of what `--events` means is
+    exactly the drift the registry exists to remove.
+    """
+    body: dict[str, Any] = {}
+    for key, value in query.items():
+        name = _EVENTS_QUERY_ALIASES.get(key, key)
+        if name in ("account", "flood_wait_max"):
+            continue
+        if name in ("chat", "sender"):
+            body[name] = [part for part in str(value).split(",") if part]
+        else:
+            body[name] = value
+    # The endpoint's historical default is everything; `tlgr watch`'s is v1's
+    # `new_message`, and that difference is deliberate.
+    body.setdefault("events", "all")
+    return body
+
+
 async def handle_events(request: web.Request) -> web.StreamResponse:
     daemon: Daemon = request.app[DAEMON_KEY]
     account = request.query.get("account", "").strip()
@@ -693,39 +745,22 @@ async def handle_events(request: web.Request) -> web.StreamResponse:
         return _error_response(
             request, UsageError("GET /v1/events needs ?account=<alias>", field="account")
         )
-    types = [t for t in request.query.get("types", "").split(",") if t]
-    chats = [
-        int(c) for c in request.query.get("chats", "").split(",") if c.strip().lstrip("-").isdigit()
-    ]
-    since_raw = request.query.get("since")
-    since = int(since_raw) if since_raw and since_raw.lstrip("-").isdigit() else None
-    timeout = min(int(request.query.get("timeout", 3600) or 3600), 86400)
+    from tlgr.models.envelope import OpRequest
+    from tlgr.version import VERSION
 
-    subscriber = daemon.bus.subscribe(account, types=types, chats=chats)
-    stream = NdjsonResponse(request)
+    op_request = OpRequest(
+        op="events.watch",
+        account=account,
+        request=_events_request(request.query),
+        request_id=request.headers.get("X-Tlgr-Request-Id", "") or uuid.uuid4().hex,
+        client_version=VERSION,
+        protocol=PROTOCOL,
+        stream=True,
+    )
     daemon.activity.begin_stream()
     try:
-        await stream.prepare(account=account, seq=daemon.bus.latest_seq(account))
-        replayed, gap = daemon.bus.replay(account, since)
-        if gap is not None:
-            await stream.write(gap)
-        from tlgr.models.base import to_builtins
-
-        for event in replayed:
-            await stream.write(to_builtins(event))
-        reason = await pump_events(
-            stream,
-            subscriber,
-            timeout=timeout,
-            shutdown=daemon.shutting_down,
-        )
-        return await stream.end(ok=True, reason=reason)
-    except (ConnectionResetError, asyncio.CancelledError):
-        return await stream.end(ok=True, reason="client-disconnected")
-    except Exception as exc:
-        return await stream.fail(exc, account=account)
+        return await _handle_op_stream(request, daemon, op_request)
     finally:
-        daemon.bus.unsubscribe(subscriber)
         daemon.activity.end_stream()
 
 

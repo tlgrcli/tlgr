@@ -306,7 +306,7 @@ async def execute(daemon: Daemon, request: OpRequest) -> tuple[OperationSpec, Da
     if request.dry_run and spec.mutating:
         return spec, context, {"dry_run": True, "would": spec.id, "request": to_builtins(payload)}
 
-    if spec.surface is not Surface.LOCAL and spec.needs_account:
+    if spec.surface is not Surface.LOCAL and spec.needs_account and spec.needs_client:
         session = await daemon.sessions.ensure(account)
         limiter = daemon.sessions.limiter(account)
         limiter.check(rate_class=spec.rate_class)
@@ -319,6 +319,19 @@ async def execute(daemon: Daemon, request: OpRequest) -> tuple[OperationSpec, Da
         session.in_flight += 1
     else:
         session = None
+        # A daemon operation that needs no Telegram client still benefits from
+        # the resolver when the account happens to be connected — `watch
+        # --chat @alice` should not have to be given a numeric id just because
+        # reading the bus does not itself need a socket. Attached, never
+        # *connected*: asking the daemon a question about itself must not dial
+        # Telegram as a side effect.
+        if account and spec.surface is not Surface.LOCAL:
+            existing = daemon.sessions.get(account)
+            if existing is not None and existing.client is not None:
+                context.session = existing
+                context.client = existing.client
+                context.limiter = daemon.sessions.limiter(account)
+                context.resolver = existing.resolver
 
     budget: Any = None
     if session is not None and context.limiter is not None:

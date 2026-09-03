@@ -25,10 +25,10 @@ ROOT = Path(__file__).resolve().parent.parent
 #: Every P0 catalog id the landed PRs claim. Raised by each group PR, never
 #: lowered. ARCHITECTURE §1.3: "P0 coverage may never decrease and must reach
 #: 100 % before 2.0.0 final".
-P0_FLOOR = 95
+P0_FLOOR = 116
 
 #: The floor for total covered ids. Same rule, weaker guarantee.
-COVERED_FLOOR = 808
+COVERED_FLOOR = 1010
 
 #: Every P0 catalog id PR-1's own operations cover, named rather than
 #: counted, so a swap (one dropped, one added) cannot pass a count check
@@ -176,11 +176,52 @@ PR6_P0_IDS = frozenset(
     }
 )
 
+#: The command groups PR-4 migrated.
+PR4_GROUPS = (
+    "agent.",
+    "config.",
+    "daemon.",
+    "events.",
+    "export.",
+    "job.",
+    "net.",
+    "proxy.",
+    "sync.",
+    "webhook.",
+)
+
+PR4_P0_IDS = frozenset(
+    {
+        "updates.event-message-deleted",
+        "updates.event-message-edited",
+        "updates.event-new-channel-message",
+        "updates.event-new-message",
+        "updates.event-read-inbox",
+        "updates.event-read-outbox",
+        "updates.invoke-init-connection",
+        "updates.net-flood-wait",
+        "updates.ops-daemon-lifecycle",
+        "updates.ops-reconnect-health",
+        "updates.ops-single-updates-consumer",
+        "updates.session-persistence",
+        "updates.stream-event-types",
+        "updates.stream-raw-passthrough",
+        "updates.stream-watch-ndjson",
+        "updates.sync-catch-up-on-start",
+        "updates.sync-get-channel-difference",
+        "updates.sync-get-difference",
+        "updates.sync-pts-gap-algorithm",
+        "updates.sync-state-persistence",
+        "updates.sync-too-long",
+    }
+)
+
 #: `(group prefixes, the P0 ids those groups claim)` for each landed PR.
 P0_OWNERS = (
     (("message.", "draft."), PR1_P0_IDS),
     (("auth.", "account.", "passport."), PR2_P0_IDS),
     (("chat.", "folder."), PR3_P0_IDS),
+    (PR4_GROUPS, PR4_P0_IDS),
     (("media.", "sticker.", "gif.", "emoji."), PR6_P0_IDS),
     (("poll.", "reaction.", "todo.", "location.", "search."), PR9_P0_IDS),
     (("call.", "vc.", "conference."), PR11_P0_IDS),
@@ -255,15 +296,15 @@ class TestTheGate:
         assert missing == [], f"a landed PR dropped coverage of {missing}"
 
     @pytest.mark.parametrize(
-        "prefixes,expected", P0_OWNERS, ids=["pr1", "pr2", "pr3", "pr6", "pr9", "pr11"]
+        "prefixes,expected", P0_OWNERS, ids=["pr1", "pr2", "pr3", "pr4", "pr6", "pr9", "pr11"]
     )
     def test_the_floor_is_the_whole_truth(self, prefixes, expected):
         """Each named list is exactly the P0 set its own groups claim.
 
         A floor that is a subset is a floor with holes in it: an op could drop
         a P0 id nobody wrote down and the gate would stay green. Computing the
-        set here and comparing it to the literal above means new coverage has
-        to be added to the list on purpose.
+        sets here and comparing them to the literals above means new coverage
+        has to be added to a list on purpose.
         """
         catalogue = catalog()
         actual = {
@@ -307,6 +348,12 @@ class TestTheGate:
         stats = report.by_domain["calls_voicechats"]
         assert stats["accounted_percent"] == 100.0
         assert stats["covered"] >= 124
+
+    def test_the_updates_domain_is_fully_accounted_for(self, report):
+        """PR-4's own domain: implemented, or waived to a named later PR."""
+        stats = report.by_domain["updates_sync_network"]
+        assert stats["accounted_percent"] == 100.0
+        assert stats["covered"] >= 186
 
     def test_messages_core_is_fully_accounted_for(self, report):
         """PR-1's own domain: implemented, or waived to a named later PR."""

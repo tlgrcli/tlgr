@@ -143,6 +143,25 @@ def in_thread():
 
 
 @pytest.fixture(autouse=True)
+def _never_the_real_home(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """No test may resolve `~/.tlgr`, ever — including one that forgot to ask.
+
+    A developer's tlgr home holds live session files. A test that reaches it
+    does not merely "leave some files behind": it shares an auth key with a
+    running daemon, and Telegram treats a second client on one auth key as a
+    compromised session and revokes it. Tests that want a home take
+    `tlgr_home`, which overrides this; the point of this fixture is that
+    forgetting to is impossible rather than merely discouraged.
+    """
+    scratch = Path(tempfile.mkdtemp(prefix="tlgr-noreal-", dir=tempfile.gettempdir()))
+    monkeypatch.setenv("TLGR_HOME", str(scratch / "h"))
+    try:
+        yield
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.fixture(autouse=True)
 def _restore_umask():
     previous = os.umask(0o077)
     os.umask(previous)

@@ -1,8 +1,7 @@
 # tlgr events
 
-**Status:** partial — the envelope and the delivery guarantees are final; the
-type vocabulary below is the **starter set** the foundation ships. The full
-taxonomy is owned by the updates group and lands in PR-4.
+**Status:** final. The envelope, the delivery guarantees and the whole type
+vocabulary are settled; new types are additive.
 **Applies to:** `tlgr` 2.x, protocol 2
 **Companion documents:** `ARCHITECTURE.md` §3.7 (envelope), §6.5 (bus).
 
@@ -95,35 +94,291 @@ result reported as a complete one.
 
 ---
 
-## 3. The starter taxonomy
+## 3. The taxonomy
 
-Nine types, chosen because they are what a watcher, a webhook and a gateway
-rule need on day one. Every name is a lowercase `snake_case` noun-verb, and
-new types are additive: a consumer must ignore a `type` it does not know.
+114 types, drawn from every one of the 163 `Update*` constructors Telethon
+1.44 (layer 227) can parse, plus the five Telegram has added since. The rule
+the table is written to, and `tests/test_event_taxonomy.py` enforces, is that
+**every constructor is either mapped to a type or listed in §3.3 with the
+reason it carries no event**. A constructor that was merely missing would be
+an update tlgr drops with nobody able to tell — which is precisely what v1's
+two-second polling `watch` did to everything that was not a new message.
 
-| Type | When | Payload |
+Every name is lowercase `snake_case`, `<group>_<noun>` or `<noun>_<verb>`, and
+a consumer must ignore a `type` it does not know. The machine-readable form is
+`tlgr events list --json`; `tlgr events get <type>` prints one row with its
+payload schema and an example.
+
+### 3.1 Selecting types
+
+`--events` (on `watch`, `events replay`, `job add`, `webhook set`) accepts, in
+any comma-separated combination:
+
+| Form | Means |
+|---|---|
+| `message_new` | one type |
+| `message` | every type in that group (§3.2) |
+| `raw:UpdateBotStopped` | the type that constructor maps to |
+| `all` | everything |
+| `new_message`, `chat_action`, `message_read`, … | v1's names, still accepted (§3.5) |
+
+An unknown selector is a `USAGE` error, never an empty selection: a `watch`
+that silently matches nothing is indistinguishable from a broken daemon.
+
+### 3.2 The types, by group
+
+Sources are the TL constructors that produce the type. **Box** is the sequence
+the update is ordered by — `pts`, `qts`, `seq`, `channel_pts`, `version` or
+`none` — which is what a consumer needs in order to know whether a gap in it
+is recoverable (§`sync`) or simply lost.
+
+#### `message`
+
+| Type | Box | Source constructors | Meaning |
+|---|---|---|---|
+| `message_available_min` | none | `UpdateChannelAvailableMessages` | A channel's history was cleared below a point |
+| `message_deleted` | pts | `UpdateDeleteChannelMessages`, `UpdateDeleteEphemeralMessages`, `UpdateDeleteMessages` | Messages were deleted |
+| `message_edited` | pts | `UpdateEditChannelMessage`, `UpdateEditEphemeralMessage`, `UpdateEditMessage` | A message was edited |
+| `message_emoji_game` | none | `UpdateEmojiGameInfo` | An emoji game (dice, dart, slot) resolved |
+| `message_extended_media` | pts | `UpdateMessageExtendedMedia` | Paid media on a message was unlocked |
+| `message_forwards` | channel_pts | `UpdateChannelMessageForwards` | A channel post's forward counter moved |
+| `message_geo_live_viewed` | none | `UpdateGeoLiveViewed` | Somebody viewed a live location I am sharing |
+| `message_id_assigned` | pts | `UpdateMessageID`, `UpdateShortSentMessage` | An outgoing message got its server id (random_id reconciliation) |
+| `message_new` | pts | `UpdateNewChannelMessage`, `UpdateNewEphemeralMessage`, `UpdateNewMessage`, `UpdateShortChatMessage`, `UpdateShortMessage` | A message arrived in any chat the account can see |
+| `message_pinned` | pts | `UpdatePinnedChannelMessages`, `UpdatePinnedMessages` | Messages were pinned or unpinned |
+| `message_poll` | pts | `UpdateMessagePoll` | A poll's results changed |
+| `message_poll_vote` | qts | `UpdateMessagePollVote` | Somebody voted in a poll you can see the votes of |
+| `message_reactions` | pts | `UpdateMessageReactions` | Reactions on a message changed |
+| `message_scheduled_deleted` | none | `UpdateDeleteScheduledMessages` | A scheduled message fired or was cancelled |
+| `message_scheduled_new` | none | `UpdateNewScheduledMessage` | A scheduled message was queued |
+| `message_service` | pts | _derived: updateNewMessage / updateNewChannelMessage carrying a messageService_ | A service message: a join, a pin, a title change, a call |
+| `message_transcribed` | none | `UpdateTranscribedAudio` | A voice or video note transcription finished |
+| `message_views` | channel_pts | `UpdateChannelMessageViews` | A channel post's view counter moved |
+| `message_webpage` | pts | `UpdateChannelWebPage`, `UpdateWebPage` | A link preview finished resolving |
+
+#### `read`
+
+| Type | Box | Source constructors | Meaning |
+|---|---|---|---|
+| `read_contents` | pts | `UpdateChannelReadMessagesContents`, `UpdateReadMessagesContents` | Media or a mention was marked read (the media_unread flag) |
+| `read_discussion` | pts | `UpdateReadChannelDiscussionInbox`, `UpdateReadChannelDiscussionOutbox` | A comment thread's read position moved |
+| `read_inbox` | pts | `UpdateReadChannelInbox`, `UpdateReadHistoryInbox` | My read position moved: messages I have now seen |
+| `read_monoforum` | pts | `UpdateReadMonoForumInbox`, `UpdateReadMonoForumOutbox` | A direct-messages (monoforum) channel's read position moved |
+| `read_outbox` | pts | `UpdateReadChannelOutbox`, `UpdateReadHistoryOutbox` | The other side read my messages |
+
+#### `presence`
+
+| Type | Box | Source constructors | Meaning |
+|---|---|---|---|
+| `typing` | none | `UpdateChannelUserTyping`, `UpdateChatUserTyping`, `UpdateEncryptedChatTyping`, `UpdateUserTyping` | Somebody is typing, recording or uploading |
+| `user_status` | none | `UpdateUserStatus` | A user came online, or their last-seen changed |
+
+#### `peer`
+
+| Type | Box | Source constructors | Meaning |
+|---|---|---|---|
+| `peer_blocked` | none | `UpdatePeerBlocked` | A peer was blocked or unblocked |
+| `peer_chat_changed` | none | `UpdateChannel`, `UpdateChat` | A chat or channel record was invalidated (refetch; may mean kicked) |
+| `peer_history_ttl` | none | `UpdatePeerHistoryTTL` | A chat's auto-delete timer changed |
+| `peer_located` | none | `UpdatePeerLocated` | The people/groups-nearby list changed |
+| `peer_notify_settings` | none | `UpdateNotifySettings` | Notification settings changed for a peer or a scope |
+| `peer_settings` | none | `UpdatePeerSettings` | A peer's action-bar settings changed (anti-scam hints included) |
+| `peer_user_changed` | none | `UpdateUser` | A user record was invalidated and should be refetched |
+| `peer_user_emoji_status` | none | `UpdateUserEmojiStatus` | A user's emoji status changed |
+| `peer_user_name` | none | `UpdateUserName` | A user changed their name or username |
+| `peer_user_phone` | none | `UpdateUserPhone` | A contact's phone number changed |
+| `peer_wallpaper` | none | `UpdatePeerWallpaper` | A chat wallpaper changed |
+
+#### `member`
+
+| Type | Box | Source constructors | Meaning |
+|---|---|---|---|
+| `member_boost` | none | `UpdateBotChatBoost` | A channel boost was applied (bot-only) |
+| `member_channel` | qts | `UpdateChannelParticipant` | A channel or supergroup member or admin changed |
+| `member_chat` | version | `UpdateChatParticipant`, `UpdateChatParticipantAdd`, `UpdateChatParticipantAdmin`, `UpdateChatParticipantDelete`, `UpdateChatParticipantRank`, `UpdateChatParticipants` | A basic group's membership or admin list changed |
+| `member_default_rights` | version | `UpdateChatDefaultBannedRights` | A group's default permissions changed |
+| `member_join_request` | none | `UpdateBotChatInviteRequester`, `UpdatePendingJoinRequests` | A pending join request arrived or was resolved |
+
+#### `dialog`
+
+| Type | Box | Source constructors | Meaning |
+|---|---|---|---|
+| `dialog_draft` | none | `UpdateDraftMessage` | A cloud draft was set or cleared |
+| `dialog_filters` | none | `UpdateDialogFilter`, `UpdateDialogFilterOrder`, `UpdateDialogFilters` | Chat folders (dialog filters) changed |
+| `dialog_folder` | pts | `UpdateFolderPeers` | A chat moved into or out of the Archive |
+| `dialog_forum_pinned` | none | `UpdatePinnedForumTopic`, `UpdatePinnedForumTopics` | Forum topics were pinned or reordered |
+| `dialog_forum_view` | none | `UpdateChannelViewForumAsMessages` | A forum's display mode was toggled |
+| `dialog_monoforum_no_paid` | none | `UpdateMonoForumNoPaidException` | A direct-messages channel's paid-message exception changed |
+| `dialog_pinned` | none | `UpdateDialogPinned`, `UpdatePinnedDialogs` | A chat was pinned, unpinned or reordered in the list |
+| `dialog_quick_reply` | none | `UpdateDeleteQuickReply`, `UpdateDeleteQuickReplyMessages`, `UpdateNewQuickReply`, `UpdateQuickReplies`, `UpdateQuickReplyMessage` | Business quick-reply shortcuts changed |
+| `dialog_saved_pinned` | none | `UpdatePinnedSavedDialogs`, `UpdateSavedDialogPinned` | A Saved Messages sub-dialog was pinned or reordered |
+| `dialog_saved_tags` | none | `UpdateSavedReactionTags` | Saved-message reaction tags changed |
+| `dialog_unread_mark` | none | `UpdateDialogUnreadMark` | A chat was manually marked unread (or the mark was cleared) |
+
+#### `story`
+
+| Type | Box | Source constructors | Meaning |
+|---|---|---|---|
+| `story_id` | none | `UpdateStoryID` | A story you posted got its server id |
+| `story_new` | none | `UpdateStory` | A story was posted, edited or deleted |
+| `story_reaction` | none | `UpdateNewStoryReaction`, `UpdateSentStoryReaction` | A story was reacted to |
+| `story_read` | none | `UpdateReadStories` | Stories were marked read |
+| `story_stealth` | none | `UpdateStoriesStealthMode` | Story stealth mode changed |
+
+#### `collection`
+
+| Type | Box | Source constructors | Meaning |
+|---|---|---|---|
+| `collection_attach_menu` | none | `UpdateAttachMenuBots` | The attachment-menu bot list changed |
+| `collection_emoji_statuses` | none | `UpdateRecentEmojiStatuses` | Recent emoji statuses changed |
+| `collection_gifs` | none | `UpdateSavedGifs` | Saved GIFs changed |
+| `collection_reactions` | none | `UpdateRecentReactions` | Recent or top reactions changed |
+| `collection_ringtones` | none | `UpdateSavedRingtones` | Notification sounds changed |
+| `collection_stickers` | none | `UpdateFavedStickers`, `UpdateMoveStickerSetToTop`, `UpdateNewStickerSet`, `UpdateRecentStickers`, `UpdateStickerSets`, `UpdateStickerSetsOrder` | Sticker or custom-emoji sets changed |
+| `collection_stickers_read` | none | `UpdateReadFeaturedEmojiStickers`, `UpdateReadFeaturedStickers` | Featured sticker or emoji sets were marked read |
+| `collection_themes` | none | `UpdateTheme` | A theme changed |
+
+#### `call`
+
+| Type | Box | Source constructors | Meaning |
+|---|---|---|---|
+| `call_group` | none | `UpdateGroupCall`, `UpdateGroupCallConnection` | A group call, video chat or live stream changed |
+| `call_group_encrypted` | none | `UpdateGroupCallChainBlocks`, `UpdateGroupCallEncryptedMessage` | Encrypted group-call key material (conference calls) |
+| `call_group_message` | none | `UpdateDeleteGroupCallMessages`, `UpdateGroupCallMessage` | A message inside a group call was posted or deleted |
+| `call_group_participants` | version | `UpdateGroupCallParticipants` | Group-call participants changed |
+| `call_phone` | none | `UpdatePhoneCall` | An incoming or updated 1:1 call (signalling only; tlgr carries no media) |
+| `call_signaling` | none | `UpdatePhoneCallSignalingData` | Raw call signalling data |
+
+#### `bot`
+
+| Type | Box | Source constructors | Meaning |
+|---|---|---|---|
+| `bot_business_connection` | none | `UpdateBotBusinessConnect`, `UpdateNewBotConnection` | A business connection was created or changed (bot-only) |
+| `bot_business_message` | none | `UpdateBotDeleteBusinessMessage`, `UpdateBotEditBusinessMessage`, `UpdateBotNewBusinessMessage` | A message on a connected business account arrived, changed or went (bot-only) |
+| `bot_callback_query` | none | `UpdateBotCallbackQuery`, `UpdateBusinessBotCallbackQuery`, `UpdateInlineBotCallbackQuery` | An inline-keyboard button was pressed (bot-only) |
+| `bot_commands` | none | `UpdateBotCommands` | A bot's command list changed |
+| `bot_ephemeral_callback` | none | `UpdateBotEphemeralCallbackQuery` | A callback button on an ephemeral message was pressed (bot-only, layer 229) |
+| `bot_guest_chat_query` | none | `UpdateBotGuestChatQuery` | A guest-mode chat query arrived (bot-only) |
+| `bot_inline_query` | none | `UpdateBotInlineQuery`, `UpdateBotInlineSend` | An inline query arrived, or a result was chosen (bot-only) |
+| `bot_managed` | none | `UpdateManagedBot` | A bot you manage changed |
+| `bot_menu_button` | none | `UpdateBotMenuButton` | A bot's menu button changed |
+| `bot_message_reaction` | none | `UpdateBotMessageReaction`, `UpdateBotMessageReactions` | A reaction on a message this bot can see changed (bot-only) |
+| `bot_paid_media_purchased` | none | `UpdateBotPurchasedPaidMedia` | A user bought paid media from this bot (bot-only) |
+| `bot_precheckout` | none | `UpdateBotPrecheckoutQuery` | A pre-checkout query arrived (bot-only) |
+| `bot_shipping` | none | `UpdateBotShippingQuery` | A shipping query arrived (bot-only) |
+| `bot_stars_subscription` | none | `UpdateBotStarsSubscription` | A Stars subscription to this bot changed (bot-only, layer 229) |
+| `bot_stopped` | qts | `UpdateBotStopped` | A user started or stopped this bot (bot-only) |
+| `bot_webhook` | none | `UpdateBotWebhookJSON`, `UpdateBotWebhookJSONQuery` | A bot-webhook JSON passthrough arrived (bot-only) |
+| `bot_webview_join_decision` | none | `UpdateJoinChatWebViewDecision` | A join-chat decision was made inside a mini app |
+| `bot_webview_result` | none | `UpdateWebViewResultSent` | A mini app sent data back (bot-only) |
+
+#### `stars`
+
+| Type | Box | Source constructors | Meaning |
+|---|---|---|---|
+| `stars_balance` | none | `UpdateStarsBalance` | The Telegram Stars balance changed |
+| `stars_gift_auction` | none | `UpdateStarGiftAuctionState`, `UpdateStarGiftAuctionUserState`, `UpdateStarGiftCraftFail` | A star-gift auction or craft changed state |
+| `stars_paid_reaction_privacy` | none | `UpdatePaidReactionPrivacy` | Paid-reaction privacy changed |
+| `stars_revenue` | none | `UpdateStarsRevenueStatus` | Star revenue or withdrawal status changed |
+
+#### `secret`
+
+| Type | Box | Source constructors | Meaning |
+|---|---|---|---|
+| `secret_chat` | qts | `UpdateEncryption` | A secret chat was requested, accepted or discarded |
+| `secret_message` | qts | `UpdateNewEncryptedMessage` | Encrypted traffic arrived; tlgr acknowledges it but cannot decrypt it |
+| `secret_read` | qts | `UpdateEncryptedMessagesRead` | Secret-chat messages were read or expired |
+
+#### `account`
+
+| Type | Box | Source constructors | Meaning |
+|---|---|---|---|
+| `account_ai_tones` | none | `UpdateAiComposeTones` | The AI compose tone list changed |
+| `account_autosave` | none | `UpdateAutoSaveSettings` | Media auto-save settings changed |
+| `account_browser_settings` | none | `UpdateWebBrowserException`, `UpdateWebBrowserSettings` | In-app browser settings or a per-domain exception changed |
+| `account_contacts_reset` | none | `UpdateContactsReset` | The contact list was wiped |
+| `account_langpack` | none | `UpdateLangPack`, `UpdateLangPackTooLong` | The language pack changed |
+| `account_login_token` | none | `UpdateLoginToken` | A QR login token was accepted |
+| `account_new_authorization` | none | `UpdateNewAuthorization` | A new login on this account |
+| `account_privacy` | none | `UpdatePrivacy` | A privacy rule changed |
+| `account_sent_phone_code` | none | `UpdateSentPhoneCode` | A login code was delivered in-app |
+| `account_service_notification` | none | `UpdateServiceNotification` | An official service notification (from 777000) |
+| `account_session_revoked` | none | _derived: the SESSION_REVOKE push payload, decoded by `tlgr events decode`_ | This session was terminated elsewhere (from a push payload) |
+| `account_sms_job` | none | `UpdateSmsJob` | An SMS-relay job arrived (Telegram's peer-to-peer login SMS programme) |
+
+#### `sync`
+
+| Type | Box | Source constructors | Meaning |
+|---|---|---|---|
+| `daemon_health` | none | _derived: the session state machine (ARCHITECTURE §6.2)_ | An account changed state, or the circuit breaker opened |
+| `sync_channel_too_long` | none | `UpdateChannelTooLong` | A channel's gap is unrecoverable from its pts; a resync is needed |
+| `sync_config` | none | `UpdateConfig` | The server configuration was invalidated; re-read help.getConfig |
+| `sync_dc_options` | none | `UpdateDcOptions` | The data-centre address list changed |
+| `sync_pts_changed` | none | `UpdatePtsChanged` | The pts sequence was reset; some updates are unrecoverable |
+
+### 3.3 Constructors that carry no event
+
+These four are containers or transport signals: they have no payload of their
+own, and the thing inside them is normalised in their place.
+
+| Constructor | Why |
+|---|---|
+| `UpdateShort` | container: carries exactly one Update, which is normalised in its place |
+| `Updates` | container: a batch of updates plus their users/chats arrays |
+| `UpdatesCombined` | container: a batch of updates spanning a seq range |
+| `UpdatesTooLong` | transport signal: the common box overflowed, handled by the supervisor with updates.getDifference (see `tlgr sync catch-up`) |
+
+### 3.4 Constructors newer than Telethon 1.44 (layer 227)
+
+Telegram ships these; this build cannot parse them, so a raw handler
+sees only an unknown constructor id. They are listed — rather than
+omitted — so `tlgr events list` can answer "exists, unavailable here".
+
+| Constructor | Would be | Status |
 |---|---|---|
-| `message_new` | a message arrives, in any chat the account can see | the full `Message` model |
-| `message_edited` | a message is edited | the full `Message` model, post-edit |
-| `message_deleted` | messages are deleted | `{"message_ids": [int, …]}` |
-| `message_read` | read receipts move | `{"max_id": int, "outbox": bool}` |
-| `chat_action` | a member joins, leaves, is promoted, the title changes… | `{"action": str, "user_id": int?, "user_ids": [int]}` |
-| `user_status` | a user's online status changes | `{"user_id": int, "status": str, "online": bool}` |
-| `reaction_changed` | reactions on a message change | *(reserved — emitted from PR-4)* |
-| `draft_changed` | a draft is set or cleared elsewhere | *(reserved — emitted from PR-4)* |
-| `daemon_health` | an account changes state, or the breaker opens | `{"state": str, "reason": str}` |
+| `UpdateBotEphemeralCallbackQuery` | `bot_ephemeral_callback` | unparseable in this build; listed by `events list` |
+| `UpdateBotStarsSubscription` | `bot_stars_subscription` | unparseable in this build; listed by `events list` |
+| `UpdateDeleteEphemeralMessages` | `message_deleted` | unparseable in this build; listed by `events list` |
+| `UpdateEditEphemeralMessage` | `message_edited` | unparseable in this build; listed by `events list` |
+| `UpdateNewEphemeralMessage` | `message_new` | unparseable in this build; listed by `events list` |
 
-`chat_action.action` is currently the Telethon action class name
-(`MessageActionChatAddUser`). PR-4 replaces it with a `snake_case` vocabulary;
-consumers should treat it as an opaque string until then.
+### 3.5 Compatibility names
+
+v1's `watch --events` and `jobs.yaml` spelled these differently, and the
+foundation shipped a nine-name starter set. Both keep working (§12.4); each
+expands to one or more v2 types.
+
+| Legacy name | Expands to |
+|---|---|
+| `new_message` | `message_new` |
+| `message_edit` | `message_edited` |
+| `message_read` | `read_inbox`, `read_outbox` |
+| `chat_action`, `user_joined` | `message_service`, `member_chat`, `member_channel` |
+| `reaction_changed` | `message_reactions` |
+| `draft_changed` | `dialog_draft` |
+
+### 3.6 Payloads
+
+Fourteen types carry a **modelled** payload: `message_new`, `message_service`,
+`message_edited` and `message_scheduled_new` carry the full `Message` model;
+`message_deleted`, `message_pinned`, `message_id_assigned`, `read_inbox`,
+`read_outbox`, `typing`, `user_status`, `message_reactions`, `dialog_draft`
+and `sync_channel_too_long` carry a small, named shape. `tlgr events get`
+prints it.
+
+Every other type carries **the update's own fields, made JSON-safe**: a
+`datetime` becomes RFC-3339, `bytes` become hex, and a nested TL object
+becomes `{"_": "ClassName", …}` so a consumer can still branch on the
+constructor. That conversion is `tl_to_builtins` and it is the COR-07 fix:
+v1 encoded a raw `to_dict()` with `json.dumps(default=str)`, so a message with
+media could fail to serialise *at delivery time*, far from the cause, and be
+counted as a delivery failure rather than as the bug it was.
 
 **What is deliberately absent.** tlgr does not invent a type name for an
-update it has no taxonomy entry for. An unrecognised `Update*` is dropped
-rather than delivered as `unknown`, because a type name that means "we did not
-look" is worse than silence: it cannot be filtered on, and it will change
-meaning the moment the real type is added.
+update it has no taxonomy entry for, and there is no `unknown` type. A name
+that means "we did not look" cannot be filtered on and changes meaning the day
+the real one is added.
 
----
 
 ## 4. Self-origin events
 
@@ -169,15 +424,26 @@ first will make an honest signature fail.
 
 ---
 
-## 6. Adding a type (for PR-4 and later)
+## 6. Adding a type
 
-1. Add the name to `EVENT_TYPES` in `tlgr/daemon/events.py`. Lowercase
-   `snake_case`, noun then verb.
-2. Map the Telethon event or raw `Update*` to it in `normalise()`. The
-   function must stay pure and Telethon-free: it matches on the qualified
-   class name so the bus can be unit-tested with a fake event.
-3. Build the payload from **models**. If a model does not exist for the shape,
-   add one to `tlgr/models/`; do not reach for `to_dict()`.
-4. Add a row to the table in §3, and a test that the payload round-trips
-   through `msgspec.json.encode` — which is the check that no `datetime` or
-   `bytes` slipped in.
+1. Add an `EventTypeSpec` to `_TYPES` in `tlgr/core/eventtypes.py`: lowercase
+   `snake_case`, a group from `GROUPS`, a one-line summary, the sequence box,
+   and the payload fields. The table is in `core/` because `ops/`, `daemon/`
+   and the doc generator all read it and none may import each other.
+2. Point its `Update*` constructor(s) at it in `CONSTRUCTORS`. A constructor
+   that carries no event goes in `INTERNAL` **with a reason** —
+   `tests/test_event_taxonomy.py` checks the installed Telethon against both
+   lists and fails on a constructor that is in neither, so a Telethon upgrade
+   that adds one fails in the run that upgrades it.
+3. If the payload deserves more than the update's own fields, add a branch to
+   `normalise_update()` in `tlgr/daemon/events.py` and build it from
+   **models** — never `to_dict()`. Everything else is handled by
+   `tl_to_builtins`, which is what guarantees no `datetime` and no `bytes`
+   reach a consumer.
+4. Regenerate §3.2 and `docs/reference/events.md`, and add a test that the
+   payload survives `msgspec.json.encode`.
+
+The daemon subscribes with a single `events.Raw()` handler, deliberately.
+Telethon's high-level builders (`NewMessage`, `ChatAction`, …) drop service
+messages, topic ids and every action kind Telethon does not model, so a stream
+built on them can only ever show a subset of what the GUI shows.

@@ -64,6 +64,12 @@ class LocalContext:
     request_id: str = ""
     warnings: list[str] = field(default_factory=list)
     command_tree: Callable[[Sequence[str], bool], dict[str, Any] | None] | None = None
+    #: `--limit`/`--cursor`/`--all` are transport-level and never request
+    #: fields (registry lint L5), so a local paginated operation reads them
+    #: off the context exactly as a daemon-side one does.
+    limit: int | None = None
+    cursor: str | None = None
+    fetch_all: bool = False
 
     def warn(self, message: str) -> None:
         self.warnings.append(message)
@@ -158,15 +164,35 @@ def run_op(spec: OperationSpec, request: msgspec.Struct, state: CliState) -> dic
         return _dispatch(spec, request, state)
 
     context = LocalContext(
-        account=account, dry_run=state.dry_run, request_id=request_id, command_tree=_command_tree
+        account=account,
+        dry_run=state.dry_run,
+        request_id=request_id,
+        command_tree=_command_tree,
+        limit=state.limit,
+        cursor=state.cursor,
+        fetch_all=state.fetch_all,
     )
     result = asyncio.run(spec.impl(context, request))
+    body = msgspec.to_builtins(result)
     envelope: dict[str, Any] = {
         "ok": True,
         "op": spec.id,
-        "result": msgspec.to_builtins(result),
+        "result": body,
         "meta": {"request_id": request_id, "warnings": context.warnings},
     }
+    if spec.paginated is not None and isinstance(body, dict):
+        # The same projection the daemon does (`daemon/dispatch._envelope`).
+        # Without it a paginated *local* operation would hand back the page
+        # object where every other one hands back the items, and `--select`
+        # would need a different path depending on where the op happened to
+        # run — which is exactly the kind of difference the registry exists to
+        # remove.
+        envelope["result"] = body.get("items", [])
+        envelope["page"] = {
+            "has_more": bool(body.get("has_more")),
+            "next_cursor": body.get("next_cursor"),
+            "total": body.get("total"),
+        }
     if account:
         envelope["account"] = account
     return envelope

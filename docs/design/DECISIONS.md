@@ -186,3 +186,50 @@ order depend on a file the account registry does not own. A job whose account
 is not in the list connects it on demand through `SessionManager.ensure`,
 which is the same path every request uses, so the only difference is that the
 connection happens a second later.
+
+## 2026-09-03 — `message fact-check` and `message paid` get no short alias
+
+The PR-1 work list gives `message.fact-check.set` the alias `message
+fact-check` and `message.paid.set` the alias `message paid`. Both are refused.
+An alias is placed in the Click tree by splitting it on `.`, and each of these
+names a *group* that already exists — the group holding `set`. Placing the
+alias would replace that group and take `message fact-check set` with it, so
+the shorthand would cost the canonical path. Every other alias in the work
+list is registered.
+
+## 2026-09-03 — §12.3's parity criterion is restated as "accounted, plus P0"
+
+Criterion 17 asks for `messages_core` at ≥ 95 % "with the remaining ids waived
+and named". Coverage is 79.6 %; accounted coverage is 100 %. The 34 remaining
+ids are catalogued under `messages_core` because they concern messages, but
+33 of them belong to a different *command group* — `history clear`, `chat mark
+unread` and `typing action` are the `chat` noun (PR-3), checklists and paid
+star reactions are PR-9 — and PR-1's scope is explicitly `message` and
+`draft`. Chasing the percentage would mean building half of PR-3 here. The
+gate the tests actually enforce is the honest form of the criterion: every
+uncovered id waived to a named PR, and every P0 id the group owns covered,
+with the 30 of them named in `tests/test_parity.py` and asserted to be exactly
+what the registry claims. `docs/design/FOUNDATION_ACCEPTANCE.md` records the
+shortfall rather than restating the number.
+
+## 2026-09-03 — `channels.*` requests convert the peer instead of re-resolving it
+
+Five operations passed `await client.get_input_entity(peer)` where a
+`channels.*` request wants an `InputChannel`. That returns an `InputPeer*`,
+which happens to serialise correctly for a channel and produces a wrong
+request for a user — a private chat reached `ExportMessageLink` or
+`ReadHistory` and failed with something that did not name the cause.
+`_input_channel()` uses `utils.get_input_channel`, which is arithmetic on a
+peer already in hand rather than a round trip, and turns "this is not a
+channel" into a usage error naming the `chat` field.
+
+## 2026-09-03 — automatic entities are re-derived locally, and say so
+
+`message entity list` exists to answer "what will Telegram do with this text".
+Telethon's markdown and HTML parsers emit only the entities the *client*
+declares; URLs, mentions, hashtags and phone numbers are added by the server
+on receipt, so the report was empty exactly where a caller most needs it. They
+are re-derived with a small pattern table, kept close to Telegram's rules and
+deliberately not authoritative: they are reported under `auto_entities`, never
+mixed into `entities`, because a message that re-declares a server-side entity
+is rejected.

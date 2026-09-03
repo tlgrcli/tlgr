@@ -10,7 +10,7 @@ STRICT := tlgr/models tlgr/ops tlgr/registry.py tlgr/schema.py tlgr/version.py \
           tlgr/daemon/ratelimit.py tlgr/daemon/policy.py tlgr/daemon/idle.py \
           tlgr/daemon/singleton.py tlgr/daemon/peercred.py
 
-.PHONY: lint format typecheck test test-fast check docs parity
+.PHONY: lint format typecheck test test-fast check docs parity acceptance
 
 lint:
 	$(PY) -m ruff check .
@@ -40,3 +40,20 @@ docs:
 	$(PY) tools/gen_docs.py
 
 check: lint typecheck test docs parity
+
+# The subset that proves ARCHITECTURE §12.3. `docs/design/FOUNDATION_ACCEPTANCE.md`
+# maps each of the 20 criteria to a name in here; run it when you want the
+# answer to "is the foundation done" without waiting for the whole suite.
+ACCEPTANCE := tests/test_agentmd_compat.py tests/test_registry_contract.py \
+              tests/test_ops_message.py tests/test_ops_draft.py \
+              tests/test_cli_mapping.py tests/test_security.py \
+              tests/test_daemon_lifecycle.py tests/test_account_session.py \
+              tests/test_daemon_connection_health.py tests/test_stream.py \
+              tests/test_events.py tests/test_webhook.py \
+              tests/test_errors_map.py tests/test_dispatch.py \
+              tests/test_sandbox.py tests/test_schema.py \
+              tests/test_docs_fresh.py tests/test_parity.py \
+              tests/test_transport.py
+
+acceptance:
+	$(PY) -m pytest -q $(ACCEPTANCE)

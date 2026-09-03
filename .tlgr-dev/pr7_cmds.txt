@@ -1,0 +1,7100 @@
+{
+ "op_id": "boost.add",
+ "path": "boost add",
+ "aliases": [
+  "boost apply",
+  "chat boost apply",
+  "premium boost apply"
+ ],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Boost a channel or group with my Premium slots",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "channel",
+   "type": "chat",
+   "required": false
+  }
+ ],
+ "flags": [
+  {
+   "name": "--slots",
+   "type": "int",
+   "help": "Slot ids to spend; repeatable. Default: the free slots premium.getMyBoosts reports.",
+   "repeatable": true
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "level",
+   "boosts",
+   "my_boost",
+   "already",
+   "peer",
+   "slots",
+   "cooldown_until_date"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.premium.GetMyBoostsRequest() then functions.premium.ApplyBoostRequest(peer=, slots=[ids])",
+  "raw": [
+   "premium.applyBoost",
+   "premium.getMyBoosts",
+   "premium.getBoostsStatus"
+  ],
+  "rights": "Telegram Premium on the account",
+  "notes": "PREMIUM_ACCOUNT_REQUIRED exits 6; BOOST_NOT_MODIFIED reports already=true and exits 0; moving a slot to another chat during cooldown_until_date raises FLOOD_WAIT and exits 7 with the wait."
+ },
+ "covers": [
+  "giveaway.boost-status",
+  "groups-channels-admin.boost-apply",
+  "premium.apply-boost"
+ ],
+ "covers_partial": [],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "Folded in `premium boost apply` (account_security_privacy): one boost-apply command; resolves the `boost apply` alias collision.",
+ "coverage_notes": [
+  {
+   "id": "giveaway.boost-status",
+   "note": "delegated from messages_content: boost get <chat> (their existing path). (keyword match in groups_channels_admin)"
+  }
+ ],
+ "merged_from": [
+  {
+   "group": "account_security_privacy",
+   "path": "premium boost apply"
+  }
+ ]
+}
+=====
+{
+ "op_id": "boost.get",
+ "path": "boost get",
+ "aliases": [
+  "chat boost get"
+ ],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Boost status of a chat, or the boost-level feature table",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": false
+  }
+ ],
+ "flags": [
+  {
+   "name": "--features",
+   "type": "bool",
+   "help": "Print what each boost level unlocks instead of (or beside) the status."
+  },
+  {
+   "name": "--level",
+   "type": "int",
+   "help": "With --features: only this level."
+  },
+  {
+   "name": "--kind",
+   "type": "enum(channel|group)",
+   "help": "With --features and no chat: which table to print.",
+   "default": "channel"
+  }
+ ],
+ "mutating": false,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "level",
+   "boosts",
+   "current_level_boosts",
+   "next_level_boosts",
+   "premium_audience",
+   "boost_url",
+   "my_boost",
+   "boosts_applied",
+   "prepaid_giveaways",
+   "features"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.premium.GetBoostsStatusRequest(peer=) + functions.help.GetAppConfigRequest(hash=0) / GetPeerColorsRequest / GetPeerProfileColorsRequest for --features",
+  "raw": [
+   "premium.getBoostsStatus",
+   "help.getAppConfig",
+   "help.getPeerColors",
+   "help.getPeerProfileColors"
+  ],
+  "rights": "none - readable by anyone",
+  "notes": "boost_url is the shareable boost link. --features maps the appConfig keys (channel_autotranslation_level_min, channel/group_wallpaper_level_min, channel/group_emoji_status_level_min, group_emoji_stickers_level_min, channel_restrict_sponsored_level_min, boosts_channel_level_max, ...) plus each palette's channel_min_level/group_min_level to the tlgr flags they gate. prepaid_giveaways feed messages_content's `giveaway launch`."
+ },
+ "covers": [
+  "groups-channels-admin.boost-level-features",
+  "groups-channels-admin.boost-link",
+  "groups-channels-admin.boost-status"
+ ],
+ "covers_partial": [],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "boost.list",
+ "path": "boost list",
+ "aliases": [
+  "chat boost list"
+ ],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "List boosters of a chat, one user's boosts, or my own boost slots",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": false
+  }
+ ],
+ "flags": [
+  {
+   "name": "--user",
+   "type": "user",
+   "help": "Only the boosts this user applied (premium.getUserBoosts, admin only)."
+  },
+  {
+   "name": "--gifts",
+   "type": "bool",
+   "help": "Only gift/giveaway boosts."
+  },
+  {
+   "name": "--mine",
+   "type": "bool",
+   "help": "My boost slots across all chats (premium.getMyBoosts); no <chat> needed."
+  },
+  {
+   "name": "--limit/-n",
+   "type": "int",
+   "help": "Page size.",
+   "default": "50"
+  },
+  {
+   "name": "--cursor",
+   "type": "string",
+   "help": "Opaque page cursor from a previous call."
+  },
+  {
+   "name": "--all",
+   "type": "bool",
+   "help": "Walk every page inside the daemon (rate-limit aware)."
+  }
+ ],
+ "mutating": false,
+ "destructive": false,
+ "paginated": true,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "page",
+  "fields": [
+   "slot",
+   "user_id",
+   "gift",
+   "giveaway",
+   "unclaimed",
+   "multiplier",
+   "stars",
+   "date",
+   "expires",
+   "chat_id",
+   "cooldown_until_date",
+   "date_unix"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.premium.GetBoostsListRequest(peer=, gifts=, offset='', limit=) / functions.premium.GetUserBoostsRequest(peer=, user_id=) / functions.premium.GetMyBoostsRequest()",
+  "raw": [
+   "premium.getBoostsList",
+   "premium.getUserBoosts",
+   "premium.getMyBoosts"
+  ],
+  "rights": "admin for --user and the chat listing; none for --mine",
+  "notes": "Cursor is the opaque next_offset string. --mine reports each slot's cooldown_until_date, which is what `boost apply` needs."
+ },
+ "covers": [
+  "giveaway.boosts-list",
+  "giveaway.boosts-unrestrict",
+  "giveaway.user-boosts",
+  "groups-channels-admin.boost-list",
+  "groups-channels-admin.boost-user"
+ ],
+ "covers_partial": [],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "giveaway.boosts-list",
+   "note": "delegated from messages_content: boost list <chat> [--gift-codes] (their existing path). (catalog cli.proposed)"
+  },
+  {
+   "id": "giveaway.user-boosts",
+   "note": "delegated from messages_content: boost list <chat> --user <user> (premium.getUserBoosts). (keyword match in groups_channels_admin)"
+  },
+  {
+   "id": "giveaway.boosts-unrestrict",
+   "note": "delegated from messages_content: chat set <chat> --boost-unrestrict N. (keyword match in groups_channels_admin)"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.admin.demote",
+ "path": "chat admin demote",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Dismiss an administrator",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "user",
+   "type": "user",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--yes/-y",
+   "type": "bool",
+   "help": "Required off a TTY."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": true,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "user_id",
+   "admin_rights"
+  ]
+ },
+ "impl": {
+  "telethon": "client.edit_admin(chat, user, is_admin=False) / raw functions.channels.EditAdminRequest(admin_rights=types.ChatAdminRights()) / functions.messages.EditChatAdminRequest(is_admin=False)",
+  "raw": [
+   "channels.editAdmin",
+   "messages.editChatAdmin"
+  ],
+  "rights": "add-admins and channelParticipantAdmin.can_edit (i.e. you promoted them, or you are the owner)",
+  "notes": "Sends an empty ChatAdminRights; the member keeps their membership."
+ },
+ "covers": [
+  "groups-channels-admin.demote-admin"
+ ],
+ "covers_partial": [
+  "groups-channels-admin.basic-group-admin"
+ ],
+ "priority": "P1",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "groups-channels-admin.basic-group-admin",
+   "note": "partial: primary owner is `chat admin list`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.admin.list",
+ "path": "chat admin list",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "List administrators with their rights and ranks",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--rights",
+   "type": "bool",
+   "help": "Expand every admin's mask into the canonical right names.",
+   "default": "true"
+  },
+  {
+   "name": "--limit/-n",
+   "type": "int",
+   "help": "Page size.",
+   "default": "50"
+  },
+  {
+   "name": "--cursor",
+   "type": "string",
+   "help": "Opaque page cursor from a previous call."
+  },
+  {
+   "name": "--all",
+   "type": "bool",
+   "help": "Walk every page inside the daemon (rate-limit aware)."
+  }
+ ],
+ "mutating": false,
+ "destructive": false,
+ "paginated": true,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "page",
+  "fields": [
+   "id",
+   "username",
+   "name",
+   "status",
+   "rank",
+   "promoted_by",
+   "can_edit",
+   "admin_rights"
+  ]
+ },
+ "impl": {
+  "telethon": "client.get_participants(chat, filter=types.ChannelParticipantsAdmins) keeping .participant; chatFull.participants for basic groups",
+  "raw": [
+   "channels.getParticipants",
+   "messages.getFullChat"
+  ],
+  "rights": "none",
+  "notes": "Creator is reported as status=creator. When antispam is on the client appends the telegram_antispam_user_id bot locally, exactly as the GUI does."
+ },
+ "covers": [
+  "groups-channels-admin.admin-list",
+  "groups-channels-admin.basic-group-admin"
+ ],
+ "covers_partial": [],
+ "priority": "P1",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.admin.promote",
+ "path": "chat admin promote",
+ "aliases": [
+  "chat admin edit"
+ ],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Promote a member to admin, or change an existing admin's rights and rank",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "user",
+   "type": "user",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--rights",
+   "type": "rights",
+   "help": "Comma-separated canonical right names (see `chat permission list`). Admin mask: change-info, post-messages, edit-messages, delete-messages, ban-users, invite-users, pin-messages, add-admins, anonymous, manage-call, manage-topics, post-stories, edit-stories, delete-stories, manage-direct-messages, manage-ranks, manage-linked-peers*, manage-welcome-messages*, other. Sets the mask absolutely."
+  },
+  {
+   "name": "--grant",
+   "type": "rights",
+   "help": "Add these rights to the member's current mask."
+  },
+  {
+   "name": "--revoke",
+   "type": "rights",
+   "help": "Remove these rights from the member's current mask."
+  },
+  {
+   "name": "--all",
+   "type": "bool",
+   "help": "Grant every right you yourself hold."
+  },
+  {
+   "name": "--none",
+   "type": "bool",
+   "help": "Empty mask (same as `chat admin demote`)."
+  },
+  {
+   "name": "--except",
+   "type": "rights",
+   "help": "With --all: withhold these rights."
+  },
+  {
+   "name": "--rank",
+   "type": "string",
+   "help": "Custom title, max 16 chars."
+  },
+  {
+   "name": "--anonymous",
+   "type": "on|off",
+   "help": "Shorthand for the `anonymous` right; also flips the admin's default send-as to the chat itself."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "user_id",
+   "admin_rights",
+   "rank"
+  ]
+ },
+ "impl": {
+  "telethon": "client.edit_admin(chat, user, change_info=, post_messages=, edit_messages=, delete_messages=, ban_users=, invite_users=, pin_messages=, add_admins=, manage_call=, anonymous=, title=) for the 10 legacy rights; raw functions.channels.EditAdminRequest(admin_rights=types.ChatAdminRights(...), rank=) whenever manage_topics/post_stories/edit_stories/delete_stories/manage_direct_messages/manage_ranks/other are involved; functions.messages.EditChatAdminRequest(is_admin=True) for basic groups",
+  "raw": [
+   "channels.editAdmin",
+   "messages.editChatAdmin"
+  ],
+  "rights": "add-admins (or owner); you may only grant rights you hold",
+  "notes": "Basic groups have no granular rights: any --rights there is reduced to messages.editChatAdmin(is_admin=True) and the dropped rights are listed in the response, or --upgrade converts first. manage-linked-peers and manage-welcome-messages are layer-229 flags missing from Telethon 227's ChatAdminRights and are refused with exit 13 until the layer uplift. layer_gap: partial. channelParticipantAdmin.can_edit must be set to touch another admin."
+ },
+ "covers": [
+  "groupcall.admin-right-manage-call",
+  "groups-channels-admin.member-tag-rank",
+  "groups-channels-admin.promote-admin",
+  "stories.admin-rights"
+ ],
+ "covers_partial": [
+  "groups-channels-admin.basic-group-admin"
+ ],
+ "priority": "P1",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "stories.admin-rights",
+   "note": "delegated from stories_calls: chatAdminRights lives in groups_channels_admin; story rights are three more flags on the existing admin-rights (consolidator override)"
+  },
+  {
+   "id": "groupcall.admin-right-manage-call",
+   "note": "delegated from stories_calls: chatAdminRights.manage_call is set through channels.editAdmin; groups_channels_admin owns admin rights. It gat (consolidator override)"
+  },
+  {
+   "id": "groups-channels-admin.basic-group-admin",
+   "note": "partial: primary owner is `chat admin list`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.admin_log.list",
+ "path": "chat admin-log list",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Recent actions (the admin log)",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--filter",
+   "type": "string",
+   "help": "Comma-separated event classes: join, leave, invite, ban, unban, kick, unkick, promote, demote, info, settings, pinned, edit, delete, group-call, invites, send, forums, sub-extend, edit-rank. Default: all."
+  },
+  {
+   "name": "--admin",
+   "type": "user",
+   "help": "Only events by these admins; repeatable.",
+   "repeatable": true
+  },
+  {
+   "name": "--search",
+   "type": "string",
+   "help": "Free-text query (q=)."
+  },
+  {
+   "name": "--min-id",
+   "type": "int",
+   "help": "Stop at this event id."
+  },
+  {
+   "name": "--limit/-n",
+   "type": "int",
+   "help": "Page size.",
+   "default": "50"
+  },
+  {
+   "name": "--cursor",
+   "type": "string",
+   "help": "Opaque page cursor from a previous call."
+  },
+  {
+   "name": "--all",
+   "type": "bool",
+   "help": "Walk every page inside the daemon (rate-limit aware)."
+  }
+ ],
+ "mutating": false,
+ "destructive": false,
+ "paginated": true,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "page",
+  "fields": [
+   "id",
+   "date",
+   "user_id",
+   "action",
+   "prev",
+   "new",
+   "raw_type",
+   "date_unix"
+  ]
+ },
+ "impl": {
+  "telethon": "client.iter_admin_log(chat, limit=, max_id=, min_id=, search=, admins=, join=, leave=, invite=, restrict=, unrestrict=, ban=, unban=, promote=, demote=, info=, settings=, pinned=, edit=, delete=, group_call=) for the classic filters; raw functions.channels.GetAdminLogRequest(events_filter=types.ChannelAdminLogEventsFilter(invites=, send=, forums=, sub_extend=, edit_rank=)) for the newer ones",
+  "raw": [
+   "channels.getAdminLog"
+  ],
+  "rights": "any admin right",
+  "notes": "Telethon's kwargs are shifted (restrict->ban, unrestrict->unban, ban->kick, unban->unkick) and it has no invites/send/forums/sub_extend/edit_rank flag, so tlgr builds ChannelAdminLogEventsFilter itself and keeps the CLI names identical to the API's. Each of the 50+ channelAdminLogEventAction* variants is normalised to {action: <slug>, prev, new} with raw_type carrying the TL name so nothing is lost. Descending by id: the cursor is max_id. Retention is about 48 h for most event classes; aggressively flood-limited."
+ },
+ "covers": [
+  "groupcall.admin-log",
+  "groups-channels-admin.admin-log"
+ ],
+ "covers_partial": [],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "groupcall.admin-log",
+   "note": "delegated from stories_calls: ChannelAdminLogEventsFilter.group_call is one filter on the existing admin-log command in groups_channels_admi (keyword match in all groups)"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.admin_log.report",
+ "path": "chat admin-log report",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Report an anti-spam deletion as a false positive",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "msg_id",
+   "type": "int",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "msg_id",
+   "reported"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.channels.ReportAntiSpamFalsePositiveRequest(channel=, msg_id=)",
+  "raw": [
+   "channels.reportAntiSpamFalsePositive"
+  ],
+  "rights": "admin",
+  "notes": "The candidate message ids come from `chat admin-log list --filter delete`, where the deletions made by telegram_antispam_user_id appear."
+ },
+ "covers": [
+  "groups-channels-admin.antispam-false-positive"
+ ],
+ "covers_partial": [],
+ "priority": "P3",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.affiliate.list",
+ "path": "chat affiliate list",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Affiliate (Star referral) bots connected to a channel, plus suggestions",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--suggested",
+   "type": "bool",
+   "help": "Show the suggested affiliate bots instead of the connected ones."
+  },
+  {
+   "name": "--limit/-n",
+   "type": "int",
+   "help": "Page size.",
+   "default": "50"
+  },
+  {
+   "name": "--cursor",
+   "type": "string",
+   "help": "Opaque page cursor from a previous call."
+  },
+  {
+   "name": "--all",
+   "type": "bool",
+   "help": "Walk every page inside the daemon (rate-limit aware)."
+  }
+ ],
+ "mutating": false,
+ "destructive": false,
+ "paginated": true,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "page",
+  "fields": [
+   "bot_id",
+   "url",
+   "commission_permille",
+   "duration_months",
+   "participants",
+   "revenue",
+   "date",
+   "date_unix"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.payments.GetConnectedStarRefBotsRequest(peer=, offset_date=, offset_link=, limit=) / GetSuggestedStarRefBotsRequest(peer=, offset='', limit=)",
+  "raw": [
+   "payments.getConnectedStarRefBots",
+   "payments.getSuggestedStarRefBots"
+  ],
+  "rights": "admin of the channel",
+  "notes": ""
+ },
+ "covers": [],
+ "covers_partial": [
+  "groups-channels-admin.affiliate-program"
+ ],
+ "priority": "P3",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "groups-channels-admin.affiliate-program",
+   "note": "partial: primary owner is `chat affiliate set`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.affiliate.set",
+ "path": "chat affiliate set",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Connect or disconnect an affiliate bot for a channel",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "bot",
+   "type": "user",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--off",
+   "type": "bool",
+   "help": "Revoke the affiliate link instead of creating it."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "bot_id",
+   "url",
+   "commission_permille",
+   "revoked"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.payments.ConnectStarRefBotRequest(peer=, bot=) / functions.payments.EditConnectedStarRefBotRequest(peer=, link=, revoked=)",
+  "raw": [
+   "payments.connectStarRefBot",
+   "payments.editConnectedStarRefBot"
+  ],
+  "rights": "admin of the channel",
+  "notes": "Connecting is free; the Stars commission is paid out of the bot's revenue."
+ },
+ "covers": [
+  "groups-channels-admin.affiliate-program"
+ ],
+ "covers_partial": [],
+ "priority": "P3",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.community.ban",
+ "path": "chat community ban",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Ban a member from a whole community",
+ "args": [
+  {
+   "name": "community",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "user",
+   "type": "user",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--off",
+   "type": "bool",
+   "help": "Unban instead."
+  },
+  {
+   "name": "--yes/-y",
+   "type": "bool",
+   "help": "Required off a TTY."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": true,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "community_id",
+   "user_id",
+   "banned"
+  ]
+ },
+ "impl": {
+  "telethon": "unsupported in Telethon 1.44 / layer 227 - needs communities.toggleParticipantBanned",
+  "raw": [
+   "communities.toggleParticipantBanned"
+  ],
+  "rights": "manage-linked-peers",
+  "notes": "layer_gap: true."
+ },
+ "covers": [
+  "groups-channels-admin.community-link-requests"
+ ],
+ "covers_partial": [],
+ "priority": "P3",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.community.create",
+ "path": "chat community create",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Create a Community (a hub grouping several chats)",
+ "args": [
+  {
+   "name": "title",
+   "type": "string",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--about",
+   "type": "string",
+   "help": "Description."
+  },
+  {
+   "name": "--hidden",
+   "type": "bool",
+   "help": "Do not show the community publicly."
+  },
+  {
+   "name": "--peer",
+   "type": "chat",
+   "help": "Seed the community with this chat; repeatable.",
+   "repeatable": true
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "community_id",
+   "title",
+   "linked_peers"
+  ]
+ },
+ "impl": {
+  "telethon": "unsupported in Telethon 1.44 / layer 227 - needs communities.create",
+  "raw": [
+   "communities.create"
+  ],
+  "rights": "none",
+  "notes": "layer_gap: true. The whole Community surface is layer 229; the commands exist so the shape is agreed, and exit 13 until the layer uplift."
+ },
+ "covers": [
+  "groups-channels-admin.community-create"
+ ],
+ "covers_partial": [],
+ "priority": "P3",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.community.list",
+ "path": "chat community list",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "List my communities, a community's chats, or its pending link requests",
+ "args": [
+  {
+   "name": "community",
+   "type": "chat",
+   "required": false
+  }
+ ],
+ "flags": [
+  {
+   "name": "--requests",
+   "type": "bool",
+   "help": "Pending link requests for <community> instead of its chats."
+  },
+  {
+   "name": "--user",
+   "type": "user",
+   "help": "With a community: which chats of the community this member joined."
+  },
+  {
+   "name": "--limit/-n",
+   "type": "int",
+   "help": "Page size.",
+   "default": "50"
+  },
+  {
+   "name": "--cursor",
+   "type": "string",
+   "help": "Opaque page cursor from a previous call."
+  },
+  {
+   "name": "--all",
+   "type": "bool",
+   "help": "Walk every page inside the daemon (rate-limit aware)."
+  },
+  {
+   "name": "--collapse",
+   "type": "string",
+   "help": "<community-id>=on|off \u2014 collapse or expand it in the chat list."
+  },
+  {
+   "name": "--mute",
+   "type": "string",
+   "help": "<community-id>=<duration|off> \u2014 community-wide notify settings."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": true,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "page",
+  "fields": [
+   "id",
+   "title",
+   "type",
+   "visible",
+   "collapsed",
+   "requested_by",
+   "date",
+   "chats",
+   "notify_settings",
+   "date_unix"
+  ]
+ },
+ "impl": {
+  "telethon": "unsupported in Telethon 1.44 / layer 227 - needs communities.getJoinedCommunities / communities.getPeerLinkRequests / communities.getParticipantJoinedChats",
+  "raw": [
+   "communities.getJoinedCommunities",
+   "communities.getPeerLinkRequests",
+   "communities.getParticipantJoinedChats",
+   "communities.toggleCommunityCollapsedInDialogs",
+   "account.updateNotifySettings"
+  ],
+  "rights": "manage-linked-peers (layer-229 admin right)",
+  "notes": "layer_gap: true."
+ },
+ "covers": [
+  "dialogs.community-collapse",
+  "dialogs.notify-community"
+ ],
+ "covers_partial": [
+  "groups-channels-admin.community-link-requests",
+  "groups-channels-admin.community-manage-links"
+ ],
+ "priority": "P3",
+ "pr": 7,
+ "existing": "new",
+ "notes": "Merged with the dialogs_contacts definition of `chat community list` (union of flags and covers).",
+ "coverage_notes": [
+  {
+   "id": "groups-channels-admin.community-manage-links",
+   "note": "partial: primary owner is `chat community set`"
+  },
+  {
+   "id": "groups-channels-admin.community-link-requests",
+   "note": "partial: primary owner is `chat community ban`"
+  }
+ ],
+ "merged_from": [
+  {
+   "group": "dialogs_contacts",
+   "path": "chat community list"
+  }
+ ]
+}
+=====
+{
+ "op_id": "chat.community.set",
+ "path": "chat community set",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Add, hide, remove a chat in a community, or answer a link request",
+ "args": [
+  {
+   "name": "community",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "state",
+   "type": "enum(visible|hidden|removed)",
+   "required": false
+  }
+ ],
+ "flags": [
+  {
+   "name": "--approve",
+   "type": "bool",
+   "help": "Approve this chat's pending link request."
+  },
+  {
+   "name": "--deny",
+   "type": "bool",
+   "help": "Reject this chat's pending link request."
+  },
+  {
+   "name": "--all",
+   "type": "bool",
+   "help": "With --approve/--deny: answer every pending request."
+  },
+  {
+   "name": "--collapsed",
+   "type": "on|off",
+   "help": "Collapse the community in my dialog list."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "community_id",
+   "chat_id",
+   "state"
+  ]
+ },
+ "impl": {
+  "telethon": "unsupported in Telethon 1.44 / layer 227 - needs communities.togglePeerLink / togglePeerLinkRequestApproval / toggleAllPeerLinkRequestApproval / toggleCommunityCollapsedInDialogs",
+  "raw": [
+   "communities.togglePeerLink",
+   "communities.togglePeerLinkRequestApproval",
+   "communities.toggleAllPeerLinkRequestApproval",
+   "communities.toggleCommunityCollapsedInDialogs"
+  ],
+  "rights": "manage-linked-peers",
+  "notes": "layer_gap: true."
+ },
+ "covers": [
+  "groups-channels-admin.community-manage-links"
+ ],
+ "covers_partial": [
+  "groups-channels-admin.community-link-requests"
+ ],
+ "priority": "P3",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "groups-channels-admin.community-link-requests",
+   "note": "partial: primary owner is `chat community ban`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.convert",
+ "path": "chat convert",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Convert a basic group to a supergroup, or a supergroup to a gigagroup",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "target",
+   "type": "enum(supergroup|gigagroup)",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--yes/-y",
+   "type": "bool",
+   "help": "Required: both conversions are one-way."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": true,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "old_chat_id",
+   "chat_id",
+   "type"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.MigrateChatRequest(chat_id=) / functions.channels.ConvertToGigagroupRequest(channel=)",
+  "raw": [
+   "messages.migrateChat",
+   "channels.convertToGigagroup"
+  ],
+  "rights": "owner; gigagroup only when the server offers it in channelFull.pending_suggestions",
+  "notes": "Emits both ids: history stays in the old peer (chat.migrated_to). `convert` is an extra verb sanctioned by the group brief; supergroup-only commands offer it via --upgrade rather than migrating silently."
+ },
+ "covers": [
+  "groups-channels-admin.convert-to-gigagroup",
+  "groups-channels-admin.upgrade-basic-to-supergroup"
+ ],
+ "covers_partial": [],
+ "priority": "P1",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.create",
+ "path": "chat create",
+ "aliases": [],
+ "legacy_paths": [
+  "chat create"
+ ],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Create a basic group, supergroup, broadcast channel or forum",
+ "args": [
+  {
+   "name": "title",
+   "type": "string",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--type",
+   "type": "enum(group|supergroup|channel|forum)",
+   "help": "Peer shape. `group` is the legacy basic group; `supergroup` is what the GUI creates today.",
+   "default": "supergroup"
+  },
+  {
+   "name": "--about",
+   "type": "string",
+   "help": "Description (sent as an empty string when omitted; the field is mandatory server-side)."
+  },
+  {
+   "name": "--members",
+   "type": "user",
+   "help": "Seed members; repeatable. Basic groups need at least one on some layers.",
+   "repeatable": true
+  },
+  {
+   "name": "--photo",
+   "type": "path",
+   "help": "Upload and set the chat photo right after creation."
+  },
+  {
+   "name": "--username",
+   "type": "string",
+   "help": "Claim a public username right after creation (supergroup/channel only)."
+  },
+  {
+   "name": "--ttl",
+   "type": "duration|off",
+   "help": "Auto-delete timer (ttl_period) applied at creation."
+  },
+  {
+   "name": "--geo",
+   "type": "lat,lon",
+   "help": "Create a location-based group (supergroup only, must be public)."
+  },
+  {
+   "name": "--address",
+   "type": "string",
+   "help": "Street address for --geo, 1-64 chars."
+  },
+  {
+   "name": "--tabs",
+   "type": "bool",
+   "help": "For --type forum: tabbed topic UI instead of the list UI."
+  },
+  {
+   "name": "--for-import",
+   "type": "bool",
+   "help": "Create a destination channel for a history import (see `chat import`)."
+  },
+  {
+   "name": "--forward-history",
+   "type": "int",
+   "help": "Basic groups only: how many past messages new members see.",
+   "default": "0"
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "id",
+   "type",
+   "title",
+   "username",
+   "invite_link",
+   "added",
+   "missing"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.channels.CreateChannelRequest(title, about, megagroup=, broadcast=, forum=, tabs=, geo_point=, address=, ttl_period=, for_import=) / functions.messages.CreateChatRequest(users, title, ttl_period=)",
+  "raw": [
+   "channels.createChannel",
+   "messages.createChat",
+   "channels.inviteToChannel",
+   "messages.addChatUser",
+   "channels.updateUsername",
+   "channels.editPhoto"
+  ],
+  "rights": "none (account-level channel count limits apply: CHANNELS_TOO_MUCH)",
+  "notes": "Emit messages.invitedUsers.missing_invitees verbatim ({user_id, reason}) instead of dropping it; exit 1 when any invitee is missing. --type group + --username/--geo/--forum is refused with a hint to use `chat convert`. layer_gap: false"
+ },
+ "covers": [
+  "groups-channels-admin.create-basic-group",
+  "groups-channels-admin.create-channel",
+  "groups-channels-admin.create-forum",
+  "groups-channels-admin.create-geo-group",
+  "groups-channels-admin.create-supergroup",
+  "groups-channels-admin.create-with-autodelete",
+  "location.geogroup-create"
+ ],
+ "covers_partial": [
+  "groups-channels-admin.add-members",
+  "groups-channels-admin.add-members-failure-report"
+ ],
+ "priority": "P0",
+ "pr": 7,
+ "existing": "extends:chat create",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "location.geogroup-create",
+   "note": "delegated from messages_content: chat create --group --geo <lat>,<lon> --address A. (catalog cli.proposed)"
+  },
+  {
+   "id": "groups-channels-admin.add-members",
+   "note": "partial: primary owner is `chat member add`"
+  },
+  {
+   "id": "groups-channels-admin.add-members-failure-report",
+   "note": "partial: primary owner is `chat member add`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.direct.ban",
+ "path": "chat direct ban",
+ "aliases": [
+  "chat monoforum ban"
+ ],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Ban a user from a channel's direct messages",
+ "args": [
+  {
+   "name": "channel",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "user",
+   "type": "user",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--yes/-y",
+   "type": "bool",
+   "help": "Required off a TTY."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": true,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "channel_id",
+   "monoforum_id",
+   "user_id",
+   "banned"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.channels.EditBannedRequest(channel=<linked_monoforum_id>, participant=, banned_rights=types.ChatBannedRights(view_messages=True, until_date=0))",
+  "raw": [
+   "channels.editBanned"
+  ],
+  "rights": "manage-direct-messages",
+  "notes": "Acts on channel.linked_monoforum_id, not on the channel itself; tlgr resolves it from `chat get --full`."
+ },
+ "covers": [],
+ "covers_partial": [
+  "groups-channels-admin.monoforum-ban"
+ ],
+ "priority": "P3",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "groups-channels-admin.monoforum-ban",
+   "note": "partial: primary owner is `chat direct unban`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.direct.list",
+ "path": "chat direct list",
+ "aliases": [
+  "chat monoforum list"
+ ],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Browse a channel's direct-message conversations",
+ "args": [
+  {
+   "name": "channel",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--limit/-n",
+   "type": "int",
+   "help": "Page size.",
+   "default": "50"
+  },
+  {
+   "name": "--cursor",
+   "type": "string",
+   "help": "Opaque page cursor from a previous call."
+  },
+  {
+   "name": "--all",
+   "type": "bool",
+   "help": "Walk every page inside the daemon (rate-limit aware)."
+  }
+ ],
+ "mutating": false,
+ "destructive": false,
+ "paginated": true,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "page",
+  "fields": [
+   "saved_peer_id",
+   "name",
+   "top_message",
+   "unread_count",
+   "unread_reactions_count",
+   "date",
+   "nopaid_messages_exception",
+   "date_unix"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.GetSavedDialogsRequest(parent_peer=<monoforum>, offset_date=, offset_id=, offset_peer=, limit=, hash=) / GetSavedDialogsByIDRequest",
+  "raw": [
+   "messages.getSavedDialogs",
+   "messages.getSavedDialogsByID"
+  ],
+  "rights": "manage-direct-messages",
+  "notes": "Each conversation is a monoForumDialog keyed by saved_peer_id (the user). Reading and replying inside one is `message list/send --direct <user>` in messages_content."
+ },
+ "covers": [
+  "groups-channels-admin.monoforum-topic-list"
+ ],
+ "covers_partial": [],
+ "priority": "P3",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.direct.unban",
+ "path": "chat direct unban",
+ "aliases": [
+  "chat monoforum unban"
+ ],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Unban a user from a channel's direct messages",
+ "args": [
+  {
+   "name": "channel",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "user",
+   "type": "user",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "channel_id",
+   "monoforum_id",
+   "user_id",
+   "banned"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.channels.EditBannedRequest(channel=<linked_monoforum_id>, banned_rights=types.ChatBannedRights(until_date=0))",
+  "raw": [
+   "channels.editBanned",
+   "account.toggleNoPaidMessagesException"
+  ],
+  "rights": "manage-direct-messages",
+  "notes": "Use `chat member edit --free-messages on` to waive the Stars price for one user."
+ },
+ "covers": [
+  "groups-channels-admin.monoforum-ban"
+ ],
+ "covers_partial": [],
+ "priority": "P3",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.discussion.list",
+ "path": "chat discussion list",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Groups eligible to become a channel's discussion group",
+ "args": [],
+ "flags": [
+  {
+   "name": "--limit/-n",
+   "type": "int",
+   "help": "Page size.",
+   "default": "50"
+  },
+  {
+   "name": "--cursor",
+   "type": "string",
+   "help": "Opaque page cursor from a previous call."
+  },
+  {
+   "name": "--all",
+   "type": "bool",
+   "help": "Walk every page inside the daemon (rate-limit aware)."
+  }
+ ],
+ "mutating": false,
+ "destructive": false,
+ "paginated": true,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "page",
+  "fields": [
+   "id",
+   "title",
+   "type",
+   "needs_migration",
+   "prehistory_hidden"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.channels.GetGroupsForDiscussionRequest()",
+  "raw": [
+   "channels.getGroupsForDiscussion"
+  ],
+  "rights": "owner of the candidate group",
+  "notes": "Returned basic groups must be converted with `chat convert <chat> supergroup` first; the flag is reported per row."
+ },
+ "covers": [
+  "groups-channels-admin.discussion-candidates"
+ ],
+ "covers_partial": [],
+ "priority": "P3",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.discussion.set",
+ "path": "chat discussion set",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Link a discussion group to a channel",
+ "args": [
+  {
+   "name": "channel",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "group",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--unhide-prehistory",
+   "type": "bool",
+   "help": "Set the group's prehistory to visible first (required by the server)."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "channel_id",
+   "linked_chat_id"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.channels.TogglePreHistoryHiddenRequest(enabled=False) then functions.channels.SetDiscussionGroupRequest(broadcast=, group=)",
+  "raw": [
+   "channels.setDiscussionGroup",
+   "channels.togglePreHistoryHidden"
+  ],
+  "rights": "owner of both peers",
+  "notes": "LINK_NOT_MODIFIED reports already=true."
+ },
+ "covers": [
+  "groups-channels-admin.discussion-link"
+ ],
+ "covers_partial": [],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.discussion.unset",
+ "path": "chat discussion unset",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Unlink a channel's discussion group",
+ "args": [
+  {
+   "name": "channel",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "channel_id",
+   "linked_chat_id"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.channels.SetDiscussionGroupRequest(broadcast=, group=types.InputChannelEmpty())",
+  "raw": [
+   "channels.setDiscussionGroup"
+  ],
+  "rights": "owner",
+  "notes": "Accepts the group side too (broadcast=InputChannelEmpty)."
+ },
+ "covers": [
+  "groups-channels-admin.discussion-unlink"
+ ],
+ "covers_partial": [],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.edit",
+ "path": "chat edit",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Edit a group/channel profile: title, about, location, colors, emoji status, default tab",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--title",
+   "type": "string",
+   "help": "New title (channels.editTitle / messages.editChatTitle)."
+  },
+  {
+   "name": "--about",
+   "type": "string",
+   "help": "New description, max 255 chars (messages.editChatAbout, works for every peer shape)."
+  },
+  {
+   "name": "--geo",
+   "type": "lat,lon|off",
+   "help": "Geogroup location; `off` clears it (channels.editLocation, needs can_set_location)."
+  },
+  {
+   "name": "--address",
+   "type": "string",
+   "help": "Street address that goes with --geo."
+  },
+  {
+   "name": "--color",
+   "type": "int|off",
+   "help": "Message accent palette id from `help.getPeerColors` (boost-gated)."
+  },
+  {
+   "name": "--color-emoji",
+   "type": "emoji-id|off",
+   "help": "Background custom-emoji pattern for --color."
+  },
+  {
+   "name": "--profile-color",
+   "type": "int|off",
+   "help": "Profile palette id from `help.getPeerProfileColors` (boost-gated)."
+  },
+  {
+   "name": "--profile-color-emoji",
+   "type": "emoji-id|off",
+   "help": "Background custom-emoji pattern for --profile-color."
+  },
+  {
+   "name": "--emoji-status",
+   "type": "emoji-id|off",
+   "help": "Channel/group emoji status (boost-gated)."
+  },
+  {
+   "name": "--emoji-status-until",
+   "type": "datetime|duration",
+   "help": "Expiry for --emoji-status."
+  },
+  {
+   "name": "--main-tab",
+   "type": "enum(posts|gifts|media|files|music|voice|links|gifs)",
+   "help": "Default profile tab (channels.setMainProfileTab)."
+  },
+  {
+   "name": "--palettes",
+   "type": "bool",
+   "help": "Do not edit: print the available colour palettes with the boost level each needs."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "id",
+   "changed"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.channels.EditTitleRequest / functions.messages.EditChatTitleRequest / functions.messages.EditChatAboutRequest / functions.channels.EditLocationRequest / functions.channels.UpdateColorRequest(for_profile=) / functions.channels.UpdateEmojiStatusRequest / functions.channels.SetMainProfileTabRequest(tab=types.ProfileTabPosts())",
+  "raw": [
+   "channels.editTitle",
+   "messages.editChatTitle",
+   "messages.editChatAbout",
+   "channels.editLocation",
+   "channels.updateColor",
+   "channels.updateEmojiStatus",
+   "channels.setMainProfileTab",
+   "help.getPeerColors",
+   "help.getPeerProfileColors",
+   "account.getDefaultBackgroundEmojis",
+   "account.getChannelDefaultEmojiStatuses",
+   "account.getChannelRestrictedStatusEmojis"
+  ],
+  "rights": "change-info (title/about/location); owner + boost level for colours, emoji status",
+  "notes": "One request per changed field, applied in a fixed order, reported in `changed`. A collectible emoji status wipes a custom profile palette and vice versa. Basic groups accept only --title/--about."
+ },
+ "covers": [
+  "groups-channels-admin.channel-emoji-status",
+  "groups-channels-admin.edit-about",
+  "groups-channels-admin.edit-title",
+  "groups-channels-admin.main-profile-tab",
+  "groups-channels-admin.peer-color-message",
+  "groups-channels-admin.peer-color-profile",
+  "groups-channels-admin.set-location",
+  "location.channel-geo"
+ ],
+ "covers_partial": [],
+ "priority": "P1",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "location.channel-geo",
+   "note": "delegated from messages_content: chat set <chat> --location <lat>,<lon> --address A (channels.editLocation). (keyword match in groups_channels_admin)"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.invite.create",
+ "path": "chat invite create",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Create an invite link (expiring, limited, approval-gated or paid)",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--title",
+   "type": "string",
+   "help": "Label shown to admins."
+  },
+  {
+   "name": "--expires",
+   "type": "datetime|duration",
+   "help": "Expiry (expire_date)."
+  },
+  {
+   "name": "--limit/-n",
+   "type": "int",
+   "help": "Maximum number of joins (usage_limit); mutually exclusive with --request-approval."
+  },
+  {
+   "name": "--request-approval",
+   "type": "bool",
+   "help": "Joins land in the approval queue instead (request_needed)."
+  },
+  {
+   "name": "--subscription-stars",
+   "type": "int",
+   "help": "Paid subscription link: Stars per 30-day period."
+  },
+  {
+   "name": "--replace-primary",
+   "type": "bool",
+   "help": "Revoke and replace the chat's permanent link (legacy_revoke_permanent)."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "link",
+   "title",
+   "permanent",
+   "expire_date",
+   "usage_limit",
+   "request_needed",
+   "subscription_pricing",
+   "replaced"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.ExportChatInviteRequest(peer=, title=, expire_date=, usage_limit=, request_needed=, subscription_pricing=types.StarsSubscriptionPricing(period=2592000, amount=N), legacy_revoke_permanent=)",
+  "raw": [
+   "messages.exportChatInvite"
+  ],
+  "rights": "invite-users",
+  "notes": "--limit and --request-approval are mutually exclusive (server rule). Subscription period is fixed at 30 days and the amount is capped by appConfig stars_subscription_amount_max; creating the link costs nothing, only joining does. --replace-primary invalidates the old permanent link for everyone."
+ },
+ "covers": [
+  "groups-channels-admin.invite-link-create",
+  "groups-channels-admin.invite-link-primary",
+  "groups-channels-admin.invite-link-subscription"
+ ],
+ "covers_partial": [],
+ "priority": "P0",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.invite.delete",
+ "path": "chat invite delete",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Delete a revoked invite link, or every revoked link of an admin",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "link",
+   "type": "string",
+   "required": false
+  }
+ ],
+ "flags": [
+  {
+   "name": "--revoked",
+   "type": "bool",
+   "help": "Delete all revoked links instead of one."
+  },
+  {
+   "name": "--admin",
+   "type": "user",
+   "help": "With --revoked: whose links to purge.",
+   "default": "me"
+  },
+  {
+   "name": "--yes/-y",
+   "type": "bool",
+   "help": "Required off a TTY."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": true,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "deleted"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.DeleteExportedChatInviteRequest(peer=, link=) / functions.messages.DeleteRevokedExportedChatInvitesRequest(peer=, admin_id=)",
+  "raw": [
+   "messages.deleteExportedChatInvite",
+   "messages.deleteRevokedExportedChatInvites"
+  ],
+  "rights": "invite-users",
+  "notes": "Only revoked links can be deleted; active ones must be revoked first."
+ },
+ "covers": [
+  "groups-channels-admin.invite-link-delete",
+  "groups-channels-admin.invite-link-delete-all-revoked"
+ ],
+ "covers_partial": [],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.invite.edit",
+ "path": "chat invite edit",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Edit an invite link",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "link",
+   "type": "string",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--title",
+   "type": "string",
+   "help": "New label."
+  },
+  {
+   "name": "--expires",
+   "type": "datetime|duration|off",
+   "help": "New expiry."
+  },
+  {
+   "name": "--limit/-n",
+   "type": "int|off",
+   "help": "New usage limit."
+  },
+  {
+   "name": "--request-approval",
+   "type": "on|off",
+   "help": "Turn the approval queue on or off."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "link",
+   "title",
+   "expire_date",
+   "usage_limit",
+   "request_needed",
+   "replaced_link"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.EditExportedChatInviteRequest(peer=, link=, title=, expire_date=, usage_limit=, request_needed=)",
+  "raw": [
+   "messages.editExportedChatInvite"
+  ],
+  "rights": "invite-users; the owner may edit other admins' links",
+  "notes": "May return messages.exportedChatInviteReplaced - both links are reported (link + replaced_link). Subscription links accept only --title."
+ },
+ "covers": [
+  "groups-channels-admin.invite-link-edit"
+ ],
+ "covers_partial": [],
+ "priority": "P1",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.invite.get",
+ "path": "chat invite get",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Inspect one invite link, the primary link, or preview a link you were given",
+ "args": [
+  {
+   "name": "target",
+   "type": "chat|invite-link",
+   "required": true
+  },
+  {
+   "name": "link",
+   "type": "string",
+   "required": false
+  }
+ ],
+ "flags": [
+  {
+   "name": "--qr",
+   "type": "bool",
+   "help": "Also render the link as a QR code (ASCII in the terminal)."
+  },
+  {
+   "name": "--png",
+   "type": "path",
+   "help": "Write the QR code to a PNG file."
+  }
+ ],
+ "mutating": false,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "link",
+   "title",
+   "permanent",
+   "revoked",
+   "request_needed",
+   "admin_id",
+   "expire_date",
+   "usage_limit",
+   "usage",
+   "requested",
+   "subscription_pricing",
+   "chat",
+   "members_count",
+   "already_member",
+   "peek_expires",
+   "qr"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.GetExportedChatInviteRequest(peer=, link=) with two args; functions.messages.CheckChatInviteRequest(hash=) when the single argument is a t.me/+hash or joinchat link; the primary link comes from channelFull.exported_invite when only a chat is given",
+  "raw": [
+   "messages.getExportedChatInvite",
+   "messages.checkChatInvite",
+   "channels.getFullChannel",
+   "messages.getFullChat"
+  ],
+  "rights": "invite-users to inspect your chat's links; none to preview a link you hold",
+  "notes": "checkChatInvite returns chatInvite (not joined), chatInviteAlready (already_member=true) or chatInvitePeek (peek_expires set - see `chat invite open`). The QR code is rendered locally; the API contributes nothing beyond the link."
+ },
+ "covers": [
+  "groups-channels-admin.check-invite",
+  "groups-channels-admin.invite-link-get",
+  "groups-channels-admin.invite-link-qr"
+ ],
+ "covers_partial": [
+  "groups-channels-admin.invite-link-primary"
+ ],
+ "priority": "P1",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "groups-channels-admin.invite-link-primary",
+   "note": "partial: primary owner is `chat invite create`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.invite.list",
+ "path": "chat invite list",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "List a chat's invite links (active, revoked, or grouped by admin)",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--admin",
+   "type": "user",
+   "help": "Whose links to list; the API requires one, so it defaults to me.",
+   "default": "me"
+  },
+  {
+   "name": "--revoked",
+   "type": "bool",
+   "help": "Revoked links instead of active ones."
+  },
+  {
+   "name": "--by-admin",
+   "type": "bool",
+   "help": "Return one row per admin with their active/revoked link counts instead of the links."
+  },
+  {
+   "name": "--limit/-n",
+   "type": "int",
+   "help": "Page size.",
+   "default": "50"
+  },
+  {
+   "name": "--cursor",
+   "type": "string",
+   "help": "Opaque page cursor from a previous call."
+  },
+  {
+   "name": "--all",
+   "type": "bool",
+   "help": "Walk every page inside the daemon (rate-limit aware)."
+  }
+ ],
+ "mutating": false,
+ "destructive": false,
+ "paginated": true,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "page",
+  "fields": [
+   "link",
+   "title",
+   "permanent",
+   "revoked",
+   "request_needed",
+   "admin_id",
+   "date",
+   "start_date",
+   "expire_date",
+   "usage_limit",
+   "usage",
+   "requested",
+   "subscription_pricing",
+   "subscription_expired",
+   "date_unix"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.GetExportedChatInvitesRequest(peer=, admin_id=, revoked=, offset_date=, offset_link=, limit=) / functions.messages.GetAdminsWithInvitesRequest(peer=)",
+  "raw": [
+   "messages.getExportedChatInvites",
+   "messages.getAdminsWithInvites"
+  ],
+  "rights": "invite-users; only the owner sees other admins' links",
+  "notes": "admin_id is mandatory in the request - InputUserSelf by default. The cursor packs the (date, link) pair of the last row."
+ },
+ "covers": [
+  "groups-channels-admin.invite-link-admins",
+  "groups-channels-admin.invite-link-list"
+ ],
+ "covers_partial": [],
+ "priority": "P1",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.invite.open",
+ "path": "chat invite open",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Read a private channel through an invite peek, without joining",
+ "args": [
+  {
+   "name": "link",
+   "type": "invite-link",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--limit/-n",
+   "type": "int",
+   "help": "How many recent messages to print.",
+   "default": "20"
+  }
+ ],
+ "mutating": false,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat",
+   "peek_expires",
+   "messages"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.CheckChatInviteRequest(hash=) -> types.ChatInvitePeek, then client.get_messages(peek.chat, limit=)",
+  "raw": [
+   "messages.checkChatInvite",
+   "messages.getHistory",
+   "channels.getMessages"
+  ],
+  "rights": "none",
+  "notes": "Only works when the server answers with chatInvitePeek. peek_expires is reported so scripts know the window; reading after it returns CHANNEL_PRIVATE (exit 6). The peer is dropped from the cache when the peek expires."
+ },
+ "covers": [
+  "groups-channels-admin.invite-peek"
+ ],
+ "covers_partial": [],
+ "priority": "P3",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.invite.revoke",
+ "path": "chat invite revoke",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Revoke an invite link",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "link",
+   "type": "string",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--yes/-y",
+   "type": "bool",
+   "help": "Required off a TTY."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": true,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "link",
+   "revoked",
+   "replaced_link"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.EditExportedChatInviteRequest(peer=, link=, revoked=True)",
+  "raw": [
+   "messages.editExportedChatInvite"
+  ],
+  "rights": "invite-users",
+  "notes": "Revoked links stay listable with `chat invite list --revoked`. Revoking the permanent link replaces it and returns the new one."
+ },
+ "covers": [
+  "groups-channels-admin.invite-link-revoke"
+ ],
+ "covers_partial": [],
+ "priority": "P1",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.join",
+ "path": "chat join",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Join a public group/channel, or a private one by invite link",
+ "args": [
+  {
+   "name": "target",
+   "type": "chat|invite-link",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "title",
+   "joined",
+   "pending_approval",
+   "already"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.channels.JoinChannelRequest(channel=) for @username/id; functions.messages.ImportChatInviteRequest(hash=) for t.me/+hash and joinchat links",
+  "raw": [
+   "contacts.resolveUsername",
+   "channels.joinChannel",
+   "messages.importChatInvite"
+  ],
+  "rights": "none",
+  "notes": "Link regex @(?:t|telegram)\\.(?:me|dog)/(joinchat/|\\+)?([\\w-]+)@i. INVITE_REQUEST_SENT is success-with-pending (exit 0, pending_approval=true), USER_ALREADY_PARTICIPANT is already=true (exit 0), INVITE_HASH_EXPIRED exits 5. Layer 229 returns messages.ChatInviteJoinResult, which may carry a web-view step the CLI cannot complete - report it instead of pretending to have joined."
+ },
+ "covers": [
+  "groups-channels-admin.join-by-invite",
+  "groups-channels-admin.join-by-username"
+ ],
+ "covers_partial": [],
+ "priority": "P0",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.member.add",
+ "path": "chat member add",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Add members to a group or channel",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "user",
+   "type": "user",
+   "required": true,
+   "variadic": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--forward-history",
+   "type": "int",
+   "help": "Basic groups: how many past messages the new member sees (fwd_limit).",
+   "default": "0"
+  },
+  {
+   "name": "--invite-link-fallback",
+   "type": "bool",
+   "help": "DM the invite link to everyone who could not be added (opt-in, sends a message)."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "added",
+   "missing"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.channels.InviteToChannelRequest(channel=, users=[...]) / functions.messages.AddChatUserRequest(chat_id=, user_id=, fwd_limit=)",
+  "raw": [
+   "channels.inviteToChannel",
+   "messages.addChatUser",
+   "messages.exportChatInvite",
+   "messages.sendMessage"
+  ],
+  "rights": "invite-users",
+  "notes": "messages.invitedUsers.missing_invitees is emitted verbatim as [{user_id, reason}] with reason in {privacy-restricted, premium-would-allow-invite, premium-required-for-pm}; exit 1 when any invitee is missing. Channels cap the members you personally added at ~200; USER_PRIVACY_RESTRICTED / USER_NOT_MUTUAL_CONTACT are mapped to exit 6."
+ },
+ "covers": [
+  "groups-channels-admin.add-members",
+  "groups-channels-admin.add-members-failure-report"
+ ],
+ "covers_partial": [],
+ "priority": "P0",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.member.ban",
+ "path": "chat member ban",
+ "aliases": [
+  "chat ban"
+ ],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Ban a member, optionally purging and reporting them in one step",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "user",
+   "type": "user",
+   "required": true,
+   "variadic": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--until",
+   "type": "duration|datetime",
+   "help": "Ban expiry; 0, under 30 s or over 366 d all mean forever.",
+   "default": "forever"
+  },
+  {
+   "name": "--purge",
+   "type": "bool",
+   "help": "Delete every message the user ever sent in this chat."
+  },
+  {
+   "name": "--messages",
+   "type": "int",
+   "help": "Also delete these message ids; repeatable.",
+   "repeatable": true
+  },
+  {
+   "name": "--report",
+   "type": "bool",
+   "help": "Report the messages as spam (channels.reportSpam)."
+  },
+  {
+   "name": "--yes/-y",
+   "type": "bool",
+   "help": "Required off a TTY."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": true,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "user_id",
+   "until",
+   "purged_messages",
+   "reported"
+  ]
+ },
+ "impl": {
+  "telethon": "client.edit_permissions(chat, user, view_messages=False, until_date=) / raw functions.channels.EditBannedRequest(participant=InputPeer, banned_rights=types.ChatBannedRights(view_messages=True, until_date=))",
+  "raw": [
+   "channels.editBanned",
+   "channels.deleteParticipantHistory",
+   "channels.deleteMessages",
+   "channels.reportSpam",
+   "messages.deleteChatUser"
+  ],
+  "rights": "ban-users (+ delete-messages for --purge/--messages)",
+  "notes": "This is the GUI's moderate box: --purge --report --messages reproduces it in one confirm. participant is an InputPeer, so a channel posting in the group (or an anonymous admin's channel) can be banned too. Basic groups only support the plain removal (messages.deleteChatUser)."
+ },
+ "covers": [
+  "groups-channels-admin.ban-member",
+  "groups-channels-admin.moderate-member"
+ ],
+ "covers_partial": [
+  "groups-channels-admin.delete-member-history",
+  "groups-channels-admin.report-member"
+ ],
+ "priority": "P1",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "groups-channels-admin.delete-member-history",
+   "note": "partial: primary owner is `chat member delete-history`"
+  },
+  {
+   "id": "groups-channels-admin.report-member",
+   "note": "partial: primary owner is `chat member report`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.member.delete_history",
+ "path": "chat member delete-history",
+ "aliases": [
+  "chat member purge"
+ ],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Delete every message one member ever sent",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "user",
+   "type": "user",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--yes/-y",
+   "type": "bool",
+   "help": "Required off a TTY."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": true,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "user_id",
+   "deleted"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.channels.DeleteParticipantHistoryRequest(channel=, participant=)",
+  "raw": [
+   "channels.deleteParticipantHistory"
+  ],
+  "rights": "delete-messages",
+  "notes": "Supergroups/channels only. Returns messages.affectedHistory and is re-invoked while offset != 0; the loop runs in the daemon."
+ },
+ "covers": [
+  "groups-channels-admin.delete-member-history"
+ ],
+ "covers_partial": [],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.member.edit",
+ "path": "chat member edit",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Edit a member's custom rank and paid-message exception",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "user",
+   "type": "user",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--rank",
+   "type": "string",
+   "help": "Custom title, max 16 chars, no emoji (`me` as <user> sets your own)."
+  },
+  {
+   "name": "--free-messages",
+   "type": "on|off",
+   "help": "Let this user message the channel without paying Stars."
+  },
+  {
+   "name": "--refund",
+   "type": "bool",
+   "help": "With --free-messages on: refund the Stars they already paid."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "user_id",
+   "rank",
+   "free_messages"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.EditChatParticipantRankRequest(peer=, participant=, rank=) / functions.account.ToggleNoPaidMessagesExceptionRequest(user_id=, parent_peer=, refund_charged=)",
+  "raw": [
+   "messages.editChatParticipantRank",
+   "channels.editAdmin",
+   "account.toggleNoPaidMessagesException"
+  ],
+  "rights": "manage-ranks for other people's rank; your own needs edit-rank in the effective mask",
+  "notes": "Shows up as message.from_rank in supergroups and chatParticipant.rank in basic groups. `chat admin promote --rank` sets the same field for admins."
+ },
+ "covers": [
+  "groups-channels-admin.paid-messages-price"
+ ],
+ "covers_partial": [
+  "groups-channels-admin.member-tag-rank"
+ ],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "groups-channels-admin.member-tag-rank",
+   "note": "partial: primary owner is `chat admin promote`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.member.get",
+ "path": "chat member get",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "One member's status, rights, rank, join date and inviter",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "user",
+   "type": "user",
+   "required": true
+  }
+ ],
+ "flags": [],
+ "mutating": false,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "user_id",
+   "status",
+   "rank",
+   "date",
+   "inviter_id",
+   "promoted_by",
+   "kicked_by",
+   "via_request",
+   "subscription_until_date",
+   "admin_rights",
+   "banned_rights",
+   "effective_permissions",
+   "can_edit",
+   "date_unix"
+  ]
+ },
+ "impl": {
+  "telethon": "client.get_permissions(chat, user) -> ParticipantPermissions plus .participant for the layer-229 rights the wrapper lacks; raw functions.channels.GetParticipantRequest",
+  "raw": [
+   "channels.getParticipant",
+   "messages.getFullChat"
+  ],
+  "rights": "none (admin for banned/kicked members)",
+  "notes": "effective_permissions = chat defaults patched with the member's banned_rights, printed in the same allow-polarity vocabulary as `chat permission get`. UserNotParticipantError exits 5."
+ },
+ "covers": [
+  "groups-channels-admin.member-get",
+  "groups-channels-admin.member-invited-by",
+  "groups-channels-admin.member-permissions-view"
+ ],
+ "covers_partial": [],
+ "priority": "P1",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.member.list",
+ "path": "chat member list",
+ "aliases": [
+  "chat members"
+ ],
+ "legacy_paths": [
+  "chat members"
+ ],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "List members with the participant filters the API offers",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--filter",
+   "type": "enum(recent|admins|bots|contacts|kicked|banned|restricted|mentions)",
+   "help": "recent (default), admins, bots, contacts, kicked (= removed), banned/restricted (= restricted, still in the chat), mentions (@-autocomplete: also returns thread commenters who are not members).",
+   "default": "recent"
+  },
+  {
+   "name": "--search",
+   "type": "string",
+   "help": "Server-side name query (q= on the Search/Banned/Kicked/Contacts/Mentions filters)."
+  },
+  {
+   "name": "--topic",
+   "type": "int",
+   "help": "With --filter mentions: scope the autocomplete to one forum topic (top_msg_id)."
+  },
+  {
+   "name": "--via-link",
+   "type": "string",
+   "help": "Only people who joined through this invite link (messages.getChatInviteImporters)."
+  },
+  {
+   "name": "--subscription-expired",
+   "type": "bool",
+   "help": "With --via-link: lapsed paid (Stars) subscribers instead of current ones."
+  },
+  {
+   "name": "--bots",
+   "type": "bool",
+   "help": "Shorthand for --filter bots."
+  },
+  {
+   "name": "--limit/-n",
+   "type": "int",
+   "help": "Page size.",
+   "default": "50"
+  },
+  {
+   "name": "--cursor",
+   "type": "string",
+   "help": "Opaque page cursor from a previous call."
+  },
+  {
+   "name": "--all",
+   "type": "bool",
+   "help": "Walk every page inside the daemon (rate-limit aware)."
+  }
+ ],
+ "mutating": false,
+ "destructive": false,
+ "paginated": true,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "page",
+  "fields": [
+   "id",
+   "username",
+   "name",
+   "is_bot",
+   "status",
+   "rank",
+   "date",
+   "inviter_id",
+   "promoted_by",
+   "kicked_by",
+   "via_request",
+   "subscription_until_date",
+   "admin_rights",
+   "banned_rights",
+   "can_edit",
+   "date_unix"
+  ]
+ },
+ "impl": {
+  "telethon": "client.iter_participants(chat, filter=, search=) for recent/admins/bots/contacts/search (it works around the ~200-entry Recent cap with the search alphabet); raw functions.channels.GetParticipantsRequest for Kicked/Banned/Mentions; functions.messages.GetChatInviteImportersRequest for --via-link; chatFull.participants for basic groups",
+  "raw": [
+   "channels.getParticipants",
+   "messages.getFullChat",
+   "messages.getChatInviteImporters"
+  ],
+  "rights": "none for public chats; ban-users to see kicked/banned; admin when channelFull.participants_hidden",
+  "notes": "Never flattens to plain users: the raw ChannelParticipant* is mapped to status/rank/rights/date/inviter. participants_hidden yields exit 6 with a clear message, not an empty page. --all walks in the daemon with flood-wait backoff. Cursor is the opaque (filter, offset) pair, or (offset_date, offset_user) for --via-link."
+ },
+ "covers": [
+  "groups-channels-admin.banned-list",
+  "groups-channels-admin.channel-subscriptions-admin",
+  "groups-channels-admin.invite-link-importers",
+  "groups-channels-admin.member-mention-autocomplete",
+  "groups-channels-admin.members-list"
+ ],
+ "covers_partial": [
+  "groups-channels-admin.admin-list"
+ ],
+ "priority": "P0",
+ "pr": 7,
+ "existing": "keeps:chat members",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "groups-channels-admin.admin-list",
+   "note": "partial: primary owner is `chat admin list`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.member.remove",
+ "path": "chat member remove",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Remove (kick) a member; they can rejoin",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "user",
+   "type": "user",
+   "required": true,
+   "variadic": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--purge",
+   "type": "bool",
+   "help": "Also delete every message that user ever sent (channels.deleteParticipantHistory)."
+  },
+  {
+   "name": "--messages",
+   "type": "int",
+   "help": "Delete these specific message ids as well; repeatable.",
+   "repeatable": true
+  },
+  {
+   "name": "--report",
+   "type": "bool",
+   "help": "Report the messages as spam at the same time."
+  },
+  {
+   "name": "--yes/-y",
+   "type": "bool",
+   "help": "Required off a TTY."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": true,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "user_id",
+   "removed",
+   "purged_messages",
+   "reported"
+  ]
+ },
+ "impl": {
+  "telethon": "client.kick_participant(chat, user) (ban then unban, 0.5 s apart) / raw functions.channels.EditBannedRequest + functions.messages.DeleteChatUserRequest",
+  "raw": [
+   "channels.editBanned",
+   "messages.deleteChatUser",
+   "channels.deleteParticipantHistory",
+   "channels.deleteMessages",
+   "channels.reportSpam"
+  ],
+  "rights": "ban-users (delete-messages for --purge/--messages)",
+  "notes": "Kick is not an API verb: it is editBanned(view_messages=True) followed by an empty mask, so the user may rejoin. Use `chat member ban` to keep them out. --purge loops messages.affectedHistory while offset != 0."
+ },
+ "covers": [
+  "groups-channels-admin.remove-member"
+ ],
+ "covers_partial": [
+  "groups-channels-admin.delete-member-history",
+  "groups-channels-admin.report-member"
+ ],
+ "priority": "P0",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "groups-channels-admin.delete-member-history",
+   "note": "partial: primary owner is `chat member delete-history`"
+  },
+  {
+   "id": "groups-channels-admin.report-member",
+   "note": "partial: primary owner is `chat member report`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.member.report",
+ "path": "chat member report",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Report a member (and optionally their messages) as spam",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "user",
+   "type": "user",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--messages",
+   "type": "int",
+   "help": "Message ids to attach to the report; repeatable.",
+   "repeatable": true
+  },
+  {
+   "name": "--yes/-y",
+   "type": "bool",
+   "help": "Required off a TTY."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "user_id",
+   "reported"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.channels.ReportSpamRequest(channel=, participant=, id=[...])",
+  "raw": [
+   "channels.reportSpam"
+  ],
+  "rights": "any member; admins get the moderation effect",
+  "notes": "Reporting the chat itself is `chat report` (dialogs_contacts). The server-driven multi-step option tree lives there too."
+ },
+ "covers": [
+  "groups-channels-admin.report-member"
+ ],
+ "covers_partial": [],
+ "priority": "P3",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.member.restrict",
+ "path": "chat member restrict",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Restrict what one member may do, with an expiry",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "user",
+   "type": "user",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--deny",
+   "type": "rights",
+   "help": "Comma-separated canonical right names (see `chat permission list`). Member mask: view-messages, send-messages, send-media, send-photos, send-videos, send-audios, send-docs, send-voices, send-rounds, send-stickers, send-gifs, send-games, send-inline, send-polls, send-plain, send-reactions, embed-links, change-info, invite-users, pin-messages, manage-topics, edit-rank, manage-linked-peers*. Listed rights are taken away."
+  },
+  {
+   "name": "--allow",
+   "type": "rights",
+   "help": "Comma-separated canonical right names (see `chat permission list`). Member mask: view-messages, send-messages, send-media, send-photos, send-videos, send-audios, send-docs, send-voices, send-rounds, send-stickers, send-gifs, send-games, send-inline, send-polls, send-plain, send-reactions, embed-links, change-info, invite-users, pin-messages, manage-topics, edit-rank, manage-linked-peers*. Listed rights are given back."
+  },
+  {
+   "name": "--none",
+   "type": "bool",
+   "help": "Deny everything except view-messages (read-only member)."
+  },
+  {
+   "name": "--all",
+   "type": "bool",
+   "help": "Allow everything (same as --clear)."
+  },
+  {
+   "name": "--clear",
+   "type": "bool",
+   "help": "Drop the per-user mask; the member falls back to the chat defaults."
+  },
+  {
+   "name": "--replace",
+   "type": "bool",
+   "help": "Treat --deny/--allow as the complete mask instead of patching the current one."
+  },
+  {
+   "name": "--until",
+   "type": "duration|datetime",
+   "help": "When the restriction lapses.",
+   "default": "forever"
+  },
+  {
+   "name": "--purge",
+   "type": "bool",
+   "help": "Also delete every message the user sent."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "user_id",
+   "allow",
+   "deny",
+   "until"
+  ]
+ },
+ "impl": {
+  "telethon": "client.edit_permissions(chat, user, until_date=, **allowed) for the legacy subset; raw functions.channels.EditBannedRequest(participant=InputPeer, banned_rights=types.ChatBannedRights(...)) for send_photos/videos/audios/docs/voices/roundvideos/plain, manage_topics, edit_rank and send_reactions",
+  "raw": [
+   "channels.editBanned",
+   "channels.deleteParticipantHistory"
+  ],
+  "rights": "ban-users",
+  "notes": "Read-modify-write of the member's current banned_rights (a fresh mask resets every flag you omit). until_date rounding: 0, <30 s or >366 d = forever. Supergroups only; basic groups have no per-user mask (use `chat permission set`)."
+ },
+ "covers": [
+  "groups-channels-admin.restrict-member"
+ ],
+ "covers_partial": [],
+ "priority": "P1",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.member.unban",
+ "path": "chat member unban",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Lift a ban or a restriction",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "user",
+   "type": "user",
+   "required": true,
+   "variadic": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "user_id",
+   "already"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.channels.EditBannedRequest(banned_rights=types.ChatBannedRights(until_date=0))",
+  "raw": [
+   "channels.editBanned"
+  ],
+  "rights": "ban-users",
+  "notes": "Sends an all-clear mask; the user is removed from the Removed/Restricted lists but is not re-added to the chat."
+ },
+ "covers": [
+  "groups-channels-admin.unban-member"
+ ],
+ "covers_partial": [],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.permission.get",
+ "path": "chat permission get",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Show the chat-wide default permissions (what every member may do)",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [],
+ "mutating": false,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "allow",
+   "deny",
+   "rights"
+  ]
+ },
+ "impl": {
+  "telethon": "client.get_permissions(chat) / channel.default_banned_rights from the cached or full entity",
+  "raw": [
+   "channels.getFullChannel",
+   "messages.getFullChat"
+  ],
+  "rights": "none",
+  "notes": "Printed in allow-polarity with the same names `chat permission set --allow/--deny` accepts, so the output round-trips."
+ },
+ "covers": [],
+ "covers_partial": [
+  "groups-channels-admin.default-permissions"
+ ],
+ "priority": "P1",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "groups-channels-admin.default-permissions",
+   "note": "partial: primary owner is `chat permission set`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.permission.list",
+ "path": "chat permission list",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Print the canonical right vocabulary (admin mask, member mask, layer support)",
+ "args": [],
+ "flags": [
+  {
+   "name": "--mask",
+   "type": "enum(admin|member|all)",
+   "help": "Which vocabulary to print.",
+   "default": "all"
+  },
+  {
+   "name": "--chat",
+   "type": "chat",
+   "help": "Also mark which rights you may currently grant or deny in this chat."
+  }
+ ],
+ "mutating": false,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": false,
+ "output": {
+  "shape": "list",
+  "fields": [
+   "name",
+   "mask",
+   "tl_flag",
+   "polarity",
+   "supported",
+   "since_layer",
+   "peer_types"
+  ]
+ },
+ "impl": {
+  "telethon": "static table + optional functions.channels.GetParticipantRequest for the caller's own rights",
+  "raw": [],
+  "rights": "none",
+  "notes": "The single source of truth for --rights / --allow / --deny across `chat admin promote`, `chat member restrict` and `chat permission set`. Marks manage-linked-peers and manage-welcome-messages as layer-229 flags absent from Telethon 227 (supported=false)."
+ },
+ "covers": [],
+ "covers_partial": [
+  "groups-channels-admin.default-permissions",
+  "groups-channels-admin.promote-admin",
+  "groups-channels-admin.restrict-member"
+ ],
+ "priority": "P1",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "groups-channels-admin.promote-admin",
+   "note": "partial: primary owner is `chat admin promote`"
+  },
+  {
+   "id": "groups-channels-admin.restrict-member",
+   "note": "partial: primary owner is `chat member restrict`"
+  },
+  {
+   "id": "groups-channels-admin.default-permissions",
+   "note": "partial: primary owner is `chat permission set`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.permission.set",
+ "path": "chat permission set",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Set the chat-wide default permissions",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--allow",
+   "type": "rights",
+   "help": "Comma-separated canonical right names (see `chat permission list`). Member mask: view-messages, send-messages, send-media, send-photos, send-videos, send-audios, send-docs, send-voices, send-rounds, send-stickers, send-gifs, send-games, send-inline, send-polls, send-plain, send-reactions, embed-links, change-info, invite-users, pin-messages, manage-topics, edit-rank, manage-linked-peers*. Listed rights are permitted."
+  },
+  {
+   "name": "--deny",
+   "type": "rights",
+   "help": "Comma-separated canonical right names (see `chat permission list`). Member mask: view-messages, send-messages, send-media, send-photos, send-videos, send-audios, send-docs, send-voices, send-rounds, send-stickers, send-gifs, send-games, send-inline, send-polls, send-plain, send-reactions, embed-links, change-info, invite-users, pin-messages, manage-topics, edit-rank, manage-linked-peers*. Listed rights are forbidden."
+  },
+  {
+   "name": "--all",
+   "type": "bool",
+   "help": "Allow everything (empty banned mask)."
+  },
+  {
+   "name": "--none",
+   "type": "bool",
+   "help": "Deny everything except view-messages."
+  },
+  {
+   "name": "--replace",
+   "type": "bool",
+   "help": "Treat --allow/--deny as the complete mask instead of patching the current one."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "allow",
+   "deny",
+   "changed"
+  ]
+ },
+ "impl": {
+  "telethon": "client.edit_permissions(chat, user=None, **allowed) for the legacy subset; raw functions.messages.EditChatDefaultBannedRightsRequest(peer=, banned_rights=types.ChatBannedRights(...)) for the full mask",
+  "raw": [
+   "messages.editChatDefaultBannedRights"
+  ],
+  "rights": "change-info / ban-users (owner in basic groups)",
+  "notes": "Read-modify-write: the current default_banned_rights are fetched and patched, because sending a fresh mask resets every flag you did not mention. view-messages is not settable here; until_date is ignored. Works for basic groups too."
+ },
+ "covers": [
+  "groups-channels-admin.default-permissions"
+ ],
+ "covers_partial": [],
+ "priority": "P1",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.photo.delete",
+ "path": "chat photo delete",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Remove the group/channel photo",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "ok"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.channels.EditPhotoRequest(photo=types.InputChatPhotoEmpty()) / functions.messages.EditChatPhotoRequest",
+  "raw": [
+   "channels.editPhoto",
+   "messages.editChatPhoto"
+  ],
+  "rights": "change-info",
+  "notes": ""
+ },
+ "covers": [
+  "groups-channels-admin.remove-photo"
+ ],
+ "covers_partial": [],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.photo.set",
+ "path": "chat photo set",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Set the group/channel photo (still, video or emoji avatar)",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "file",
+   "type": "path",
+   "required": false
+  }
+ ],
+ "flags": [
+  {
+   "name": "--video",
+   "type": "path",
+   "help": "Animated avatar; the file is uploaded as the video part."
+  },
+  {
+   "name": "--video-start",
+   "type": "float",
+   "help": "Seconds into --video to use as the still frame."
+  },
+  {
+   "name": "--emoji-markup",
+   "type": "emoji-id",
+   "help": "Build the avatar from a custom emoji instead of a file."
+  },
+  {
+   "name": "--emoji-bg",
+   "type": "string",
+   "help": "Background palette id list for --emoji-markup (from account.getDefaultGroupPhotoEmojis)."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "photo_id"
+  ]
+ },
+ "impl": {
+  "telethon": "client.upload_file then raw functions.channels.EditPhotoRequest(photo=types.InputChatUploadedPhoto(file=, video=, video_start_ts=, video_emoji_markup=)) / functions.messages.EditChatPhotoRequest",
+  "raw": [
+   "channels.editPhoto",
+   "messages.editChatPhoto",
+   "account.getDefaultGroupPhotoEmojis",
+   "messages.getEmojiProfilePhotoGroups"
+  ],
+  "rights": "change-info",
+  "notes": "Exactly one of <file>, --video, --emoji-markup is required."
+ },
+ "covers": [
+  "chat.photo-set",
+  "groups-channels-admin.edit-photo"
+ ],
+ "covers_partial": [],
+ "priority": "P1",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "chat.photo-set",
+   "note": "delegated from media_stickers: Group/channel avatar needs change_info and lives on `chat photo set` (messages.editChatPhoto / channels.editPh (catalog cli.proposed)"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.request.approve",
+ "path": "chat request approve",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Approve join requests",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "user",
+   "type": "user",
+   "required": false,
+   "variadic": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--all",
+   "type": "bool",
+   "help": "Approve every pending request (optionally limited to --link)."
+  },
+  {
+   "name": "--link",
+   "type": "string",
+   "help": "With --all: only requests from this invite link."
+  },
+  {
+   "name": "--yes/-y",
+   "type": "bool",
+   "help": "Required with --all off a TTY."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "approved",
+   "failed"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.HideChatJoinRequestRequest(peer=, user_id=, approved=True) / functions.messages.HideAllChatJoinRequestsRequest(peer=, link=, approved=True)",
+  "raw": [
+   "messages.hideChatJoinRequest",
+   "messages.hideAllChatJoinRequests"
+  ],
+  "rights": "invite-users",
+  "notes": "Per-user failures are collected instead of aborting the batch."
+ },
+ "covers": [
+  "groups-channels-admin.join-request-approve-all"
+ ],
+ "covers_partial": [
+  "groups-channels-admin.join-request-approve-one"
+ ],
+ "priority": "P1",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "groups-channels-admin.join-request-approve-one",
+   "note": "partial: primary owner is `chat request deny`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.request.deny",
+ "path": "chat request deny",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Decline join requests",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "user",
+   "type": "user",
+   "required": false,
+   "variadic": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--all",
+   "type": "bool",
+   "help": "Decline every pending request (optionally limited to --link)."
+  },
+  {
+   "name": "--link",
+   "type": "string",
+   "help": "With --all: only requests from this invite link."
+  },
+  {
+   "name": "--yes/-y",
+   "type": "bool",
+   "help": "Required with --all off a TTY."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": true,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "denied",
+   "failed"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.HideChatJoinRequestRequest(approved=False) / functions.messages.HideAllChatJoinRequestsRequest(approved=False)",
+  "raw": [
+   "messages.hideChatJoinRequest",
+   "messages.hideAllChatJoinRequests"
+  ],
+  "rights": "invite-users",
+  "notes": "A declined user may request again after a server-side cooldown."
+ },
+ "covers": [
+  "groups-channels-admin.join-request-approve-one"
+ ],
+ "covers_partial": [
+  "groups-channels-admin.join-request-approve-all"
+ ],
+ "priority": "P1",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "groups-channels-admin.join-request-approve-all",
+   "note": "partial: primary owner is `chat request approve`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.request.list",
+ "path": "chat request list",
+ "aliases": [
+  "chat join-requests"
+ ],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "List pending join requests",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--link",
+   "type": "string",
+   "help": "Only requests that came through this invite link."
+  },
+  {
+   "name": "--search",
+   "type": "string",
+   "help": "Filter by name (q=)."
+  },
+  {
+   "name": "--limit/-n",
+   "type": "int",
+   "help": "Page size.",
+   "default": "50"
+  },
+  {
+   "name": "--cursor",
+   "type": "string",
+   "help": "Opaque page cursor from a previous call."
+  },
+  {
+   "name": "--all",
+   "type": "bool",
+   "help": "Walk every page inside the daemon (rate-limit aware)."
+  },
+  {
+   "name": "--approve",
+   "type": "user",
+   "help": "Approve one requester.",
+   "repeatable": true
+  },
+  {
+   "name": "--decline",
+   "type": "user",
+   "help": "Decline one requester.",
+   "repeatable": true
+  },
+  {
+   "name": "--approve-all",
+   "type": "bool"
+  },
+  {
+   "name": "--decline-all",
+   "type": "bool"
+  },
+  {
+   "name": "--community",
+   "type": "bool",
+   "help": "Target a layer-229 community's peer-link requests."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": true,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "page",
+  "fields": [
+   "user_id",
+   "username",
+   "name",
+   "date",
+   "about",
+   "via_link",
+   "date_unix"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.GetChatInviteImportersRequest(peer=, requested=True, link=, q=, offset_date=, offset_user=, limit=)",
+  "raw": [
+   "messages.getChatInviteImporters",
+   "messages.hideChatJoinRequest",
+   "messages.hideAllChatJoinRequests",
+   "channels.getFullChannel",
+   "communities.getPeerLinkRequests",
+   "communities.togglePeerLinkRequestApproval",
+   "communities.toggleAllPeerLinkRequestApproval"
+  ],
+  "rights": "invite-users",
+  "notes": "channelFull.requests_pending / recent_requesters give the badge without a fetch. offset_user needs InputUserEmpty for page 1; the cursor packs (offset_date, offset_user)."
+ },
+ "covers": [
+  "dialogs.community-join-requests",
+  "groups-channels-admin.join-request-list"
+ ],
+ "covers_partial": [
+  "dialogs.join-requests-badge"
+ ],
+ "priority": "P1",
+ "pr": 7,
+ "existing": "new",
+ "notes": "Folded in `chat join-requests` (dialogs_contacts): same feature as the groups/channels join-request list.",
+ "coverage_notes": [
+  {
+   "id": "dialogs.join-requests-badge",
+   "note": "partial: primary owner is `chat list`"
+  }
+ ],
+ "merged_from": [
+  {
+   "group": "dialogs_contacts",
+   "path": "chat join-requests"
+  }
+ ]
+}
+=====
+{
+ "op_id": "chat.revenue.get",
+ "path": "chat revenue get",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Stars / TON revenue of a channel (and per-user paid-message revenue)",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--ton",
+   "type": "bool",
+   "help": "TON (ad) revenue instead of Stars; in layer 229 this is the same method with ton=true."
+  },
+  {
+   "name": "--since",
+   "type": "user",
+   "help": "Stars earned from this user's paid messages (account.getPaidMessagesRevenue)."
+  },
+  {
+   "name": "--dark",
+   "type": "bool",
+   "help": "Dark colour set in the graph specs."
+  }
+ ],
+ "mutating": false,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "currency",
+   "current_balance",
+   "available_balance",
+   "overall_revenue",
+   "withdrawal_enabled",
+   "next_withdrawal_at",
+   "usd_rate",
+   "graphs",
+   "from_user_revenue"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.payments.GetStarsRevenueStatsRequest(peer=, dark=, ton=) / functions.account.GetPaidMessagesRevenueRequest(user_id=, parent_peer=)",
+  "raw": [
+   "payments.getStarsRevenueStats",
+   "account.getPaidMessagesRevenue"
+  ],
+  "rights": "channelFull.can_view_revenue / can_view_stars_revenue",
+  "notes": "Read-only by design. When withdrawal_enabled is true the command says so and points at an official client: tlgr deliberately does not implement payments.getStarsRevenueWithdrawalUrl (it moves money and needs the 2FA password)."
+ },
+ "covers": [
+  "groups-channels-admin.paid-message-revenue",
+  "groups-channels-admin.stars-revenue-stats"
+ ],
+ "covers_partial": [],
+ "priority": "P3",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.revenue.list",
+ "path": "chat revenue list",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Stars / TON transaction history of a channel",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--ton",
+   "type": "bool",
+   "help": "TON transactions instead of Stars."
+  },
+  {
+   "name": "--in",
+   "type": "bool",
+   "help": "Incoming only."
+  },
+  {
+   "name": "--out",
+   "type": "bool",
+   "help": "Outgoing only."
+  },
+  {
+   "name": "--ascending",
+   "type": "bool",
+   "help": "Oldest first."
+  },
+  {
+   "name": "--subscription",
+   "type": "string",
+   "help": "Only transactions of this subscription id."
+  },
+  {
+   "name": "--limit/-n",
+   "type": "int",
+   "help": "Page size.",
+   "default": "50"
+  },
+  {
+   "name": "--cursor",
+   "type": "string",
+   "help": "Opaque page cursor from a previous call."
+  },
+  {
+   "name": "--all",
+   "type": "bool",
+   "help": "Walk every page inside the daemon (rate-limit aware)."
+  }
+ ],
+ "mutating": false,
+ "destructive": false,
+ "paginated": true,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "page",
+  "fields": [
+   "id",
+   "date",
+   "amount",
+   "currency",
+   "peer",
+   "title",
+   "refund",
+   "pending",
+   "failed",
+   "subscription_period",
+   "date_unix"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.payments.GetStarsTransactionsRequest(peer=, inbound=, outbound=, ascending=, ton=, subscription_id=, offset='', limit=)",
+  "raw": [
+   "payments.getStarsTransactions",
+   "payments.getStarsTransactionsByID"
+  ],
+  "rights": "can_view_revenue / can_view_stars_revenue",
+  "notes": "Cursor is the opaque next_offset string."
+ },
+ "covers": [
+  "groups-channels-admin.stars-transactions"
+ ],
+ "covers_partial": [],
+ "priority": "P3",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.send_as.list",
+ "path": "chat send-as list",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Peers I may post as in this chat",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [],
+ "mutating": false,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "list",
+  "fields": [
+   "id",
+   "type",
+   "title",
+   "premium_required",
+   "default"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.channels.GetSendAsRequest(peer=)",
+  "raw": [
+   "channels.getSendAs"
+  ],
+  "rights": "none",
+  "notes": ""
+ },
+ "covers": [],
+ "covers_partial": [
+  "groups-channels-admin.send-as"
+ ],
+ "priority": "P1",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "groups-channels-admin.send-as",
+   "note": "partial: primary owner is `chat send-as set`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.send_as.set",
+ "path": "chat send-as set",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Set the default peer I post as in this chat",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "peer",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "send_as"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.SaveDefaultSendAsRequest(peer=, send_as=)",
+  "raw": [
+   "messages.saveDefaultSendAs"
+  ],
+  "rights": "the anonymous admin right forces the group itself",
+  "notes": "Also applies to reactions. Every send command still accepts a one-off --send-as (messages_content)."
+ },
+ "covers": [
+  "groups-channels-admin.send-as"
+ ],
+ "covers_partial": [],
+ "priority": "P1",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.setting.get",
+ "path": "chat setting get",
+ "aliases": [
+  "chat settings"
+ ],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Print every administrable policy toggle with its current value",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [],
+ "mutating": false,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "slow_mode",
+   "prehistory",
+   "join_to_send",
+   "join_request",
+   "guard_bot",
+   "noforwards",
+   "antispam",
+   "hidden_members",
+   "signatures",
+   "signature_profiles",
+   "forum",
+   "forum_tabs",
+   "view_as",
+   "autotranslate",
+   "ads",
+   "reactions",
+   "reactions_limit",
+   "paid_reactions",
+   "sticker_set",
+   "emoji_set",
+   "paid_messages_stars",
+   "direct_messages",
+   "gift_notifications",
+   "available",
+   "gated_by"
+  ]
+ },
+ "impl": {
+  "telethon": "derived from functions.channels.GetFullChannelRequest / functions.messages.GetFullChatRequest",
+  "raw": [
+   "channels.getFullChannel",
+   "messages.getFullChat",
+   "premium.getBoostsStatus",
+   "help.getAppConfig"
+  ],
+  "rights": "none to read; each key reports whether you may change it",
+  "notes": "Key names are exactly the `chat setting set` flag names minus the leading dashes, so output round-trips into input. `gated_by` names the capability flag or boost level that blocks a key."
+ },
+ "covers": [
+  "groups-channels-admin.antispam",
+  "groups-channels-admin.autotranslation",
+  "groups-channels-admin.content-protection",
+  "groups-channels-admin.forum-toggle",
+  "groups-channels-admin.gift-notifications",
+  "groups-channels-admin.group-emoji-set",
+  "groups-channels-admin.hidden-members",
+  "groups-channels-admin.prehistory-visibility",
+  "groups-channels-admin.reactions-settings",
+  "groups-channels-admin.signatures",
+  "groups-channels-admin.slow-mode",
+  "groups-channels-admin.toggle-join-to-send"
+ ],
+ "covers_partial": [
+  "groups-channels-admin.channel-direct-messages",
+  "groups-channels-admin.group-sticker-set",
+  "groups-channels-admin.paid-messages-price",
+  "groups-channels-admin.restrict-sponsored",
+  "groups-channels-admin.toggle-join-request",
+  "groups-channels-admin.view-forum-as-messages"
+ ],
+ "priority": "P1",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "groups-channels-admin.toggle-join-request",
+   "note": "partial: primary owner is `chat setting set`"
+  },
+  {
+   "id": "groups-channels-admin.view-forum-as-messages",
+   "note": "partial: primary owner is `chat setting set`"
+  },
+  {
+   "id": "groups-channels-admin.restrict-sponsored",
+   "note": "partial: primary owner is `chat setting set`"
+  },
+  {
+   "id": "groups-channels-admin.group-sticker-set",
+   "note": "partial: primary owner is `chat setting set`"
+  },
+  {
+   "id": "groups-channels-admin.paid-messages-price",
+   "note": "partial: primary owner is `chat member edit`"
+  },
+  {
+   "id": "groups-channels-admin.channel-direct-messages",
+   "note": "partial: primary owner is `chat setting set`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.setting.set",
+ "path": "chat setting set",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Change group/channel policy toggles (Manage screen)",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--slow-mode",
+   "type": "duration|off",
+   "help": "Seconds between messages; the server only accepts a fixed ladder (0/10s/30s/1m/5m/15m/1h)."
+  },
+  {
+   "name": "--prehistory",
+   "type": "enum(visible|hidden)",
+   "help": "History for new members. Must be visible before the group can be a discussion group."
+  },
+  {
+   "name": "--join-to-send",
+   "type": "on|off",
+   "help": "Require joining before sending (discussion groups)."
+  },
+  {
+   "name": "--join-request",
+   "type": "on|off",
+   "help": "Require admin approval to join."
+  },
+  {
+   "name": "--guard-bot",
+   "type": "user",
+   "help": "Bot that handles the approval queue (layer 229 flag, present in Telethon 1.44)."
+  },
+  {
+   "name": "--apply-to-links",
+   "type": "bool",
+   "help": "Apply --join-request to existing invite links too."
+  },
+  {
+   "name": "--protect",
+   "type": "on|off",
+   "help": "Restrict saving/forwarding content."
+  },
+  {
+   "name": "--antispam",
+   "type": "on|off",
+   "help": "Aggressive anti-spam (needs telegram_antispam_group_size_min members)."
+  },
+  {
+   "name": "--hidden-members",
+   "type": "on|off",
+   "help": "Hide the member list from non-admins."
+  },
+  {
+   "name": "--signatures",
+   "type": "on|off",
+   "help": "Sign channel posts with the author's name."
+  },
+  {
+   "name": "--signature-profiles",
+   "type": "on|off",
+   "help": "Link signatures to the author's profile (implies --signatures on)."
+  },
+  {
+   "name": "--forum",
+   "type": "on|off",
+   "help": "Enable/disable Topics. Owner only, minimum member count, basic groups must be converted first."
+  },
+  {
+   "name": "--forum-tabs",
+   "type": "enum(tabs|list)",
+   "help": "Tabbed vs list topic UI."
+  },
+  {
+   "name": "--view-as",
+   "type": "enum(messages|topics)",
+   "help": "My own view preference for this forum (synced across sessions)."
+  },
+  {
+   "name": "--autotranslate",
+   "type": "on|off",
+   "help": "Channel auto-translation (boost-gated)."
+  },
+  {
+   "name": "--ads",
+   "type": "on|off",
+   "help": "`off` disables sponsored messages on the channel (boost-gated)."
+  },
+  {
+   "name": "--reactions",
+   "type": "enum(all|none)|emoji-list",
+   "help": "Allowed reactions: `all`, `none`, or a comma-separated emoji/custom-emoji-id list."
+  },
+  {
+   "name": "--allow-custom-reactions",
+   "type": "on|off",
+   "help": "With --reactions all: also allow custom emoji."
+  },
+  {
+   "name": "--reactions-limit",
+   "type": "int",
+   "help": "Max distinct reactions per message (boost-gated)."
+  },
+  {
+   "name": "--paid-reactions",
+   "type": "on|off",
+   "help": "Enable Stars reactions (channels with paid_reactions_available)."
+  },
+  {
+   "name": "--sticker-set",
+   "type": "string|off",
+   "help": "Group sticker set short name (needs can_set_stickers)."
+  },
+  {
+   "name": "--emoji-set",
+   "type": "string|off",
+   "help": "Group custom-emoji pack short name (boost-gated)."
+  },
+  {
+   "name": "--paid-messages",
+   "type": "int|off",
+   "help": "Stars charged per incoming message (0/off = free)."
+  },
+  {
+   "name": "--direct-messages",
+   "type": "on|off",
+   "help": "Enable the channel's direct-messages monoforum (broadcast_messages_allowed)."
+  },
+  {
+   "name": "--gift-notifications",
+   "type": "on|off",
+   "help": "Star-gift notifications in the channel."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "changed",
+   "already"
+  ]
+ },
+ "impl": {
+  "telethon": "raw, one request per flag: functions.channels.{ToggleSlowMode,TogglePreHistoryHidden,ToggleJoinToSend,ToggleJoinRequest,ToggleParticipantsHidden,ToggleAntiSpam,ToggleSignatures,ToggleForum,ToggleViewForumAsMessages,ToggleAutotranslation,RestrictSponsoredMessages,SetStickers,SetEmojiStickers,UpdatePaidMessagesPrice}Request, functions.messages.{ToggleNoForwards,SetChatAvailableReactions}Request, functions.payments.ToggleChatStarGiftNotificationsRequest",
+  "raw": [
+   "channels.toggleSlowMode",
+   "channels.togglePreHistoryHidden",
+   "channels.toggleJoinToSend",
+   "channels.toggleJoinRequest",
+   "channels.toggleParticipantsHidden",
+   "channels.toggleAntiSpam",
+   "channels.toggleSignatures",
+   "channels.toggleForum",
+   "channels.toggleViewForumAsMessages",
+   "channels.toggleAutotranslation",
+   "channels.restrictSponsoredMessages",
+   "channels.setStickers",
+   "channels.setEmojiStickers",
+   "channels.updatePaidMessagesPrice",
+   "messages.toggleNoForwards",
+   "messages.setChatAvailableReactions",
+   "payments.toggleChatStarGiftNotifications"
+  ],
+  "rights": "change-info for most; owner for --forum/--noforwards/--ads/--direct-messages; boost level for --autotranslate/--emoji-set/--reactions-limit/--ads",
+  "notes": "Idempotent: a toggle already in the requested state reports {\"already\": true} and is not sent. Flags are applied in a deterministic order and each failure is reported per key so one refusal does not hide the rest. --direct-messages and --paid-messages are the same call (channels.updatePaidMessagesPrice)."
+ },
+ "covers": [
+  "dialogs.channel-autotranslation",
+  "dialogs.forum-tabs-mode",
+  "emoji.status-channel",
+  "groups-channels-admin.channel-direct-messages",
+  "groups-channels-admin.group-sticker-set",
+  "groups-channels-admin.restrict-sponsored",
+  "groups-channels-admin.toggle-join-request",
+  "groups-channels-admin.view-forum-as-messages",
+  "messages-core.paid-messages-group-price",
+  "messages-core.translate-channel-autotranslation",
+  "sticker.group-sticker-set"
+ ],
+ "covers_partial": [
+  "groups-channels-admin.antispam",
+  "groups-channels-admin.autotranslation",
+  "groups-channels-admin.channel-sponsored-messages",
+  "groups-channels-admin.content-protection",
+  "groups-channels-admin.forum-toggle",
+  "groups-channels-admin.gift-notifications",
+  "groups-channels-admin.group-emoji-set",
+  "groups-channels-admin.hidden-members",
+  "groups-channels-admin.paid-messages-price",
+  "groups-channels-admin.prehistory-visibility",
+  "groups-channels-admin.reactions-settings",
+  "groups-channels-admin.signatures",
+  "groups-channels-admin.slow-mode",
+  "groups-channels-admin.toggle-join-to-send"
+ ],
+ "priority": "P1",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "dialogs.forum-tabs-mode",
+   "note": "delegated from dialogs_contacts: channels.toggleForum(tabs) is an owner-only forum setting. (consolidator override)"
+  },
+  {
+   "id": "dialogs.channel-autotranslation",
+   "note": "delegated from dialogs_contacts: channels.toggleAutotranslation needs admin rights and channel_autotranslation_level_min boosts. (consolidator override)"
+  },
+  {
+   "id": "sticker.group-sticker-set",
+   "note": "delegated from media_stickers: channels.setStickers / setEmojiStickers is a chat-level admin setting (change_info + boost level), i.e. `chat  (consolidator override)"
+  },
+  {
+   "id": "emoji.status-channel",
+   "note": "delegated from media_stickers: channels.updateEmojiStatus is a boost-gated channel setting requiring change_info. (consolidator override)"
+  },
+  {
+   "id": "messages-core.translate-channel-autotranslation",
+   "note": "delegated from messages_content: chat set <channel> --autotranslate on|off (channels.toggleAutotranslation). (consolidator override)"
+  },
+  {
+   "id": "messages-core.paid-messages-group-price",
+   "note": "delegated from messages_content: chat set <chat> --paid-messages <stars>|off (per-group Star fee). (consolidator override)"
+  },
+  {
+   "id": "groups-channels-admin.slow-mode",
+   "note": "partial: primary owner is `chat setting get`"
+  },
+  {
+   "id": "groups-channels-admin.prehistory-visibility",
+   "note": "partial: primary owner is `chat setting get`"
+  },
+  {
+   "id": "groups-channels-admin.content-protection",
+   "note": "partial: primary owner is `chat setting get`"
+  },
+  {
+   "id": "groups-channels-admin.antispam",
+   "note": "partial: primary owner is `chat setting get`"
+  },
+  {
+   "id": "groups-channels-admin.hidden-members",
+   "note": "partial: primary owner is `chat setting get`"
+  },
+  {
+   "id": "groups-channels-admin.signatures",
+   "note": "partial: primary owner is `chat setting get`"
+  },
+  {
+   "id": "groups-channels-admin.toggle-join-to-send",
+   "note": "partial: primary owner is `chat setting get`"
+  },
+  {
+   "id": "groups-channels-admin.forum-toggle",
+   "note": "partial: primary owner is `chat setting get`"
+  },
+  {
+   "id": "groups-channels-admin.autotranslation",
+   "note": "partial: primary owner is `chat setting get`"
+  },
+  {
+   "id": "groups-channels-admin.reactions-settings",
+   "note": "partial: primary owner is `chat setting get`"
+  },
+  {
+   "id": "groups-channels-admin.group-emoji-set",
+   "note": "partial: primary owner is `chat setting get`"
+  },
+  {
+   "id": "groups-channels-admin.paid-messages-price",
+   "note": "partial: primary owner is `chat member edit`"
+  },
+  {
+   "id": "groups-channels-admin.gift-notifications",
+   "note": "partial: primary owner is `chat setting get`"
+  },
+  {
+   "id": "groups-channels-admin.channel-sponsored-messages",
+   "note": "partial: primary owner is `chat sponsored report`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.similar.list",
+ "path": "chat similar list",
+ "aliases": [
+  "chat similar"
+ ],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Channels similar to this one (or global recommendations)",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": false
+  }
+ ],
+ "flags": [
+  {
+   "name": "--limit/-n",
+   "type": "int",
+   "help": "Page size.",
+   "default": "50"
+  },
+  {
+   "name": "--cursor",
+   "type": "string",
+   "help": "Opaque page cursor from a previous call."
+  },
+  {
+   "name": "--all",
+   "type": "bool",
+   "help": "Walk every page inside the daemon (rate-limit aware)."
+  },
+  {
+   "name": "--bots",
+   "type": "bool",
+   "help": "bots.getBotRecommendations instead."
+  }
+ ],
+ "mutating": false,
+ "destructive": false,
+ "paginated": true,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "page",
+  "fields": [
+   "id",
+   "title",
+   "username",
+   "participants_count"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.channels.GetChannelRecommendationsRequest(channel=<chat>|None)",
+  "raw": [
+   "channels.getChannelRecommendations",
+   "bots.getBotRecommendations",
+   "contacts.getTopPeers"
+  ],
+  "rights": "none",
+  "notes": "Non-Premium accounts get a truncated messages.chatsSlice; total is reported so scripts can see the cut."
+ },
+ "covers": [
+  "contacts-users.people-you-may-know",
+  "dialogs.recommended-channels",
+  "groups-channels-admin.similar-channels"
+ ],
+ "covers_partial": [],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "Folded in `chat similar` (dialogs_contacts): same server call as the groups/channels command.",
+ "coverage_notes": [],
+ "merged_from": [
+  {
+   "group": "dialogs_contacts",
+   "path": "chat similar"
+  }
+ ]
+}
+=====
+{
+ "op_id": "chat.sponsored.list",
+ "path": "chat sponsored list",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Sponsored messages the server wants shown in this channel",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [],
+ "mutating": false,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "list",
+  "fields": [
+   "random_id",
+   "title",
+   "message",
+   "url",
+   "button_text",
+   "sponsor_info",
+   "additional_info",
+   "can_report",
+   "recommended"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.GetSponsoredMessagesRequest(peer=)",
+  "raw": [
+   "messages.getSponsoredMessages"
+  ],
+  "rights": "none",
+  "notes": "Exposed as data only. tlgr never calls messages.viewSponsoredMessage / clickSponsoredMessage: a headless CLI has no viewport and faking an impression would be dishonest. The owner-side switch is `chat setting set --ads off`. Results are cached 5 minutes, matching the API contract."
+ },
+ "covers": [],
+ "covers_partial": [
+  "groups-channels-admin.channel-sponsored-messages"
+ ],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "groups-channels-admin.channel-sponsored-messages",
+   "note": "partial: primary owner is `chat sponsored report`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.sponsored.report",
+ "path": "chat sponsored report",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Report a sponsored message",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "random-id",
+   "type": "string",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--option",
+   "type": "string",
+   "help": "Server-provided option blob (base64) for the next step of the report menu."
+  },
+  {
+   "name": "--comment",
+   "type": "string",
+   "help": "Free-text comment when the server asks for one."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "result",
+   "title",
+   "options"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.ReportSponsoredMessageRequest(peer=, random_id=, option=)",
+  "raw": [
+   "messages.reportSponsoredMessage"
+  ],
+  "rights": "none",
+  "notes": "The reason menu is server-driven: with no --option the command prints the option blobs and exits 0, so a script can walk the tree."
+ },
+ "covers": [
+  "groups-channels-admin.channel-sponsored-messages"
+ ],
+ "covers_partial": [],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.stats.get",
+ "path": "chat stats get",
+ "aliases": [
+  "stats get"
+ ],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Channel, supergroup, post, story or poll statistics",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--message",
+   "type": "int",
+   "help": "Per-post statistics for this message id."
+  },
+  {
+   "name": "--story",
+   "type": "int",
+   "help": "Statistics for this story id."
+  },
+  {
+   "name": "--poll",
+   "type": "int",
+   "help": "Vote statistics for the poll in this message id."
+  },
+  {
+   "name": "--dark",
+   "type": "bool",
+   "help": "Ask for the dark-theme colour set in the graph specs."
+  },
+  {
+   "name": "--graph",
+   "type": "string",
+   "help": "Instead of the summary, resolve one statsGraphAsync token (stats.loadAsyncGraph)."
+  },
+  {
+   "name": "--zoom",
+   "type": "int",
+   "help": "With --graph: the x value to zoom into."
+  },
+  {
+   "name": "--load-graphs",
+   "type": "bool",
+   "help": "Resolve every async graph token in the reply before printing."
+  },
+  {
+   "name": "--out",
+   "type": "path",
+   "help": "Write each graph's JSON spec to this directory instead of inlining it."
+  }
+ ],
+ "mutating": false,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "type",
+   "period",
+   "followers",
+   "views_per_post",
+   "shares_per_post",
+   "reactions_per_post",
+   "enabled_notifications",
+   "members",
+   "messages",
+   "viewers",
+   "posters",
+   "graphs",
+   "recent_posts"
+  ]
+ },
+ "impl": {
+  "telethon": "client.get_stats(chat, message=) - it follows StatsMigrateError to channelFull.stats_dc through an exported sender; raw functions.stats.{GetBroadcastStats,GetMegagroupStats,GetMessageStats,GetStoryStats,GetPollStats,LoadAsyncGraph}Request for the rest",
+  "raw": [
+   "stats.getBroadcastStats",
+   "stats.getMegagroupStats",
+   "stats.getMessageStats",
+   "stats.getStoryStats",
+   "stats.getPollStats",
+   "stats.loadAsyncGraph",
+   "channels.getFullChannel"
+  ],
+  "rights": "channelFull.can_view_stats (channels need >= 500 members); pollResults.can_view_stats for --poll",
+  "notes": "Every stats.* call MUST go to channelFull.stats_dc, not the home DC. Graph payloads are emitted verbatim as the API's JSON chart spec (columns/types/colors/names/subchart/y_scaled/percentage/stacked); tlgr never tries to draw them. Async graphs appear as {token, zoom_token} until --load-graphs or --graph resolves them."
+ },
+ "covers": [
+  "groups-channels-admin.channel-stats",
+  "groups-channels-admin.poll-stats",
+  "groups-channels-admin.stats-async-graph",
+  "groups-channels-admin.supergroup-stats",
+  "messages-core.message-statistics"
+ ],
+ "covers_partial": [
+  "groups-channels-admin.message-stats",
+  "groups-channels-admin.story-stats"
+ ],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "messages-core.message-statistics",
+   "note": "delegated from messages_content: chat stats get <channel> --msg-id <id> [--public-forwards] \u2014 post analytics belong with their existing chat st (consolidator override)"
+  },
+  {
+   "id": "groups-channels-admin.message-stats",
+   "note": "partial: primary owner is `chat stats list`"
+  },
+  {
+   "id": "groups-channels-admin.story-stats",
+   "note": "partial: primary owner is `chat stats list`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.stats.list",
+ "path": "chat stats list",
+ "aliases": [
+  "stats list"
+ ],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Public forwards (reposts) of a post or a story",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--message",
+   "type": "int",
+   "help": "Public forwards of this post."
+  },
+  {
+   "name": "--story",
+   "type": "int",
+   "help": "Public forwards of this story."
+  },
+  {
+   "name": "--limit/-n",
+   "type": "int",
+   "help": "Page size.",
+   "default": "50"
+  },
+  {
+   "name": "--cursor",
+   "type": "string",
+   "help": "Opaque page cursor from a previous call."
+  },
+  {
+   "name": "--all",
+   "type": "bool",
+   "help": "Walk every page inside the daemon (rate-limit aware)."
+  }
+ ],
+ "mutating": false,
+ "destructive": false,
+ "paginated": true,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "page",
+  "fields": [
+   "chat_id",
+   "chat_title",
+   "msg_id",
+   "story_id",
+   "views",
+   "date",
+   "date_unix"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.stats.GetMessagePublicForwardsRequest(channel=, msg_id=, offset='', limit=) / functions.stats.GetStoryPublicForwardsRequest(peer=, id=, offset='', limit=)",
+  "raw": [
+   "stats.getMessagePublicForwards",
+   "stats.getStoryPublicForwards"
+  ],
+  "rights": "can_view_stats",
+  "notes": "Also runs on stats_dc. The cursor is the opaque next_offset string."
+ },
+ "covers": [
+  "groups-channels-admin.message-stats",
+  "groups-channels-admin.story-stats"
+ ],
+ "covers_partial": [],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.suggested_post.approve",
+ "path": "chat suggested-post approve",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Approve a post suggested to a channel",
+ "args": [
+  {
+   "name": "channel",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "msg_id",
+   "type": "int",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--at",
+   "type": "datetime",
+   "help": "Publish at this time instead of the time the author proposed (also the accept-and-reschedule counter-offer)."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "channel_id",
+   "msg_id",
+   "approved",
+   "schedule_date"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.ToggleSuggestedPostApprovalRequest(peer=, msg_id=, schedule_date=)",
+  "raw": [
+   "messages.toggleSuggestedPostApproval"
+  ],
+  "rights": "post-messages on the channel (the message lives in its monoforum)",
+  "notes": "Emits messageActionSuggestedPostApproval and later ...Success / ...Refund. Accepting a priced post debits the payer, not you."
+ },
+ "covers": [],
+ "covers_partial": [
+  "groups-channels-admin.suggested-post-approve"
+ ],
+ "priority": "P3",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "groups-channels-admin.suggested-post-approve",
+   "note": "partial: primary owner is `chat suggested-post deny`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.suggested_post.deny",
+ "path": "chat suggested-post deny",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Reject a post suggested to a channel",
+ "args": [
+  {
+   "name": "channel",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "msg_id",
+   "type": "int",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--comment",
+   "type": "string",
+   "help": "Reason sent back to the author."
+  },
+  {
+   "name": "--yes/-y",
+   "type": "bool",
+   "help": "Required off a TTY."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": true,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "channel_id",
+   "msg_id",
+   "rejected"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.ToggleSuggestedPostApprovalRequest(peer=, msg_id=, reject=True, reject_comment=)",
+  "raw": [
+   "messages.toggleSuggestedPostApproval"
+  ],
+  "rights": "post-messages",
+  "notes": ""
+ },
+ "covers": [
+  "groups-channels-admin.suggested-post-approve"
+ ],
+ "covers_partial": [],
+ "priority": "P3",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.suggestion.delete",
+ "path": "chat suggestion delete",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Dismiss a server-suggested admin action",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "key",
+   "type": "string",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "key",
+   "pending_suggestions"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.help.DismissSuggestionRequest(peer=, suggestion=)",
+  "raw": [
+   "help.dismissSuggestion",
+   "channels.getFullChannel"
+  ],
+  "rights": "admin",
+  "notes": "The list of pending keys comes from `chat get --full` (channelFull.pending_suggestions)."
+ },
+ "covers": [
+  "groups-channels-admin.pending-suggestions"
+ ],
+ "covers_partial": [],
+ "priority": "P3",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.topic.close",
+ "path": "chat topic close",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Close a topic",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "topic",
+   "type": "int",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "topic_id",
+   "closed"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.EditForumTopicRequest(peer=, topic_id=, closed=True)",
+  "raw": [
+   "messages.editForumTopic"
+  ],
+  "rights": "manage-topics",
+  "notes": "Only admins can post in a closed topic."
+ },
+ "covers": [],
+ "covers_partial": [
+  "groups-channels-admin.topic-close-reopen"
+ ],
+ "priority": "P1",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "groups-channels-admin.topic-close-reopen",
+   "note": "partial: primary owner is `chat topic reopen`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.topic.create",
+ "path": "chat topic create",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Create a topic",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "title",
+   "type": "string",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--icon-emoji",
+   "type": "emoji-id",
+   "help": "Custom-emoji icon; non-Premium accounts may only use inputStickerSetEmojiDefaultTopicIcons."
+  },
+  {
+   "name": "--icon-color",
+   "type": "0xRRGGBB",
+   "help": "Icon colour; immutable after creation."
+  },
+  {
+   "name": "--send-as",
+   "type": "chat",
+   "help": "Post the creation service message as this peer."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "topic_id",
+   "title"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.CreateForumTopicRequest(peer=, title=, icon_color=, icon_emoji_id=, random_id=, send_as=)",
+  "raw": [
+   "messages.createForumTopic"
+  ],
+  "rights": "manage-topics",
+  "notes": "The returned topic id equals the id of the messageActionTopicCreate service message; that id is what every --topic flag takes."
+ },
+ "covers": [
+  "groups-channels-admin.topic-create"
+ ],
+ "covers_partial": [],
+ "priority": "P1",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.topic.delete",
+ "path": "chat topic delete",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Delete a topic and all its messages",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "topic",
+   "type": "int",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--yes/-y",
+   "type": "bool",
+   "help": "Required: irreversible."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": true,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "topic_id",
+   "deleted"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.DeleteTopicHistoryRequest(peer=, top_msg_id=)",
+  "raw": [
+   "messages.deleteTopicHistory"
+  ],
+  "rights": "manage-topics + delete-messages",
+  "notes": "General (id=1) cannot be deleted. Returns messages.affectedHistory and is looped while offset != 0. No dedicated update is emitted; other clients learn about it from updateDeleteChannelMessages carrying the root id."
+ },
+ "covers": [
+  "groups-channels-admin.topic-delete"
+ ],
+ "covers_partial": [],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.topic.edit",
+ "path": "chat topic edit",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Rename a topic or change its icon",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "topic",
+   "type": "int",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--title",
+   "type": "string",
+   "help": "New title."
+  },
+  {
+   "name": "--icon-emoji",
+   "type": "emoji-id",
+   "help": "New custom-emoji icon."
+  },
+  {
+   "name": "--no-icon",
+   "type": "bool",
+   "help": "Drop the custom emoji (icon_emoji_id=0)."
+  },
+  {
+   "name": "--closed",
+   "type": "on|off",
+   "help": "Close or reopen in the same call."
+  },
+  {
+   "name": "--hidden",
+   "type": "on|off",
+   "help": "Hide or show (General topic only)."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "topic_id",
+   "title",
+   "icon_emoji_id",
+   "closed",
+   "hidden"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.EditForumTopicRequest(peer=, topic_id=, title=, icon_emoji_id=, closed=, hidden=)",
+  "raw": [
+   "messages.editForumTopic"
+  ],
+  "rights": "manage-topics (or be the topic creator for your own topic)",
+  "notes": "icon_color cannot be changed after creation. The General topic accepts only --title and --hidden."
+ },
+ "covers": [
+  "groups-channels-admin.topic-edit"
+ ],
+ "covers_partial": [
+  "groups-channels-admin.topic-close-reopen",
+  "groups-channels-admin.topic-hide-general"
+ ],
+ "priority": "P1",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "groups-channels-admin.topic-close-reopen",
+   "note": "partial: primary owner is `chat topic reopen`"
+  },
+  {
+   "id": "groups-channels-admin.topic-hide-general",
+   "note": "partial: primary owner is `chat topic unhide`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.topic.get",
+ "path": "chat topic get",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Get one or more topics by id",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "topic",
+   "type": "int",
+   "required": true,
+   "variadic": true
+  }
+ ],
+ "flags": [],
+ "mutating": false,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object|list",
+  "fields": [
+   "id",
+   "title",
+   "icon_emoji_id",
+   "icon_color",
+   "closed",
+   "pinned",
+   "hidden",
+   "top_message",
+   "unread_count",
+   "unread_mentions_count",
+   "unread_reactions_count",
+   "muted",
+   "link",
+   "deleted"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.GetForumTopicsByIDRequest(peer=, topics=[ids]) + functions.channels.ExportMessageLinkRequest(id=topic_id, thread=True) for the link field",
+  "raw": [
+   "messages.getForumTopicsByID",
+   "channels.exportMessageLink"
+  ],
+  "rights": "none",
+  "notes": "forumTopicDeleted rows are reported as {id, deleted: true} - that is also the only signal a topic was removed. The link is t.me/<username>/<topic_id> for public forums."
+ },
+ "covers": [
+  "groups-channels-admin.topic-get",
+  "groups-channels-admin.topic-link"
+ ],
+ "covers_partial": [],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.topic.hide",
+ "path": "chat topic hide",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Hide the General topic",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "topic_id",
+   "hidden"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.EditForumTopicRequest(peer=, topic_id=1, hidden=True)",
+  "raw": [
+   "messages.editForumTopic"
+  ],
+  "rights": "manage-topics",
+  "notes": "Only the General topic may be hidden; the server refuses any other id."
+ },
+ "covers": [],
+ "covers_partial": [
+  "groups-channels-admin.topic-hide-general"
+ ],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "groups-channels-admin.topic-hide-general",
+   "note": "partial: primary owner is `chat topic unhide`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.topic.list",
+ "path": "chat topic list",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "List or search a forum's topics",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--search",
+   "type": "string",
+   "help": "Title query (q=)."
+  },
+  {
+   "name": "--closed",
+   "type": "bool",
+   "help": "Only closed topics (client-side filter over the page)."
+  },
+  {
+   "name": "--hidden",
+   "type": "bool",
+   "help": "Only hidden topics."
+  },
+  {
+   "name": "--pinned",
+   "type": "bool",
+   "help": "Only pinned topics."
+  },
+  {
+   "name": "--limit/-n",
+   "type": "int",
+   "help": "Page size.",
+   "default": "50"
+  },
+  {
+   "name": "--cursor",
+   "type": "string",
+   "help": "Opaque page cursor from a previous call."
+  },
+  {
+   "name": "--all",
+   "type": "bool",
+   "help": "Walk every page inside the daemon (rate-limit aware)."
+  }
+ ],
+ "mutating": false,
+ "destructive": false,
+ "paginated": true,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "page",
+  "fields": [
+   "id",
+   "title",
+   "icon_emoji_id",
+   "icon_color",
+   "closed",
+   "pinned",
+   "hidden",
+   "my",
+   "top_message",
+   "unread_count",
+   "unread_mentions_count",
+   "unread_reactions_count",
+   "from_id",
+   "muted",
+   "link"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.GetForumTopicsRequest(peer=, q=, offset_date=0, offset_id=0, offset_topic=0, limit=)",
+  "raw": [
+   "messages.getForumTopics"
+  ],
+  "rights": "none",
+  "notes": "Cursor packs the (offset_date, offset_id, offset_topic) triple of the last row. General is id=1 and always present. Exits 2 with a clear message when the chat is not a forum."
+ },
+ "covers": [
+  "groups-channels-admin.topic-list"
+ ],
+ "covers_partial": [
+  "groups-channels-admin.topic-unread-counters"
+ ],
+ "priority": "P0",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "groups-channels-admin.topic-unread-counters",
+   "note": "partial: primary owner is `chat topic read`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.topic.mute",
+ "path": "chat topic mute",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Mute a topic",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "topic",
+   "type": "int",
+   "required": true
+  },
+  {
+   "name": "duration",
+   "type": "duration",
+   "required": false
+  }
+ ],
+ "flags": [
+  {
+   "name": "--silent",
+   "type": "on|off",
+   "help": "Deliver notifications without sound instead of muting."
+  },
+  {
+   "name": "--previews",
+   "type": "on|off",
+   "help": "Show message text in notifications."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "topic_id",
+   "mute_until",
+   "silent",
+   "previews"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.account.UpdateNotifySettingsRequest(peer=types.InputNotifyForumTopic(peer=, top_msg_id=), settings=types.InputPeerNotifySettings(mute_until=, silent=, show_previews=))",
+  "raw": [
+   "account.updateNotifySettings",
+   "account.getNotifySettings"
+  ],
+  "rights": "none",
+  "notes": "mute_until is computed from wall-clock time. Omitting <duration> mutes forever."
+ },
+ "covers": [],
+ "covers_partial": [
+  "groups-channels-admin.topic-notify-settings"
+ ],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "groups-channels-admin.topic-notify-settings",
+   "note": "partial: primary owner is `chat topic unmute`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.topic.pin",
+ "path": "chat topic pin",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Pin topics (pass several ids to set the pinned order)",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "topic",
+   "type": "int",
+   "required": true,
+   "variadic": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--reorder",
+   "type": "bool",
+   "help": "Treat the ids as the complete pinned order (messages.reorderPinnedForumTopics)."
+  },
+  {
+   "name": "--yes/-y",
+   "type": "bool",
+   "help": "With --reorder: unpin topics missing from the list."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "pinned"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.UpdatePinnedForumTopicRequest(peer=, topic_id=, pinned=True) / functions.messages.ReorderPinnedForumTopicsRequest(peer=, order=[ids], force=)",
+  "raw": [
+   "messages.updatePinnedForumTopic",
+   "messages.reorderPinnedForumTopics"
+  ],
+  "rights": "manage-topics",
+  "notes": "At most appConfig topics_pinned_limit pinned topics."
+ },
+ "covers": [
+  "groups-channels-admin.topic-reorder-pinned"
+ ],
+ "covers_partial": [
+  "groups-channels-admin.topic-pin"
+ ],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "groups-channels-admin.topic-pin",
+   "note": "partial: primary owner is `chat topic unpin`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.topic.read",
+ "path": "chat topic read",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Mark a topic read, including its mentions and reactions",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "topic",
+   "type": "int",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--max-id",
+   "type": "int",
+   "help": "Read up to this message id (default: everything)."
+  },
+  {
+   "name": "--mentions",
+   "type": "bool",
+   "help": "Also clear the unread-mentions badge for this topic."
+  },
+  {
+   "name": "--reactions",
+   "type": "bool",
+   "help": "Also clear the unread-reactions badge for this topic."
+  },
+  {
+   "name": "--list",
+   "type": "bool",
+   "help": "Do not read: list the unread mentions/reactions instead."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "topic_id",
+   "unread_count",
+   "unread_mentions_count",
+   "unread_reactions_count",
+   "items"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.ReadDiscussionRequest(peer=, msg_id=topic, read_max_id=) + ReadMentionsRequest(peer=, top_msg_id=) / ReadReactionsRequest(peer=, top_msg_id=); --list uses GetUnreadMentionsRequest / GetUnreadReactionsRequest with top_msg_id",
+  "raw": [
+   "messages.readDiscussion",
+   "messages.readMentions",
+   "messages.readReactions",
+   "messages.getUnreadMentions",
+   "messages.getUnreadReactions"
+  ],
+  "rights": "none",
+  "notes": "top_msg_id must be omitted for General (id=1). Reading a topic does not read the rest of the forum. Sending and listing messages inside a topic is `message send/list --topic <id>` in messages_content; this command owns the read/unread half."
+ },
+ "covers": [
+  "groups-channels-admin.topic-messages",
+  "groups-channels-admin.topic-unread-counters"
+ ],
+ "covers_partial": [],
+ "priority": "P0",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.topic.reopen",
+ "path": "chat topic reopen",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Reopen a closed topic",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "topic",
+   "type": "int",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "topic_id",
+   "closed"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.EditForumTopicRequest(peer=, topic_id=, closed=False)",
+  "raw": [
+   "messages.editForumTopic"
+  ],
+  "rights": "manage-topics",
+  "notes": ""
+ },
+ "covers": [
+  "groups-channels-admin.topic-close-reopen"
+ ],
+ "covers_partial": [],
+ "priority": "P1",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.topic.unhide",
+ "path": "chat topic unhide",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Show the General topic again",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "topic_id",
+   "hidden"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.EditForumTopicRequest(peer=, topic_id=1, hidden=False)",
+  "raw": [
+   "messages.editForumTopic"
+  ],
+  "rights": "manage-topics",
+  "notes": ""
+ },
+ "covers": [
+  "groups-channels-admin.topic-hide-general"
+ ],
+ "covers_partial": [],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.topic.unmute",
+ "path": "chat topic unmute",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Unmute a topic",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "topic",
+   "type": "int",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "topic_id",
+   "mute_until"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.account.UpdateNotifySettingsRequest(peer=types.InputNotifyForumTopic(...), settings=types.InputPeerNotifySettings(mute_until=0))",
+  "raw": [
+   "account.updateNotifySettings"
+  ],
+  "rights": "none",
+  "notes": ""
+ },
+ "covers": [
+  "groups-channels-admin.topic-notify-settings"
+ ],
+ "covers_partial": [],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.topic.unpin",
+ "path": "chat topic unpin",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Unpin a topic",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "topic",
+   "type": "int",
+   "required": false,
+   "variadic": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--all",
+   "type": "bool",
+   "help": "Unpin every pinned topic."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "pinned"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.messages.UpdatePinnedForumTopicRequest(pinned=False) / ReorderPinnedForumTopicsRequest(order=[], force=True)",
+  "raw": [
+   "messages.updatePinnedForumTopic",
+   "messages.reorderPinnedForumTopics"
+  ],
+  "rights": "manage-topics",
+  "notes": ""
+ },
+ "covers": [
+  "groups-channels-admin.topic-pin"
+ ],
+ "covers_partial": [],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.transfer",
+ "path": "chat transfer",
+ "aliases": [
+  "chat admin transfer"
+ ],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Transfer ownership of a group or channel (2FA)",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "user",
+   "type": "user",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--password-env",
+   "type": "string",
+   "help": "Env var holding the 2FA password.",
+   "default": "TLGR_2FA_PASSWORD"
+  },
+  {
+   "name": "--password-stdin",
+   "type": "bool",
+   "help": "Read the 2FA password from stdin."
+  },
+  {
+   "name": "--password-file",
+   "type": "path",
+   "help": "Read the 2FA password from a file."
+  },
+  {
+   "name": "--yes/-y",
+   "type": "bool",
+   "help": "Required: irreversible."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": true,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "new_owner_id"
+  ]
+ },
+ "impl": {
+  "telethon": "telethon.password.compute_check(await client(functions.account.GetPasswordRequest()), pwd) then raw functions.messages.EditChatCreatorRequest(peer=, user_id=, password=)",
+  "raw": [
+   "account.getPassword",
+   "messages.editChatCreator"
+  ],
+  "rights": "owner; the target must already be an admin",
+  "notes": "Never accepts the password as argv. Distinct exits for PASSWORD_HASH_INVALID (4), PASSWORD_TOO_FRESH_X / SESSION_TOO_FRESH_X (6, with the wait reported), CHANNELS_TOO_MUCH (6)."
+ },
+ "covers": [
+  "groups-channels-admin.transfer-ownership"
+ ],
+ "covers_partial": [],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.username.get",
+ "path": "chat username get",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Check a username: availability, owner, and Fragment collectible info",
+ "args": [
+  {
+   "name": "username",
+   "type": "string",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--chat",
+   "type": "chat",
+   "help": "Check the name for this existing peer instead of a not-yet-created one."
+  }
+ ],
+ "mutating": false,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "username",
+   "status",
+   "available",
+   "collectible"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.channels.CheckUsernameRequest(channel=InputChannelEmpty()|<chat>, username=) + functions.fragment.GetCollectibleInfoRequest(collectible=types.InputCollectibleUsername(username=))",
+  "raw": [
+   "channels.checkUsername",
+   "fragment.getCollectibleInfo"
+  ],
+  "rights": "none",
+  "notes": "status is available|occupied|invalid|purchasable; on USERNAME_PURCHASE_AVAILABLE the Fragment purchase_date/currency/amount/url are attached. Buying happens on fragment.com, not through the API."
+ },
+ "covers": [
+  "groups-channels-admin.check-username",
+  "groups-channels-admin.collectible-username-info"
+ ],
+ "covers_partial": [],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.username.set",
+ "path": "chat username set",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Set the public link, or the display order of the additional usernames",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "username",
+   "type": "string",
+   "required": false
+  }
+ ],
+ "flags": [
+  {
+   "name": "--order",
+   "type": "string",
+   "help": "Comma-separated list: set the display order of the active usernames instead (channels.reorderUsernames)."
+  },
+  {
+   "name": "--upgrade",
+   "type": "bool",
+   "help": "Migrate a basic group to a supergroup first if needed (never silent)."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "username",
+   "link"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.channels.UpdateUsernameRequest(channel=, username=) / functions.channels.ReorderUsernamesRequest(channel=, order=[...])",
+  "raw": [
+   "channels.updateUsername",
+   "channels.reorderUsernames",
+   "messages.migrateChat"
+  ],
+  "rights": "owner",
+  "notes": "Exactly one of <username> and --order is required. --dry-run performs channels.checkUsername only. Public groups force prehistory visible. Public-peer count is capped per account (see `chat list --scope admined-public --check-limit`)."
+ },
+ "covers": [
+  "groups-channels-admin.public-private-toggle",
+  "groups-channels-admin.set-username",
+  "groups-channels-admin.username-reorder"
+ ],
+ "covers_partial": [],
+ "priority": "P1",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.username.toggle",
+ "path": "chat username toggle",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Activate or deactivate one additional username",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "username",
+   "type": "string",
+   "required": true
+  },
+  {
+   "name": "state",
+   "type": "on|off",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "usernames"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.channels.ToggleUsernameRequest(channel=, username=, active=)",
+  "raw": [
+   "channels.toggleUsername"
+  ],
+  "rights": "owner",
+  "notes": ""
+ },
+ "covers": [
+  "groups-channels-admin.username-toggle"
+ ],
+ "covers_partial": [],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.username.unset",
+ "path": "chat username unset",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Make a group/channel private by clearing its username(s)",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--all",
+   "type": "bool",
+   "help": "Deactivate every username at once (channels.deactivateAllUsernames); collectibles stay reserved."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "usernames",
+   "invite_link"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.channels.UpdateUsernameRequest(username='') / functions.channels.DeactivateAllUsernamesRequest(channel=)",
+  "raw": [
+   "channels.updateUsername",
+   "channels.deactivateAllUsernames",
+   "messages.exportChatInvite"
+  ],
+  "rights": "owner",
+  "notes": "Prints the private invite link afterwards so the chat stays reachable."
+ },
+ "covers": [
+  "groups-channels-admin.username-deactivate-all"
+ ],
+ "covers_partial": [
+  "groups-channels-admin.public-private-toggle"
+ ],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "groups-channels-admin.public-private-toggle",
+   "note": "partial: primary owner is `chat username set`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.verification.set",
+ "path": "chat verification set",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Attach or remove a third-party (bot) verification badge",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [
+  {
+   "name": "--bot",
+   "type": "user",
+   "help": "Bot with botInfo.verifier_settings (you must own it)."
+  },
+  {
+   "name": "--description",
+   "type": "string",
+   "help": "Custom description shown with the badge."
+  },
+  {
+   "name": "--off",
+   "type": "bool",
+   "help": "Remove the badge instead."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "bot_id",
+   "enabled"
+  ]
+ },
+ "impl": {
+  "telethon": "raw: functions.bots.SetCustomVerificationRequest(peer=, bot=, custom_description=, enabled=)",
+  "raw": [
+   "bots.setCustomVerification"
+  ],
+  "rights": "owner of the verifier bot",
+  "notes": "Not the blue Telegram check: channel.verified is server-assigned and cannot be set through the API."
+ },
+ "covers": [
+  "groups-channels-admin.verify-peer"
+ ],
+ "covers_partial": [],
+ "priority": "P3",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.welcome.delete",
+ "path": "chat welcome delete",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Delete one or all welcome messages",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "id",
+   "type": "int",
+   "required": false
+  }
+ ],
+ "flags": [
+  {
+   "name": "--all",
+   "type": "bool",
+   "help": "Delete every welcome message."
+  },
+  {
+   "name": "--yes/-y",
+   "type": "bool",
+   "help": "Required off a TTY."
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": true,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "deleted"
+  ]
+ },
+ "impl": {
+  "telethon": "unsupported in Telethon 1.44 / layer 227 - needs ephemeral.deleteWelcomeMessage / ephemeral.deleteAllWelcomeMessages",
+  "raw": [
+   "ephemeral.deleteWelcomeMessage",
+   "ephemeral.deleteAllWelcomeMessages"
+  ],
+  "rights": "manage-welcome-messages",
+  "notes": "layer_gap: true."
+ },
+ "covers": [],
+ "covers_partial": [
+  "groups-channels-admin.welcome-messages"
+ ],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "groups-channels-admin.welcome-messages",
+   "note": "partial: primary owner is `chat welcome set`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.welcome.list",
+ "path": "chat welcome list",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "List a group/channel's welcome messages",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  }
+ ],
+ "flags": [],
+ "mutating": false,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "list",
+  "fields": [
+   "id",
+   "text",
+   "entities",
+   "media",
+   "date",
+   "date_unix"
+  ]
+ },
+ "impl": {
+  "telethon": "unsupported in Telethon 1.44 / layer 227 - needs ephemeral.getWelcomeMessages from layer 229",
+  "raw": [
+   "ephemeral.getWelcomeMessages"
+  ],
+  "rights": "manage-welcome-messages (layer-229 admin right)",
+  "notes": "layer_gap: true. Advertised by chatFull/channelFull.has_welcome_messages. Until Telethon ships layer 229 (or hand-written TLObjects are vendored) the command exits 13 with an explanation."
+ },
+ "covers": [
+  "messages-core.chat-welcome-messages"
+ ],
+ "covers_partial": [
+  "groups-channels-admin.welcome-messages"
+ ],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [
+  {
+   "id": "messages-core.chat-welcome-messages",
+   "note": "delegated from messages_content: chat welcome list|delete <chat> \u2014 they already own chat welcome list/set/delete (ephemeral.* welcome cards, la (catalog cli.proposed)"
+  },
+  {
+   "id": "groups-channels-admin.welcome-messages",
+   "note": "partial: primary owner is `chat welcome set`"
+  }
+ ],
+ "merged_from": []
+}
+=====
+{
+ "op_id": "chat.welcome.set",
+ "path": "chat welcome set",
+ "aliases": [],
+ "legacy_paths": [],
+ "group": "groups_channels_admin",
+ "owner_domain": "groups_channels_admin",
+ "summary": "Add or edit a welcome message",
+ "args": [
+  {
+   "name": "chat",
+   "type": "chat",
+   "required": true
+  },
+  {
+   "name": "text",
+   "type": "string",
+   "required": false
+  }
+ ],
+ "flags": [
+  {
+   "name": "--id",
+   "type": "int",
+   "help": "Edit this welcome message instead of adding one."
+  },
+  {
+   "name": "--file",
+   "type": "path",
+   "help": "Attach media; repeatable.",
+   "repeatable": true
+  },
+  {
+   "name": "--parse",
+   "type": "enum(md|html|none)",
+   "help": "Markup of <text>.",
+   "default": "md"
+  },
+  {
+   "name": "--dry-run",
+   "type": "bool",
+   "help": "show what would change and stop"
+  }
+ ],
+ "mutating": true,
+ "destructive": false,
+ "paginated": false,
+ "stream": false,
+ "daemon": true,
+ "output": {
+  "shape": "object",
+  "fields": [
+   "chat_id",
+   "id",
+   "text"
+  ]
+ },
+ "impl": {
+  "telethon": "unsupported in Telethon 1.44 / layer 227 - needs ephemeral.sendMessage(welcome=true) / ephemeral.editMessage(welcome=true)",
+  "raw": [
+   "ephemeral.sendMessage",
+   "ephemeral.editMessage"
+  ],
+  "rights": "manage-welcome-messages",
+  "notes": "layer_gap: true."
+ },
+ "covers": [
+  "groups-channels-admin.welcome-messages"
+ ],
+ "covers_partial": [],
+ "priority": "P2",
+ "pr": 7,
+ "existing": "new",
+ "notes": "",
+ "coverage_notes": [],
+ "merged_from": []
+}

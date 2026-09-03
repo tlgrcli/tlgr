@@ -381,7 +381,7 @@ class MaskEdit:
     def resolve(
         self,
         *,
-        absolute: list[str] | None = None,
+        absolute: list[str] | set[str] | None = None,
         add: list[str] | None = None,
         remove: list[str] | None = None,
         everything: bool = False,

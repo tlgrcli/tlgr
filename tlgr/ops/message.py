@@ -29,7 +29,7 @@ from tlgr.core.errors import (
     NotFoundError,
     UsageError,
 )
-from tlgr.core.pagination import PageKind, build_page, decode_cursor
+from tlgr.core.pagination import PageKind, build_page
 from tlgr.core.text import utf16_len
 from tlgr.core.timefmt import fmt_dt, parse_dt, to_unix
 from tlgr.models.base import Request
@@ -49,8 +49,6 @@ from tlgr.models.message import (
     MessageEntity,
     PaidMessageSettings,
     PinResult,
-    ReactionSummary,
-    ReactResult,
     ReadReceipts,
     ReadResult,
     ReportResult,
@@ -68,6 +66,15 @@ from tlgr.models.message import (
 from tlgr.models.page import Page
 from tlgr.models.peer import PeerRef
 from tlgr.ops import _send
+from tlgr.ops._common import affected_loop as _affected_loop
+from tlgr.ops._common import already as _already
+from tlgr.ops._common import client as _client
+from tlgr.ops._common import ids as _ids
+from tlgr.ops._common import input_channel as _input_channel
+from tlgr.ops._common import is_not_modified as _is_not_modified
+from tlgr.ops._common import only as _only
+from tlgr.ops._common import random_id as _random_id
+from tlgr.ops._common import window as _window
 from tlgr.ops._params import arg, choice, opt
 from tlgr.ops._serialize import entity_to_peer, message_entities, message_to_model
 from tlgr.ops._spec import OpContext, OperationSpec, Surface
@@ -114,30 +121,6 @@ _EXAMPLE_MESSAGE: dict[str, Any] = {
 # ---------------------------------------------------------------------------
 
 
-def _client(ctx: OpContext) -> Any:
-    client = getattr(ctx, "client", None)
-    if client is None:  # pragma: no cover - the daemon always supplies one
-        raise UsageError("this operation needs a connected account")
-    return client
-
-
-def _window(ctx: OpContext, op: str, kind: PageKind, default: int = 20) -> tuple[int, Any]:
-    """`(limit, cursor state)` for a paginated op.
-
-    `--limit`/`--cursor` are transport-level and never request fields
-    (registry lint L5), so every paginated implementation reads them the same
-    way instead of redeclaring them.
-    """
-    limit = int(getattr(ctx, "limit", None) or default)
-    if limit < 1:
-        raise UsageError("--limit must be at least 1", field="limit")
-    token = getattr(ctx, "cursor", None)
-    state: dict[str, Any] = {}
-    if token:
-        state = decode_cursor(token, op=op, kind=kind, account=ctx.account)
-    return min(limit, 1000), state
-
-
 def _filter(name: str | None) -> Any:
     """`--type photo` → `InputMessagesFilterPhotos()`, or None."""
     if not name:
@@ -151,32 +134,6 @@ def _filter(name: str | None) -> Any:
     from telethon.tl import types
 
     return getattr(types, class_name)()
-
-
-def _ids(values: tuple[int, ...] | tuple[str, ...] | None) -> list[int]:
-    """Expand `100-120` ranges alongside plain ids.
-
-    A range is what a human types when deleting a burst of messages, and
-    making them spell out twenty ids is how a wrong one gets in.
-    """
-    out: list[int] = []
-    for value in values or ():
-        text = str(value)
-        if "-" in text[1:]:
-            head, _, tail = text.partition("-")
-            try:
-                start, end = int(head), int(tail)
-            except ValueError as exc:
-                raise UsageError(f"{text!r} is not an id or an id range", field="msg_id") from exc
-            if end < start or end - start > 10_000:
-                raise UsageError(f"{text!r} is not a usable id range", field="msg_id")
-            out.extend(range(start, end + 1))
-        else:
-            try:
-                out.append(int(text))
-            except ValueError as exc:
-                raise UsageError(f"{text!r} is not a message id", field="msg_id") from exc
-    return out
 
 
 async def _fetch(
@@ -194,63 +151,6 @@ async def _fetch(
             continue
         out.append(message_to_model(raw, chat_id=chat_id))
     return out
-
-
-def _is_not_modified(exc: BaseException) -> bool:
-    """MESSAGE_NOT_MODIFIED is success: the world already looks like that.
-
-    Matched on the class name *and* the message with underscores stripped,
-    because Telethon spells it `MessageNotModifiedError` and the server
-    spells it `MESSAGE_NOT_MODIFIED`.
-    """
-    text = f"{type(exc).__name__} {exc}".upper().replace("_", "")
-    return "NOTMODIFIED" in text
-
-
-def _input_channel(peer: Any) -> Any:
-    """The `InputChannel` a `channels.*` request wants, or a usage error.
-
-    `utils.get_input_channel` is arithmetic on the peer we already hold; going
-    back to `get_input_entity` would be a round trip for something that is
-    already known, and would hide the real problem when the peer is a user.
-    """
-    from telethon import utils
-
-    try:
-        return utils.get_input_channel(peer)
-    except (TypeError, ValueError) as exc:
-        raise UsageError(
-            "this operation only works in a channel or supergroup", field="chat"
-        ) from exc
-
-
-async def _affected_loop(ctx: OpContext, make_request: Any) -> int:
-    """Drive a `messages.AffectedHistory` call until `offset == 0`.
-
-    `readMentions`, `readReactions`, `unpinAllMessages` and
-    `deleteParticipantHistory` all return a partial result with an offset to
-    resume from. v1 called them once and reported success, so "unpin
-    everything" unpinned the first hundred.
-    """
-    client = _client(ctx)
-    total = 0
-    offset = 0
-    for _ in range(100):
-        result = await client(make_request(offset))
-        total += int(getattr(result, "pts_count", 0) or 0)
-        offset = int(getattr(result, "offset", 0) or 0)
-        if offset == 0:
-            break
-        limiter = getattr(ctx, "limiter", None)
-        if limiter is not None:
-            await limiter.acquire("bulk")
-    return total
-
-
-def _already(ctx: OpContext) -> None:
-    mark = getattr(ctx, "mark_already", None)
-    if callable(mark):
-        mark()
 
 
 # ---------------------------------------------------------------------------
@@ -438,11 +338,24 @@ async def _non_file_media(ctx: OpContext, req: SendReq) -> Any:
             phone_number=phone, first_name=first, last_name=last, vcard=vcard
         )
     if req.poll is not None:
-        _send.require_supported(
-            "--poll",
-            "polls are the `poll create` command's shape and land in PR-9; "
-            "sending one here would fix a JSON schema this build cannot validate",
-        )
+        # `--poll JSON` takes the same field names as `poll create`, and is
+        # built by the same function: two spellings of "make a poll" that
+        # disagreed about defaults would be worse than one shared builder.
+        import msgspec
+
+        from tlgr.ops import poll as poll_ops
+
+        try:
+            spec = msgspec.json.decode(req.poll, type=dict)
+        except msgspec.DecodeError as exc:
+            raise UsageError(f"--poll is not JSON: {exc}", field="poll") from exc
+        spec.setdefault("chat", "me")
+        spec.setdefault("parse", req.parse)
+        try:
+            request = msgspec.convert(spec, type=poll_ops.CreateReq, strict=False)
+        except msgspec.ValidationError as exc:
+            raise UsageError(f"--poll: {exc}", field="poll") from exc
+        return await poll_ops.build_media(ctx, request)
     if req.preview_url:
         return types.InputMediaWebPage(
             url=req.preview_url,
@@ -668,25 +581,6 @@ def _uploaded_to_input(uploaded: Any) -> Any:
     from telethon import utils
 
     return utils.get_input_media(uploaded)
-
-
-def _only(values: dict[str, Any], request: Any) -> dict[str, Any]:
-    """Keep the keys *request* actually accepts.
-
-    The four send requests share most of their flags and differ in a few; a
-    filtered dict is how one options mapping serves all of them without a
-    per-request copy that drifts.
-    """
-    import inspect
-
-    allowed = set(inspect.signature(request.__init__).parameters)
-    return {k: v for k, v in values.items() if k in allowed and v is not None}
-
-
-def _random_id() -> int:
-    import os
-
-    return int.from_bytes(os.urandom(8), "big", signed=True)
 
 
 async def _text_as_file(ctx: OpContext, text: str, name: str | None) -> Any:
@@ -2153,86 +2047,6 @@ SPEC_READ = OperationSpec(
         "messages-core.report-message-delivery",
         "messages-core.thread-read",
         "messages-core.unread-mentions-read-all",
-    ),
-)
-
-
-class ReactReq(Request):
-    chat: Annotated[PeerRef, arg(0, metavar="CHAT", kind="peer", help="Chat.")]
-    msg_id: Annotated[int, arg(1, metavar="MSG_ID", kind="msg_id", help="Message id or link.")]
-    emoji: Annotated[
-        str, arg(2, metavar="EMOJI", required=False, help="Reaction; omit to clear.")
-    ] = ""
-    big: Annotated[bool, opt("--big", help="Play the big animation.")] = False
-    add: Annotated[bool, opt("--add", help="Keep the reactions already there (Premium).")] = False
-
-
-async def react(ctx: OpContext, req: ReactReq) -> ReactResult:
-    """React to a message, or clear the reaction by passing no emoji.
-
-    Kept in the `message` group because that is the documented v1 path; the
-    `reaction` group of PR-9 owns the rest of the surface and will take this
-    over as an alias.
-    """
-    from telethon.tl import types
-    from telethon.tl.functions import messages as fn
-
-    peer = await _send.resolve(ctx, req.chat)
-    chat_id = _send.peer_id_of(peer)
-    reactions = [types.ReactionEmoji(emoticon=req.emoji)] if req.emoji else []
-    try:
-        result = await _client(ctx)(
-            fn.SendReactionRequest(
-                peer=peer,
-                msg_id=req.msg_id,
-                reaction=reactions or None,
-                big=req.big or None,
-                add_to_recent=req.add or None,
-            )
-        )
-    except Exception as exc:
-        if not _is_not_modified(exc):
-            raise
-        _already(ctx)
-        return ReactResult(
-            chat_id=chat_id, msg_id=req.msg_id, emoji=req.emoji, reacted=True, already=True
-        )
-    summary: ReactionSummary | None = None
-    produced = _send.messages_from_updates(result, chat_id=chat_id)
-    if produced:
-        summary = produced[0].reactions
-    return ReactResult(
-        chat_id=chat_id,
-        msg_id=req.msg_id,
-        emoji=req.emoji,
-        reacted=bool(req.emoji),
-        reactions=summary,
-    )
-
-
-SPEC_REACT = OperationSpec(
-    id="message.react",
-    request=ReactReq,
-    response=ReactResult,
-    impl=react,
-    summary="React to a message with an emoji",
-    description=(
-        "Passing no emoji clears the reaction. A duplicate reaction is "
-        "`already: true`, not an error — Telegram answers it with "
-        "MESSAGE_NOT_MODIFIED."
-    ),
-    aliases=("msg.react",),
-    legacy_paths=("message react", "msg react"),
-    mutating=True,
-    idempotent=True,
-    rate_class="send",
-    columns=("chat_id", "msg_id", "emoji", "reacted"),
-    example={"chat_id": 777123, "msg_id": 12345, "emoji": "👍", "reacted": True},
-    example_args="message react @alice 12345 👍",
-    covers=("messages-core.reaction-add-remove",),
-    coverage_note=(
-        "The v1 path, kept invocable. PR-9's `reaction` group owns the full "
-        "reaction surface and adopts this as an alias."
     ),
 )
 

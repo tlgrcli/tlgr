@@ -179,6 +179,32 @@ class World:
     raw: dict[str, Any] = field(default_factory=dict)
     calls: list[tuple[str, Any]] = field(default_factory=list)
     next_message_id: int = 1000
+    next_poll_id: int = 5_000_000_000
+    #: poll id → `[(user_id, option bytes, when)]`, the public-voter list.
+    poll_votes: dict[int, list[tuple[int, bytes, datetime]]] = field(default_factory=dict)
+    #: `(chat id, message id)` → who reacted, as `MessagePeerReaction`s.
+    reaction_users: dict[tuple[int, int], list[Any]] = field(default_factory=dict)
+    #: The chat's reaction policy, as `chatFull.available_reactions` holds it.
+    chat_reactions: dict[int, Any] = field(default_factory=dict)
+    reactions_limit: dict[int, int] = field(default_factory=dict)
+    paid_enabled: dict[int, bool] = field(default_factory=dict)
+    saved_tags: dict[str, str | None] = field(default_factory=dict)
+    default_reaction: Any = None
+    paid_privacy: str = "default"
+    star_balance: int = 1000
+    #: What `contacts.getLocated` should answer with.
+    nearby: list[Any] = field(default_factory=list)
+    self_expires: int | None = None
+    #: The bytes `upload.getWebFile` hands back for a map thumbnail.
+    web_file: bytes = b"\x89PNG\r\n\x1a\nfake"
+    webfile_dc_id: int = 4
+    venue_search_username: str = "foursquare"
+    #: Venues `messages.getInlineBotResults` should return for a geo query.
+    venues: list[Any] = field(default_factory=list)
+    #: Public posts `channels.searchPosts` should return.
+    public_posts: list[Any] = field(default_factory=list)
+    search_flood_remains: int = 3
+    search_flood_stars: int = 10
 
     # -- behaviour knobs ---------------------------------------------------
 
@@ -482,7 +508,9 @@ class FakeTelegramClient:
         return self._updates(self._store(request, request.message))
 
     def _raw_SendMediaRequest(self, request: Any) -> types.Updates:
-        return self._updates(self._store(request, request.message, media=types.MessageMediaEmpty()))
+        return self._updates(
+            self._store(request, request.message, media=self.realise(request.media))
+        )
 
     def _raw_SendMultiMediaRequest(self, request: Any) -> types.Updates:
         produced = [
@@ -512,6 +540,8 @@ class FakeTelegramClient:
             raise MessageIdInvalidError(request)
         if request.message is not None:
             message.message = request.message
+        if getattr(request, "media", None) is not None:
+            message.media = self.realise(request.media, existing=message.media)
         message.entities = list(request.entities or [])
         message.edit_date = datetime.now(timezone.utc)
         return self._updates(message)
@@ -787,9 +817,6 @@ class FakeTelegramClient:
     def _raw_DeleteChatUserRequest(self, request: Any) -> types.Updates:
         return self._updates()
 
-    def _raw_ReadPollVotesRequest(self, request: Any) -> bool:
-        return True
-
     def _raw_GetUnreadMentionsRequest(self, request: Any) -> Any:
         chat_id = self._chat_id(request.peer)
         found = [m for m in self.world.history(chat_id) if getattr(m, "mentioned", False)]
@@ -799,9 +826,6 @@ class FakeTelegramClient:
         chat_id = self._chat_id(request.peer)
         found = [m for m in self.world.history(chat_id) if getattr(m, "reactions", None)]
         return types.messages.Messages(messages=found, chats=[], users=[], topics=[])
-
-    def _raw_GetUnreadPollVotesRequest(self, request: Any) -> Any:
-        return types.messages.Messages(messages=[], chats=[], users=[], topics=[])
 
     def _raw_GetSavedDialogsRequest(self, request: Any) -> Any:
         rows = [
@@ -944,6 +968,555 @@ class FakeTelegramClient:
                 options=[types.MessageReportOption(text="Spam", option=b"\x01")],
             )
         return types.ReportResultReported()
+
+    # -- content: polls, checklists, locations, reactions -------------------
+    #
+    # Stage D. The rule is the same one the message world follows: a request
+    # *changes the world*, so a test asserts against state that moved. A vote
+    # really lands on the stored poll, ticking a task really flips the
+    # completion, and `location live stop` really rewrites the media.
+
+    def realise(self, media: Any, existing: Any = None) -> Any:
+        """`InputMedia*` → the `MessageMedia*` the server would store.
+
+        The interesting half is polls: the server, not the client, assigns
+        each answer its opaque `option` bytes, and every later request
+        addresses the answer by them. The fake assigns them the same way so a
+        test exercises the real index → bytes resolution rather than a lie.
+        """
+        name = type(media).__name__
+        if name == "InputMediaPoll":
+            return self._realise_poll(media, existing)
+        if name == "InputMediaTodo":
+            completions = list(getattr(existing, "completions", None) or [])
+            return types.MessageMediaToDo(todo=media.todo, completions=completions)
+        if name == "InputMediaGeoPoint":
+            return types.MessageMediaGeo(geo=self._geo(media.geo_point))
+        if name == "InputMediaGeoLive":
+            if getattr(media, "stopped", False):
+                previous = getattr(existing, "geo", None) or self._geo(media.geo_point)
+                stopped = types.MessageMediaGeoLive(geo=previous, period=0)
+                stopped.stopped = True
+                return stopped
+            return types.MessageMediaGeoLive(
+                geo=self._geo(media.geo_point),
+                period=int(getattr(media, "period", 0) or 0),
+                heading=getattr(media, "heading", None),
+                proximity_notification_radius=getattr(media, "proximity_notification_radius", None),
+            )
+        if name == "InputMediaVenue":
+            return types.MessageMediaVenue(
+                geo=self._geo(media.geo_point),
+                title=media.title,
+                address=media.address,
+                provider=media.provider,
+                venue_id=media.venue_id,
+                venue_type=media.venue_type,
+            )
+        return types.MessageMediaEmpty()
+
+    @staticmethod
+    def _geo(point: Any) -> Any:
+        return types.GeoPoint(
+            long=float(getattr(point, "long", 0.0) or 0.0),
+            lat=float(getattr(point, "lat", 0.0) or 0.0),
+            access_hash=12345,
+            accuracy_radius=getattr(point, "accuracy_radius", None),
+        )
+
+    def _realise_poll(self, media: Any, existing: Any) -> Any:
+        source = media.poll
+        previous = getattr(existing, "poll", None)
+        keep = {
+            bytes(getattr(item, "option", b"")): item
+            for item in (getattr(getattr(existing, "results", None), "results", None) or [])
+        }
+        answers: list[Any] = []
+        for index, answer in enumerate(source.answers):
+            option = bytes(getattr(answer, "option", None) or bytes([index]))
+            answers.append(
+                types.PollAnswer(
+                    text=answer.text,
+                    option=option,
+                    media=getattr(answer, "media", None),
+                    added_by=getattr(answer, "added_by", None),
+                    date=getattr(answer, "date", None),
+                )
+            )
+        correct = set(getattr(media, "correct_answers", None) or [])
+        results = [
+            keep.get(
+                answer.option,
+                types.PollAnswerVoters(
+                    option=answer.option,
+                    voters=0,
+                    correct=index in correct or None,
+                ),
+            )
+            for index, answer in enumerate(answers)
+        ]
+        poll_id = int(getattr(source, "id", 0) or 0)
+        if not poll_id:
+            self.world.next_poll_id += 1
+            poll_id = self.world.next_poll_id
+        poll = types.Poll(
+            id=poll_id,
+            question=source.question,
+            answers=answers,
+            hash=getattr(source, "hash", 0) or 0,
+            closed=getattr(source, "closed", None),
+            public_voters=getattr(source, "public_voters", None)
+            or getattr(previous, "public_voters", None),
+            multiple_choice=getattr(source, "multiple_choice", None)
+            or getattr(previous, "multiple_choice", None),
+            quiz=getattr(source, "quiz", None) or getattr(previous, "quiz", None),
+            open_answers=getattr(source, "open_answers", None)
+            or getattr(previous, "open_answers", None),
+            revoting_disabled=getattr(source, "revoting_disabled", None),
+            shuffle_answers=getattr(source, "shuffle_answers", None),
+            hide_results_until_close=getattr(source, "hide_results_until_close", None),
+            subscribers_only=getattr(source, "subscribers_only", None),
+            close_period=getattr(source, "close_period", None),
+            close_date=getattr(source, "close_date", None),
+            countries_iso2=getattr(source, "countries_iso2", None),
+        )
+        return types.MessageMediaPoll(
+            poll=poll,
+            results=types.PollResults(
+                results=results,
+                total_voters=sum(int(r.voters or 0) for r in results),
+                solution=getattr(media, "solution", None)
+                or getattr(getattr(existing, "results", None), "solution", None),
+                solution_entities=getattr(media, "solution_entities", None),
+            ),
+            attached_media=getattr(existing, "attached_media", None),
+        )
+
+    def _poll_of(self, request: Any) -> tuple[int, Any, Any]:
+        chat_id = self._chat_id(request.peer)
+        message = self.world.find(chat_id, int(getattr(request, "msg_id", 0) or request.id))
+        media = getattr(message, "media", None)
+        if getattr(media, "poll", None) is None:
+            from telethon.errors import MessageIdInvalidError
+
+            raise MessageIdInvalidError(request)
+        return chat_id, message, media
+
+    def _raw_GetPollResultsRequest(self, request: Any) -> types.Updates:
+        _, message, _ = self._poll_of(request)
+        return self._updates(message)
+
+    def _raw_SendVoteRequest(self, request: Any) -> types.Updates:
+        _, message, media = self._poll_of(request)
+        chosen = {bytes(option) for option in request.options}
+        votes = self.world.poll_votes.setdefault(int(media.poll.id), [])
+        votes[:] = [row for row in votes if row[0] != self.world.me.id]
+        for row in media.results.results:
+            was = bool(row.chosen)
+            row.chosen = row.option in chosen or None
+            row.voters = max(0, int(row.voters or 0) + (1 if row.chosen else 0) - (1 if was else 0))
+            if row.chosen:
+                votes.append((self.world.me.id, row.option, datetime.now(timezone.utc)))
+        media.results.total_voters = sum(int(r.voters or 0) for r in media.results.results)
+        return self._updates(message)
+
+    def _raw_AddPollAnswerRequest(self, request: Any) -> types.Updates:
+        _, message, media = self._poll_of(request)
+        option = bytes([len(media.poll.answers)])
+        media.poll.answers.append(
+            types.PollAnswer(
+                text=request.answer.text,
+                option=option,
+                media=getattr(request.answer, "media", None),
+                added_by=types.PeerUser(user_id=self.world.me.id),
+                date=datetime.now(timezone.utc),
+            )
+        )
+        media.results.results.append(types.PollAnswerVoters(option=option, voters=0))
+        return self._updates(message)
+
+    def _raw_DeletePollAnswerRequest(self, request: Any) -> types.Updates:
+        _, message, media = self._poll_of(request)
+        option = bytes(request.option)
+        media.poll.answers = [a for a in media.poll.answers if a.option != option]
+        media.results.results = [r for r in media.results.results if r.option != option]
+        media.results.total_voters = sum(int(r.voters or 0) for r in media.results.results)
+        return self._updates(message)
+
+    def _raw_GetPollVotesRequest(self, request: Any) -> Any:
+        _, _, media = self._poll_of(request)
+        rows = list(self.world.poll_votes.get(int(media.poll.id), []))
+        if request.option is not None:
+            rows = [row for row in rows if row[1] == bytes(request.option)]
+        return types.messages.VotesList(
+            count=len(rows),
+            votes=[
+                types.MessagePeerVote(
+                    peer=types.PeerUser(user_id=user_id), option=option, date=when
+                )
+                for user_id, option, when in rows[: int(request.limit)]
+            ],
+            chats=[],
+            users=[],
+            next_offset=None,
+        )
+
+    def _raw_GetUnreadPollVotesRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        found = [
+            message
+            for message in self.world.history(chat_id)
+            if getattr(getattr(message, "media", None), "poll", None) is not None
+        ]
+        return types.messages.Messages(
+            messages=found[: int(request.limit)], topics=[], chats=[], users=[]
+        )
+
+    def _raw_ReadPollVotesRequest(self, request: Any) -> Any:
+        return self._affected_history()
+
+    def _raw_GetPollStatsRequest(self, request: Any) -> Any:
+        return types.stats.PollStats(
+            votes_graph=types.StatsGraph(json=types.DataJSON(data='{"columns":[]}'))
+        )
+
+    # -- search ------------------------------------------------------------
+
+    def _slice(self, messages: list[Any], *, next_rate: int | None = None) -> Any:
+        """A `messagesSlice`, which is what every global search answers with."""
+        return types.messages.MessagesSlice(
+            count=len(messages),
+            messages=messages,
+            topics=[],
+            chats=list(self.world.chats.values()),
+            users=list(self.world.users.values()),
+            next_rate=next_rate,
+        )
+
+    def _raw_SearchGlobalRequest(self, request: Any) -> Any:
+        found: list[Any] = []
+        for history in self.world.messages.values():
+            for message in history:
+                if request.q and request.q.lower() not in (message.message or "").lower():
+                    continue
+                if request.offset_id and message.id >= request.offset_id:
+                    continue
+                found.append(message)
+        found.sort(key=lambda m: m.id, reverse=True)
+        return self._slice(found[: int(request.limit)], next_rate=42)
+
+    def _raw_SearchSentMediaRequest(self, request: Any) -> Any:
+        found = [
+            message
+            for history in self.world.messages.values()
+            for message in history
+            if getattr(message, "out", False)
+        ]
+        return self._slice(found[: int(request.limit)])
+
+    def _raw_SearchRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        found = [
+            message
+            for message in self.world.history(chat_id)
+            if not request.q or request.q.lower() in (message.message or "").lower()
+        ]
+        return self._slice(sorted(found, key=lambda m: m.id, reverse=True)[: int(request.limit)])
+
+    def _raw_SearchPostsRequest(self, request: Any) -> Any:
+        return self._slice(list(self.world.public_posts)[: int(request.limit)], next_rate=7)
+
+    def _raw_CheckSearchPostsFloodRequest(self, request: Any) -> Any:
+        return types.SearchPostsFlood(
+            total_daily=10,
+            remains=self.world.search_flood_remains,
+            query_is_free=self.world.search_flood_remains > 0 or None,
+            stars_amount=self.world.search_flood_stars,
+        )
+
+    # -- reaction policy, tags and paid reactions --------------------------
+
+    def _full_channel(self, chat_id: int) -> Any:
+        return types.ChannelFull(
+            id=abs(chat_id) - 1000000000000 if chat_id < -1000000000000 else abs(chat_id),
+            about="",
+            read_inbox_max_id=0,
+            read_outbox_max_id=0,
+            unread_count=0,
+            chat_photo=types.PhotoEmpty(id=0),
+            notify_settings=types.PeerNotifySettings(),
+            bot_info=[],
+            pts=1,
+            available_reactions=self.world.chat_reactions.get(chat_id) or types.ChatReactionsNone(),
+            reactions_limit=self.world.reactions_limit.get(chat_id),
+            paid_reactions_available=self.world.paid_enabled.get(chat_id),
+        )
+
+    def _raw_GetFullChannelRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.channel)
+        return types.messages.ChatFull(full_chat=self._full_channel(chat_id), chats=[], users=[])
+
+    def _raw_GetFullChatRequest(self, request: Any) -> Any:
+        chat_id = int(request.chat_id)
+        return types.messages.ChatFull(
+            full_chat=types.ChatFull(
+                id=chat_id,
+                about="",
+                participants=types.ChatParticipantsForbidden(chat_id=chat_id),
+                notify_settings=types.PeerNotifySettings(),
+                available_reactions=self.world.chat_reactions.get(-chat_id)
+                or types.ChatReactionsNone(),
+                reactions_limit=self.world.reactions_limit.get(-chat_id),
+            ),
+            chats=[],
+            users=[],
+        )
+
+    def _raw_SetChatAvailableReactionsRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.peer)
+        self.world.chat_reactions[chat_id] = request.available_reactions
+        if request.reactions_limit is not None:
+            self.world.reactions_limit[chat_id] = int(request.reactions_limit)
+        if request.paid_enabled is not None:
+            self.world.paid_enabled[chat_id] = bool(request.paid_enabled)
+        return self._updates()
+
+    def _raw_SetDefaultReactionRequest(self, request: Any) -> bool:
+        self.world.default_reaction = request.reaction
+        return True
+
+    def _raw_GetSavedReactionTagsRequest(self, request: Any) -> Any:
+        return types.messages.SavedReactionTags(
+            tags=[
+                types.SavedReactionTag(
+                    reaction=types.ReactionEmoji(emoticon=emoji), count=1, title=title
+                )
+                for emoji, title in self.world.saved_tags.items()
+            ],
+            hash=0,
+        )
+
+    def _raw_GetDefaultTagReactionsRequest(self, request: Any) -> Any:
+        return types.messages.Reactions(hash=0, reactions=[types.ReactionEmoji(emoticon="📌")])
+
+    def _raw_UpdateSavedReactionTagRequest(self, request: Any) -> bool:
+        emoji = getattr(request.reaction, "emoticon", None) or str(
+            getattr(request.reaction, "document_id", "")
+        )
+        self.world.saved_tags[emoji] = request.title
+        return True
+
+    def _raw_GetPaidReactionPrivacyRequest(self, request: Any) -> types.Updates:
+        mapping = {
+            "anonymous": types.PaidReactionPrivacyAnonymous(),
+            "default": types.PaidReactionPrivacyDefault(),
+        }
+        return types.Updates(
+            updates=[
+                types.UpdatePaidReactionPrivacy(
+                    private=mapping.get(self.world.paid_privacy, types.PaidReactionPrivacyDefault())
+                )
+            ],
+            users=[],
+            chats=[],
+            date=None,
+            seq=0,
+        )
+
+    def _raw_TogglePaidReactionPrivacyRequest(self, request: Any) -> bool:
+        name = type(request.private).__name__
+        self.world.paid_privacy = (
+            "anonymous"
+            if name.endswith("Anonymous")
+            else ("peer" if name.endswith("Peer") else "default")
+        )
+        return True
+
+    def _raw_SendPaidReactionRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.peer)
+        self.world.star_balance -= int(request.count)
+        return types.Updates(
+            updates=[
+                types.UpdateMessageReactions(
+                    peer=types.PeerChannel(channel_id=abs(chat_id)),
+                    msg_id=int(request.msg_id),
+                    reactions=types.MessageReactions(
+                        results=[
+                            types.ReactionCount(
+                                reaction=types.ReactionPaid(), count=int(request.count)
+                            )
+                        ],
+                        top_reactors=[
+                            types.MessageReactor(
+                                count=int(request.count),
+                                my=True,
+                                peer_id=types.PeerUser(user_id=self.world.me.id),
+                            )
+                        ],
+                    ),
+                )
+            ],
+            users=[],
+            chats=[],
+            date=None,
+            seq=0,
+        )
+
+    def _raw_GetSendAsRequest(self, request: Any) -> Any:
+        return types.channels.SendAsPeers(
+            peers=[types.SendAsPeer(peer=types.PeerUser(user_id=self.world.me.id))],
+            chats=[],
+            users=[],
+        )
+
+    def _raw_GetMessagesReactionsRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.peer)
+        updates = []
+        for message_id in request.id:
+            message = self.world.find(chat_id, int(message_id))
+            reactions = getattr(message, "reactions", None) if message is not None else None
+            if reactions is None:
+                reactions = types.MessageReactions(results=[], can_see_list=True)
+            updates.append(
+                types.UpdateMessageReactions(
+                    peer=types.PeerUser(user_id=abs(chat_id)),
+                    msg_id=int(message_id),
+                    reactions=reactions,
+                )
+            )
+        return types.Updates(updates=updates, users=[], chats=[], date=None, seq=0)
+
+    # -- checklists --------------------------------------------------------
+
+    def _todo_of(self, request: Any) -> tuple[int, Any, Any]:
+        chat_id = self._chat_id(request.peer)
+        message = self.world.find(chat_id, int(request.msg_id))
+        media = getattr(message, "media", None)
+        if getattr(media, "todo", None) is None:
+            from telethon.errors import MessageIdInvalidError
+
+            raise MessageIdInvalidError(request)
+        return chat_id, message, media
+
+    def _raw_ToggleTodoCompletedRequest(self, request: Any) -> types.Updates:
+        _, message, media = self._todo_of(request)
+        completions = [
+            item for item in (media.completions or []) if item.id not in set(request.incompleted)
+        ]
+        done = {item.id for item in completions}
+        for task_id in request.completed:
+            if task_id not in done:
+                completions.append(
+                    types.TodoCompletion(
+                        id=int(task_id),
+                        completed_by=types.PeerUser(user_id=self.world.me.id),
+                        date=datetime.now(timezone.utc),
+                    )
+                )
+        media.completions = completions
+        return self._updates(message)
+
+    def _raw_AppendTodoListRequest(self, request: Any) -> types.Updates:
+        _, message, media = self._todo_of(request)
+        media.todo.list.extend(request.list)
+        return self._updates(message)
+
+    # -- locations ---------------------------------------------------------
+
+    def _raw_GetRecentLocationsRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        found = [
+            message
+            for message in self.world.history(chat_id)
+            if type(getattr(message, "media", None)).__name__ == "MessageMediaGeoLive"
+        ]
+        return types.messages.Messages(messages=found, topics=[], chats=[], users=[])
+
+    def _raw_GetLocatedRequest(self, request: Any) -> types.Updates:
+        peers = list(self.world.nearby)
+        if request.self_expires is not None:
+            self.world.self_expires = int(request.self_expires)
+            peers = [
+                *peers,
+                types.PeerSelfLocated(expires=datetime.now(timezone.utc)),
+            ]
+        return types.Updates(
+            updates=[types.UpdatePeerLocated(peers=peers)],
+            users=list(self.world.users.values()),
+            chats=list(self.world.chats.values()),
+            date=datetime.now(timezone.utc),
+            seq=0,
+        )
+
+    def _raw_GetWebFileRequest(self, request: Any) -> Any:
+        return types.upload.WebFile(
+            size=len(self.world.web_file),
+            mime_type="image/png",
+            file_type=types.storage.FileJpeg(),
+            mtime=0,
+            bytes=self.world.web_file,
+        )
+
+    def _raw_GetConfigRequest(self, request: Any) -> Any:
+        config = types.Config(
+            date=0,
+            expires=0,
+            test_mode=False,
+            this_dc=2,
+            dc_options=[],
+            dc_txt_domain_name="",
+            chat_size_max=200,
+            megagroup_size_max=200000,
+            forwarded_count_max=100,
+            online_update_period_ms=1000,
+            offline_blur_timeout_ms=1000,
+            offline_idle_timeout_ms=1000,
+            online_cloud_timeout_ms=1000,
+            notify_cloud_delay_ms=1000,
+            notify_default_delay_ms=1000,
+            push_chat_period_ms=1000,
+            push_chat_limit=1,
+            edit_time_limit=172800,
+            revoke_time_limit=172800,
+            revoke_pm_time_limit=172800,
+            rating_e_decay=1,
+            stickers_recent_limit=200,
+            channels_read_media_period=1,
+            call_receive_timeout_ms=1,
+            call_ring_timeout_ms=1,
+            call_connect_timeout_ms=1,
+            call_packet_timeout_ms=1,
+            me_url_prefix="https://t.me/",
+            caption_length_max=1024,
+            message_length_max=4096,
+            webfile_dc_id=self.world.webfile_dc_id,
+            venue_search_username=self.world.venue_search_username,
+            reactions_default=self.world.default_reaction,
+        )
+        return config
+
+    def _raw_GetInlineBotResultsRequest(self, request: Any) -> Any:
+        return types.messages.BotResults(
+            query_id=1,
+            results=list(self.world.venues),
+            cache_time=0,
+            users=[],
+            next_offset=None,
+        )
+
+    async def _borrow_exported_sender(self, dc_id: int) -> Any:
+        """`stats.*` and `upload.getWebFile` live on another DC.
+
+        The fake hands back itself with the same `send` surface, so an
+        implementation that forgets to migrate is still distinguishable from
+        one that does: `world.calls` records the request either way, and the
+        borrow/return pair is recorded too.
+        """
+        self.world.calls.append(("borrow_exported_sender", {"dc_id": dc_id}))
+        return _ExportedSender(self)
+
+    async def _return_exported_sender(self, sender: Any) -> None:
+        self.world.calls.append(("return_exported_sender", {}))
 
     # -- entities ----------------------------------------------------------
 
@@ -1209,6 +1782,16 @@ class _AsyncFailure:
 
     async def __anext__(self) -> Any:
         raise self._error
+
+
+class _ExportedSender:
+    """What `_borrow_exported_sender` hands back: `.send(request)`."""
+
+    def __init__(self, client: FakeTelegramClient) -> None:
+        self._client = client
+
+    async def send(self, request: Any) -> Any:
+        return await self._client(request)
 
 
 class _AsyncList:

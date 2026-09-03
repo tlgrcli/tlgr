@@ -74,6 +74,35 @@ Two more, outside the documented output shapes:
 
 ### Added
 
+- **The content groups: `poll`, `reaction`, `todo`, `location` and `search`.**
+  43 operations covering polls and quizzes, the whole reaction surface,
+  checklists, places and live locations, and search outside a single chat.
+  Three of Telegram's shapes drive most of the design and are worth knowing
+  before scripting against them:
+  - **A poll answer is opaque bytes, not an index.** `poll.answers[i].option`
+    is assigned by the server, and `--shuffle` means the order a client shows
+    is not the order the server stores. Every command that names an answer
+    resolves the caller's index against a fresh copy of the poll, and hands
+    the identifier back as `options[].option_b64`.
+  - **`sendReaction` carries the whole desired set.** `reaction add` reads the
+    reactions this account already has and resends them with the new one
+    appended, so adding a second reaction no longer removes the first;
+    `--replace` asks for the old behaviour explicitly.
+  - **Global search pages on a triple.** `(offset_rate, offset_peer,
+    offset_id)` goes into `--cursor` whole; a message id alone restarts the
+    walk at the top of the first chat.
+- **`tlgr message react` and `tlgr msg react` are now `reaction add`.** The
+  operation moved group; the paths, and the `reacted`/`msg_id`/`emoji` keys,
+  did not. `tlgr message unreact` is a new alias of `reaction remove`.
+- **`tlgr message send --poll JSON` works**, and takes the same fields as
+  `poll create` because it calls the same builder.
+- **Star spending is never implicit.** `reaction pay` requires `--stars N`
+  with no default, and `search post` does free price discovery (`--quota`)
+  before refusing to fall through to a paid search without `--pay-stars N`.
+- **`location preview`** renders a map thumbnail from the webfile data centre,
+  and **`poll stats get`** follows the `STATS_MIGRATE` redirect to the stats
+  DC — both through a borrowed sender, as Telethon's own `get_stats` does.
+
 - **The `message` group and `draft`, generated from the registry.** 43
   operations, 77 command paths, 30 aliases: alongside v1's ten `message`
   verbs and three `draft` verbs, the group gains `unpin`, `link`,
@@ -150,6 +179,15 @@ Two more, outside the documented output shapes:
   that no longer traps the daemon into never restarting.
 
 ### Fixed
+
+- **A paginated operation with no rows answers `[]`, not `{}`.** `Page.items`
+  defaults to an empty list and models omit defaults, so an empty page encoded
+  to `{}` and the envelope left `result` as an empty *object* — `for row in
+  result` then iterated dict keys and reported nothing wrong. Every paginated
+  operation now answers with a list. No correct consumer could have depended
+  on the old shape, so this is a fix rather than a breaking change.
+- **`from tlgr.models import DraftCleared` raised ImportError.** The name was
+  in `__all__` but never imported.
 
 - `.gitignore`'s blanket `*.yaml` rule was swallowing `.github/workflows`
   siblings, documentation YAML and test fixtures (PKG-04).
@@ -254,6 +292,12 @@ Two more, outside the documented output shapes:
   rotated (SEC-08).
 
 ### Removed
+
+- **`message.react` as an operation id.** It is `reaction.add`, and both v1
+  paths still resolve to it. `models.ReactResult` went with it; the reaction
+  group answers with `models.reaction.ReactionResult`, which adds `mine` — the
+  full set of reactions this account holds after the call, which is what the
+  next `sendReaction` has to resend.
 
 - The dead `jobs.toml` job engine in `core/config.py` (`load_jobs`,
   `save_jobs`, `JobConfig`, `DestinationConfig`, …). It had no callers left;

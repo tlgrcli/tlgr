@@ -7,15 +7,18 @@ COR-17, COR-33, SEC-04 and UX-01 cannot be reintroduced one command at a time.
 
 from __future__ import annotations
 
+import importlib
 import shlex
+from pathlib import Path
 
 import msgspec
 import pytest
 from click.testing import CliRunner
 
-import tlgr.ops  # noqa: F401  — importing it populates the registry
+import tlgr.ops  # importing it populates the registry
 from tlgr.cli import cli
 from tlgr.cli.gen import build_click_tree
+from tlgr.ops._spec import OperationSpec
 from tlgr.registry import ALIASES, REGISTRY, canonical, lint, policy_allows
 from tlgr.schema import build_schema
 
@@ -149,6 +152,46 @@ class TestOperationContract:
     @pytest.mark.parametrize("spec", SPECS, ids=IDS)
     def test_timeout_sane(self, spec):
         assert 5 <= spec.timeout_s <= 900
+
+
+class TestModuleDiscovery:
+    """`tlgr.ops` finds its operation modules instead of listing them.
+
+    The list it replaced was the file every group PR had to edit and every
+    rebase had to merge by hand. What the list was really for is checkable
+    directly: a module that ships without reaching the registry is a group of
+    commands that silently does not exist.
+    """
+
+    def test_discovery_finds_every_operation_module(self):
+        directory = Path(tlgr.ops.__file__).parent
+        on_disk = sorted(
+            path.stem
+            for path in directory.glob("*.py")
+            if not path.stem.startswith("_")  # plumbing, not specs
+        )
+        assert list(tlgr.ops.op_module_names()) == on_disk
+
+    def test_discovery_is_sorted_so_registration_order_is_stable(self):
+        names = tlgr.ops.op_module_names()
+        assert list(names) == sorted(names)
+
+    def test_importing_the_package_registers_every_module(self):
+        """Every discovered module's `SPEC_*` objects are in the registry."""
+        for name in tlgr.ops.op_module_names():
+            module = importlib.import_module(f"tlgr.ops.{name}")
+            declared = {
+                spec.id
+                for attr in dir(module)
+                if attr.startswith("SPEC_")
+                and isinstance(spec := getattr(module, attr), OperationSpec)
+            }
+            assert declared, f"tlgr/ops/{name}.py declares no operations"
+            assert declared <= set(REGISTRY), f"{name}: {sorted(declared - set(REGISTRY))}"
+
+    def test_every_registered_op_comes_from_a_discovered_module(self):
+        groups = {spec.id.split(".", 1)[0] for spec in SPECS}
+        assert groups <= set(tlgr.ops.op_module_names())
 
 
 class TestTreeShape:

@@ -36,7 +36,6 @@ __all__ = [
     "MessageEntity",
     "PaidMessageSettings",
     "PinResult",
-    "ReactResult",
     "ReactionSummary",
     "ReadReceipts",
     "ReadResult",
@@ -328,15 +327,6 @@ class ReadReceipts(Model):
     unavailable_reason: str | None = None
 
 
-class ReactResult(Model):
-    chat_id: int
-    msg_id: int
-    emoji: str = ""
-    reacted: bool = False
-    already: bool = False
-    reactions: ReactionSummary | None = None
-
-
 class LinkResult(Model):
     link: str
     public: bool = False
@@ -527,6 +517,9 @@ class Message(Model):
     date: str
     date_unix: int
     text: str = ""
+    #: Only global search fills this: a hit in an unknown chat needs a name,
+    #: and `chat_id` alone makes the caller resolve every row itself.
+    chat: Peer | None = None
     out: bool = False
     kind: Literal["message", "service"] = "message"
     # --- who ---

@@ -103,8 +103,8 @@ tlgr message search <chat> <query> [--limit N] [--cursor TOKEN] [--from USER] [-
 
 tlgr message pin <chat> <msg_id>          → {"chat_id": -100123, "msg_id": 123, "pinned": true}
 tlgr message unpin <chat> <msg_id>        → {"chat_id": -100123, "msg_id": 123, "pinned": false, "unpinned": 1}
-tlgr message react <chat> <msg_id> <emoji>
-→ {"chat_id": -100123, "msg_id": 123, "emoji": "👍", "reacted": true}
+tlgr message react <chat> <msg_id> <emoji>   # alias of `reaction add`; see Reactions
+→ {"chat_id": -100123, "msg_id": 123, "emoji": "👍", "reacted": true, "mine": ["👍"]}
 
 tlgr message read <chat> [--up-to MSG_ID]
 → {"chat_id": -100123, "read": true, "read_up_to": 123}
@@ -140,6 +140,140 @@ Beyond the ten verbs above the group also has `preview`, `compose`, `summarize`,
 `tlgr message --help`, or read the generated `docs/reference/message.md`.
 Anything the pinned Telethon cannot express is refused with `NOT_SUPPORTED`
 and a reason — never silently ignored.
+
+### Polls
+
+An answer is addressed by **index** on the command line and by an opaque
+server-assigned identifier on the wire. tlgr resolves the index against a
+fresh copy of the poll on every call, so `--shuffle` cannot make index 1 mean
+two different answers; the identifier comes back as `option_b64` if you would
+rather hold it yourself.
+
+```
+tlgr poll create <chat> <question> <option>... [--quiz --correct N] [--multiple]
+                 [--public-voters] [--duration 2h] [--hide-results] [--allow-adding-options]
+→ {"type": "poll", "can_vote": true, "chat_id": -100123, "msg_id": 123, "poll_id": 506...,
+   "question": "Lunch?", "total_voters": 0,
+   "options": [{"index": 0, "text": "Pizza", "option_b64": "AA"}, ...]}
+
+tlgr poll get <chat> <msg_id> [--follow --follow-for 5m]
+→ {..., "can_vote": false, "restriction": "already-voted", "my_votes": [1]}
+
+tlgr poll vote <chat> <msg_id> <index>...  → the poll, with the new tally
+tlgr poll vote <chat> <msg_id> --retract   → the poll, with my votes gone
+tlgr poll close <chat> <msg_id> --yes      → {"closed": true, ...}
+
+tlgr poll voter list <chat> <msg_id> [--option N]   # public polls only
+→ {"items": [{"user_id": 4242, "option": 0, "date": "..."}], "has_more": false}
+
+tlgr poll option add <chat> <msg_id> <text>     # open-answer polls
+tlgr poll option remove <chat> <msg_id> <index> --yes
+tlgr poll unread list <chat> [--read-all]
+tlgr poll stats get <chat> <msg_id>             # channel admins
+```
+
+`can_vote` and `restriction` are computed for you — `closed`,
+`already-voted`, `subscribers-only`, `country-restricted` — so you do not have
+to learn the answer by sending a vote and reading the error.
+
+### Reactions
+
+`messages.sendReaction` carries the **whole** set of reactions this account
+has on a message, not a delta. `reaction add` therefore reads what is already
+there and resends it with the new one appended; `mine` in the response is the
+set after the call. Use `--replace` to send exactly what you named.
+
+```
+tlgr reaction add <chat> <msg_id> <emoji>... [--custom DOC_ID] [--big] [--replace]
+→ {"chat_id": -100123, "msg_id": 123, "emoji": "👍", "reacted": true, "mine": ["👍"],
+   "reactions": {"counts": {"👍": 4}, "mine": ["👍"], "total": 4}}
+
+tlgr reaction remove <chat> <msg_id> [<emoji>] [--every]
+tlgr reaction list <chat> <msg_id>... [--top-senders]
+tlgr reaction user list <chat> <msg_id> [--emoji E]   # needs can_see_list
+tlgr reaction unread list <chat> [--read-all]
+tlgr reaction catalog [--top] [--recent] [--forget]
+tlgr reaction chat get|set <chat> [--every|--none|--some 👍,❤] [--max-unique N] [--paid on|off]
+tlgr reaction default get|set [<emoji>]
+tlgr reaction tag list|set                            # Saved Messages tags (Premium)
+tlgr reaction purge <chat> <user> --msg ID|--every --yes
+tlgr reaction report <chat> <msg_id> <user> [--ban]
+tlgr reaction pay <chat> <msg_id> --stars N --yes     # spends Stars
+```
+
+A custom (Premium) emoji is spelled `custom:<document_id>` everywhere — read
+one out of `mine` and hand it straight back to `reaction remove`. Reacting
+twice, or removing what is not there, is `already: true`, not an error.
+
+`reaction pay` spends real Stars: `--stars` has no default, the channel is
+validated before anything is spent, and a failed payment is never retried.
+
+### Checklists
+
+A task id is assigned once and never renumbered — completions are keyed by it,
+so removing task 1 leaves tasks 2 and 3 as 2 and 3.
+
+```
+tlgr todo create <chat> <title> <task>... [--others-can-add] [--others-can-complete]
+→ {"chat_id": -100123, "msg_id": 123, "title": "Release checklist",
+   "tasks": [{"id": 1, "title": "tag the commit"}, ...], "done_count": 0}
+
+tlgr todo get <chat> <msg_id>
+tlgr todo toggle <chat> <msg_id> --done 1,2 --undone 3     # one request, both directions
+tlgr todo add <chat> <msg_id> <task>...                    # ids continue from the highest
+tlgr todo edit <chat> <msg_id> [--title T] [--remove-task ID] [--rename-task ID=TEXT]
+```
+
+Creating a checklist needs Telegram Premium. A tick that is already there is
+`already: true`.
+
+### Locations
+
+```
+tlgr location send <chat> <lat> <lon> [--accuracy M]
+tlgr location venue send <chat> <lat> <lon> --title T [--address A] [--venue-id ID]
+tlgr location search <lat> <lon> [<query>]        # venue provider inline bot
+
+tlgr location live start <chat> <lat> <lon> [--period 1h] [--heading DEG] [--proximity M]
+→ {"id": 123, "chat_id": -100123, "period": 3600, "expires_at": "2026-09-03T10:14:07Z"}
+tlgr location live edit <chat> <msg_id> [<lat> <lon>] [--heading DEG]
+tlgr location live stop <chat> <msg_id> | --every
+tlgr location live list <chat> [--mine]
+
+tlgr location nearby list <lat> <lon> [--publish 1h --yes] [--unpublish]
+tlgr location preview <chat> <msg_id> [--out map.png] [--zoom 15] [--size 512x512]
+```
+
+Nothing moves a live location for you: the server stores one position and a
+period, so `expires_at` is reported rather than a duration and you re-issue
+`location live edit` yourself. Stopping deliberately sends an empty point —
+a stopped share should not publish where you were when you stopped it.
+Looking at who is nearby never publishes your own position; `--publish` does,
+and says so.
+
+A negative longitude looks like an option to the parser: put `--` before the
+coordinates, as in `tlgr location send @alice -- 51.5074 -0.1278`.
+
+### Search
+
+```
+tlgr search global [<query>] [--type photo|video|link|...] [--only user|group|channel]
+                   [--folder ID] [--archived] [--since TS] [--until TS] [--limit N] [--cursor T]
+→ {"items": [{"id": 123, "chat_id": -100123, "chat": {...}, "text": "..."}], "has_more": true}
+
+tlgr search hashtag <tag> [--chat CHAT]        # in one chat, or all public posts
+tlgr search hashtag --recent [--forget TAG|*]  # tlgr's own local history
+tlgr search post <query> [--quota] [--pay-stars N --yes]
+```
+
+Global search pages on `(offset_rate, offset_peer, offset_id)`; `--cursor`
+carries all three, so never rebuild it from a message id. Global search only
+covers chats you are in and never secret chats, so an empty answer is not
+proof a message does not exist.
+
+`search post` is free while a daily quota lasts. `--quota` reports what is
+left and what the query would cost without spending anything; beyond the free
+quota the search refuses to run until you pass `--pay-stars N`.
 
 ### Drafts
 

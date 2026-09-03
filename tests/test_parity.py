@@ -25,16 +25,21 @@ ROOT = Path(__file__).resolve().parent.parent
 #: Every P0 catalog id the registry claims. Raised by each group PR, never
 #: lowered. ARCHITECTURE §1.3: "P0 coverage may never decrease and must reach
 #: 100 % before 2.0.0 final".
-P0_FLOOR = 53
+P0_FLOOR = 64
 
 #: The floor for total covered ids. Same rule, weaker guarantee.
-COVERED_FLOOR = 350
+COVERED_FLOOR = 453
 
-#: Every P0 catalog id PR-1's own operations cover — all 30 of them, named
-#: rather than counted, so a swap (one dropped, one added) cannot pass a
-#: count check silently. `test_the_floor_is_the_whole_truth` keeps the list
-#: equal to what the registry actually claims, so raising it is a deliberate
-#: line in a diff and never an accident.
+#: Every P0 catalog id PR-1's own operations cover, named rather than
+#: counted, so a swap (one dropped, one added) cannot pass a count check
+#: silently. `test_the_floor_is_the_whole_truth` keeps the list equal to what
+#: the registry actually claims, so raising it is a deliberate line in a diff
+#: and never an accident.
+#:
+#: `messages-core.reaction-add-remove` left this set in PR-9: `message react`
+#: became an alias of `reaction add`, so the id is claimed by the group that
+#: owns the whole reaction surface. It is still covered — it moved to
+#: PR9_P0_IDS below, and the total floor went up, not down.
 PR1_P0_IDS = frozenset(
     {
         "bots.inline-keyboard-render",
@@ -57,7 +62,6 @@ PR1_P0_IDS = frozenset(
         "messages-core.message-get",
         "messages-core.message-link-create",
         "messages-core.pin-message",
-        "messages-core.reaction-add-remove",
         "messages-core.read-mark-history",
         "messages-core.saved-messages-send",
         "messages-core.search-filter-media-type",
@@ -100,6 +104,27 @@ PR3_P0_IDS = frozenset(
         "groups-channels-admin.leave",
     }
 )
+
+#: Every P0 catalog id PR-9's `poll`/`reaction`/`todo`/`location`/`search`
+#: operations cover. Same rule as PR1_P0_IDS: named, not counted.
+PR9_P0_IDS = frozenset(
+    {
+        "messages-core.reaction-add-remove",
+        "messages-core.search-global",
+        "poll.create-regular",
+        "poll.multiple-choice",
+        "poll.public-voters",
+        "poll.quiz",
+        "poll.stop",
+        "poll.vote",
+        "reaction.read-summary",
+        "reaction.remove",
+        "reaction.send-emoji",
+        "todo.toggle-completed",
+    }
+)
+
+PR9_GROUPS = ("poll.", "reaction.", "todo.", "location.", "search.")
 
 
 @pytest.fixture(scope="module")
@@ -163,8 +188,8 @@ class TestTheGate:
         assert report.covered >= COVERED_FLOOR
 
     def test_every_p0_id_this_pr_owns_is_covered(self):
-        missing = sorted(PR1_P0_IDS - _covered_ids())
-        assert missing == [], f"PR-1 dropped coverage of {missing}"
+        missing = sorted((PR1_P0_IDS | PR9_P0_IDS) - _covered_ids())
+        assert missing == [], f"coverage of {missing} was dropped"
 
     def test_every_p0_id_the_chat_group_owns_is_covered(self):
         missing = sorted(PR3_P0_IDS - _covered_ids())
@@ -179,24 +204,20 @@ class TestTheGate:
         to be added to the list on purpose.
         """
         catalogue = catalog()
-        actual = {
-            cid
-            for op_id, spec in REGISTRY.items()
-            if op_id.startswith(("message.", "draft."))
-            for cid in (*spec.covers, *spec.covers_partial)
-            if cid in catalogue and catalogue[cid].priority == "P0"
-        }
-        assert actual == set(PR1_P0_IDS)
 
-        chat = {
-            cid
-            for op_id, spec in REGISTRY.items()
-            if op_id.startswith(("chat.", "folder."))
-            for cid in (*spec.covers, *spec.covers_partial)
-            if cid in catalogue and catalogue[cid].priority == "P0"
-        }
-        assert chat == set(PR3_P0_IDS)
-        assert len(PR1_P0_IDS) + len(PR3_P0_IDS) == P0_FLOOR
+        def p0_of(prefixes: tuple[str, ...]) -> set[str]:
+            return {
+                cid
+                for op_id, spec in REGISTRY.items()
+                if op_id.startswith(prefixes)
+                for cid in (*spec.covers, *spec.covers_partial)
+                if cid in catalogue and catalogue[cid].priority == "P0"
+            }
+
+        assert p0_of(("message.", "draft.")) == set(PR1_P0_IDS)
+        assert p0_of(("chat.", "folder.")) == set(PR3_P0_IDS)
+        assert p0_of(PR9_GROUPS) == set(PR9_P0_IDS)
+        assert len(PR1_P0_IDS | PR3_P0_IDS | PR9_P0_IDS) == P0_FLOOR
 
     def test_every_uncovered_id_is_waived_with_a_pr_number(self, report):
         """No silent gaps: the gate is meaningful from day one, not at the end."""

@@ -22,11 +22,38 @@ Compact reference for LLM agents. Use `--json` for all calls.
 
 ## Output Modes
 
-Always use `--json`. Responses are JSON objects. Errors also go to stdout as JSON with `exit_code != 0`.
+Always use `--json`. Errors also go to stdout as JSON with `exit_code != 0`.
+
+Commands generated from the operation registry — the whole `message` group,
+`draft`, `agent exit-codes`, `agent parity`, `schema` — wrap their answer in
+an envelope:
+
+```json
+{"ok": true, "op": "message.send", "account": "main",
+ "result": {...}, "page": {...},
+ "meta": {"request_id": "...", "elapsed_ms": 42, "already": false, "warnings": []}}
+```
+
+```json
+{"ok": false, "error": {"error": "...", "code": "RATE_LIMITED", "exit_code": 7, "wait_seconds": 30}}
+```
+
+`--results-only` prints the inner value in both cases, which is v1's shape,
+and `--select a.b,c` projects fields by dot path. `meta.already: true` marks an
+idempotent no-op (the world already looked the way you asked for) — success,
+not an error. Commands still under `tlgr/cli/legacy/` print v1's bare object.
+
+`tlgr agent whoami --json` reports `output_schema_version: 2`; branch on that
+rather than probing for each changed shape.
 
 ## Pagination
 
-List commands return `has_more` (bool) and `next_cursor` (opaque string). Pass `--cursor <next_cursor>` to get the next page. Stop when `has_more` is `false`.
+List commands return `{items, has_more, next_cursor, total}`. Pass
+`--cursor <next_cursor>` to get the next page; stop when `has_more` is
+`false`. A cursor is opaque, signed, and bound to the operation, page kind and
+account it came from — a tampered or foreign cursor is exit 2, never a silent
+restart from the top of the list. `--all` walks every page inside the daemon
+and streams the result.
 
 ## Exit Codes
 
@@ -50,40 +77,69 @@ List commands return `has_more` (bool) and `next_cursor` (opaque string). Pass `
 
 ### Messages
 
+Generated from the operation registry, so every response below is the
+`result` inside the v2 envelope (see **Output Modes**). Shapes shown are what
+`--results-only` prints. `msg` is an alias for `message`, and `tlgr send` is
+an alias for `tlgr message send`.
+
 ```
 tlgr message send <chat> <text> [--file PATH] [--caption TEXT] [--reply-to ID] [--silent]
-→ {"id": 123, "chat_id": -100123, "date": "..."}
+                                [--parse md|html|none] [--schedule TS] [--topic ID]
+                                [--send-as PEER] [--split] [--typing N|--typing-auto]
+→ {"id": 123, "chat_id": -100123, "date": "2026-09-03T09:14:07Z",
+   "date_unix": 1788340447, "text": "...", "out": true, "kind": "message"}
 
-tlgr message list <chat> [--limit N] [--cursor TOKEN] [--sender] [--media]
-→ {"messages": [...], "has_more": true, "next_cursor": "..."}
+tlgr message list <chat> [--limit N] [--cursor TOKEN] [--all] [--since TS] [--until TS]
+→ {"items": [...], "has_more": true, "next_cursor": "..."}
 
 tlgr message get <chat> <msg_id>
 → {"id": 123, "text": "...", "sender": {...}, "media": {...}, ...}
 
 tlgr message delete <chat> <id1> [id2 ...]
-→ {"deleted": 2}
+→ {"chat_id": -100123, "deleted": 2, "ids": [123, 124]}
 
-tlgr message search <chat> <query> [--limit N] [--cursor TOKEN] [--local] [--regex PATTERN]
-→ {"messages": [...], "has_more": false}
+tlgr message search <chat> <query> [--limit N] [--cursor TOKEN] [--from USER] [--media-type T]
+→ {"items": [...], "has_more": false}
 
-tlgr message pin <chat> <msg_id>
-→ {"pinned": true, "msg_id": 123}
-
+tlgr message pin <chat> <msg_id>          → {"chat_id": -100123, "msg_id": 123, "pinned": true}
+tlgr message unpin <chat> <msg_id>        → {"chat_id": -100123, "msg_id": 123, "pinned": false, "unpinned": 1}
 tlgr message react <chat> <msg_id> <emoji>
-→ {"reacted": true, "msg_id": 123, "emoji": "👍"}
+→ {"chat_id": -100123, "msg_id": 123, "emoji": "👍", "reacted": true}
 
 tlgr message read <chat> [--up-to MSG_ID]
-→ {"read": true, "chat_id": -100123}
+→ {"chat_id": -100123, "read": true, "read_up_to": 123}
 
 tlgr message edit <chat> <msg_id> <text> [--typing SECONDS]
-→ {"edited": true, "id": 123, "chat_id": -100123, "date": "..."}
+→ {"id": 123, "chat_id": -100123, "edited": true, "edit_date": "2026-09-03T09:20:00Z", "text": "..."}
 
-tlgr message forward <from_chat> <to_chat> <id1> [id2 ...]
-→ {"forwarded": 2, "ids": [200, 201]}
+tlgr message forward <from_chat> <id1> [id2 ...] --to <chat> [--hide-sender]
+→ {"items": [{"id": 200, "chat_id": -1001234, "from_chat_id": 777123, "from_msg_id": 123}], "has_more": false}
+
+tlgr message link <chat> <msg_id>         → {"link": "https://t.me/durov/42", "public": true, ...}
+tlgr message entity list --parse md <text>
+→ {"text": "hello world", "entities": [...], "auto_entities": [...], "length_utf16": 11, "would_split": 1}
 ```
+
+Two changes from v1 to note before parsing: `date` is RFC-3339 with a
+`date_unix` sibling, `message edit` reports `edit_date` rather than `date`,
+and `list`/`search`/`forward` return `{items, has_more, next_cursor, total}`
+instead of `{messages: [...]}`. `tlgr agent whoami` reports
+`output_schema_version: 2` if you need to branch.
 
 `message send` also supports `--typing SECONDS` (show "typing…" before sending, max 60s)
 and `--typing-auto` (duration estimated from text length) for human-like sends.
+Text over 4096 UTF-16 units is refused unless `--split` is given: a silently
+truncated message is worse than an unsent one. Use `message entity list` to see
+exactly what a parse mode did, in the UTF-16 offsets Telegram counts in, before
+sending.
+
+Beyond the ten verbs above the group also has `preview`, `compose`, `summarize`,
+`translate`, `transcribe`, `report`, `thread list`, `view get`,
+`read-receipt list`, `scheduled send`, `dice list`, `effect list`, `paid set`,
+`fact-check set`, `game *`, `sponsored *`, `suggested *` and `tone *`. Run
+`tlgr message --help`, or read the generated `docs/reference/message.md`.
+Anything the pinned Telethon cannot express is refused with `NOT_SUPPORTED`
+and a reason — never silently ignored.
 
 ### Drafts
 
@@ -91,15 +147,21 @@ Drafts are the human-in-the-loop primitive: prepare a reply without sending;
 the user sends or discards it from any Telegram client.
 
 ```
-tlgr draft set <chat> <text> [--reply-to MSG_ID]
-→ {"draft": true, "chat_id": -100123, "text": "..."}
+tlgr draft set <chat> <text> [--reply-to MSG_ID] [--parse md|html|none]
+→ {"chat_id": -100123, "text": "...", "date": "2026-09-03T09:14:07Z"}
 
-tlgr draft clear <chat>
-→ {"cleared": true, "chat_id": -100123}
+tlgr draft clear <chat>                   → {"cleared": true, "chat_id": -100123, "count": 1}
+tlgr draft clear --all --yes              → {"cleared": true, "count": 0}
 
-tlgr draft list
-→ {"drafts": [{"chat_id": ..., "chat_name": ..., "chat_username": ..., "text": ..., "date": ..., "reply_to": ...}]}
+tlgr draft list [--limit N] [--cursor TOKEN]
+→ {"items": [{"chat_id": -100123, "chat": {...}, "text": "...", "date": "...", "reply_to": ...}],
+   "has_more": false}
 ```
+
+`draft set` returns the saved draft rather than v1's `{"draft": true}`, and
+`draft list` returns a page whose `chat_id` is the **marked** id (`-100…` for
+channels, negative for groups) with `raw_id` beside it — v1's raw id could not
+tell a user from a channel.
 
 ### Chats
 
@@ -286,9 +348,18 @@ tlgr agent whoami
 tlgr agent exit-codes
 → {"exit_codes": {...}}
 
+tlgr agent parity [--uncovered] [--domain NAME]
+→ {"catalog_version": "...", "required": 1797, "covered": 200, "percent": 11.1,
+   "by_priority": {...}, "by_domain": {...}, "uncovered": [...], "waivers": 1597}
+
 tlgr schema [command_path...]
-→ {"schema_version": 1, "build": "2.0.0", "command": {...}}
+→ {"schema_version": 2, "build": "2.0.0", "command": {...}}
 ```
+
+`agent parity` reports coverage of the pinned Telegram feature catalog: what
+tlgr can do today, per priority and per domain, with every gap either waived
+to a named later PR or listed. Use it to find out whether a capability exists
+before writing a workaround. Nothing in it is hand-maintained.
 
 ### Daemon
 
@@ -296,8 +367,34 @@ tlgr schema [command_path...]
 tlgr daemon start [--foreground]
 tlgr daemon stop
 tlgr daemon status
-→ {"running": true, "pid": 12345, "uptime_seconds": 3600, "accounts": ["main"]}
+→ {"running": true, "ready": true, "pid": 12345, "uptime_seconds": 3600,
+   "accounts": ["main"], "connections": {"main": true}, "disconnected": [],
+   "healthy": true, "version": "2.0.0", "protocol": 2}
 ```
+
+`running` means a process is alive; `ready` means it can actually serve. A
+daemon that is up but cannot reach Telegram reports `healthy: false` and names
+the accounts in `disconnected` — check `ready`, not `running`.
+
+**Protocol v2.** The CLI talks to the daemon over `~/.tlgr/daemon.sock`, mode
+`srw-------`, with the peer's uid checked on every connection. Four things
+follow that are worth knowing as a caller:
+
+- **The account is always explicit.** The CLI resolves it (`-a` →
+  `TLGR_ACCOUNT` → `[defaults]` → active alias) and sends it; the daemon never
+  picks one for you and answers `ACCOUNT_REQUIRED` (exit 2) when it was not
+  given one. v1 used whichever alias came first out of a set, so a two-account
+  user could send from the wrong identity with no signal.
+- **Version handshake with one restart.** A client newer than the running
+  daemon restarts it exactly once and says so on stderr. `--no-daemon-restart`
+  refuses instead, with exit 11.
+- **The daemon starts itself, once.** Concurrent `tlgr` invocations with no
+  daemon running produce exactly one daemon; readiness is an HTTP 200 from
+  `/v1/status`, not the socket file appearing.
+- **A dropped connection is a state, not an exception.** The account goes
+  `degraded` and requests answer `RETRYABLE` (exit 8) with a hint; a revoked
+  session goes `needs_login` and answers exit 4. `tlgr daemon stop` drains
+  in-flight work instead of cancelling it.
 
 ### Streaming
 
@@ -311,6 +408,11 @@ tlgr watch [--chat CHAT1 --chat CHAT2]
 ```json
 {"error": "message text", "code": "RATE_LIMITED", "exit_code": 7, "wait_seconds": 30}
 ```
+
+Generated commands nest exactly that object under `{"ok": false, "error": …}`
+and add a `hint` when there is a useful next step; `--results-only` prints the
+inner object, which is the shape above. Legacy commands print it bare. Either
+way it goes to **stdout**, and the exit code is the contract.
 
 ## Chat Resolution
 
@@ -332,6 +434,21 @@ Use `--enable-commands` to restrict what the agent can do:
 - `--enable-commands message` — all message subcommands
 - `--enable-commands '*'` — everything (default)
 
+For generated commands the allowlist is matched by **canonical operation id**
+and enforced inside the daemon, so an alias cannot be used to get past it:
+`--enable-commands message.list` permits `tlgr msg list` too, and a blocked
+operation exits 6. It is a usability guard, not a sandbox — anything that can
+reach the socket can reach the session. See `SECURITY.md`.
+
 ## Self-Discovery
 
-Run `tlgr schema --json` for the full machine-readable CLI schema with parameter types, defaults, and example responses.
+Run `tlgr schema --json` for the full machine-readable CLI schema with
+parameter types, defaults, and example responses. For generated commands it
+carries a JSON Schema (draft 2020-12) for both the request and the response of
+every operation, plus a generated example — so you can validate a call before
+making it. `tlgr agent parity --json` answers the other question: whether a
+capability exists at all yet.
+
+Generated per-command reference lives in `docs/reference/` (`message.md`,
+`draft.md`, `agent.md`, `PARITY.md`). It comes out of the same definitions, so
+it cannot describe a flag the CLI does not have.

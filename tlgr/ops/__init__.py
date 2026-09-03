@@ -7,7 +7,18 @@ later as a missing command or a broken doc.
 
 from __future__ import annotations
 
-from tlgr.ops import agent, chat, draft, folder, message
+from tlgr.ops import (
+    agent,
+    chat,
+    draft,
+    folder,
+    location,
+    message,
+    poll,
+    reaction,
+    search,
+    todo,
+)
 from tlgr.ops._spec import OpContext, OperationSpec, PageKind, Surface
 from tlgr.registry import REGISTRY, canonical, get, lint_or_raise, register
 
@@ -22,7 +33,18 @@ __all__ = [
     "register",
 ]
 
-_MODULES = (agent, chat, draft, folder, message)
+_MODULES = (
+    agent,
+    chat,
+    draft,
+    folder,
+    location,
+    message,
+    poll,
+    reaction,
+    search,
+    todo,
+)
 
 for _module in _MODULES:
     for _name in dir(_module):

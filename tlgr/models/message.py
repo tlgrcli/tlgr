@@ -527,6 +527,9 @@ class Message(Model):
     date: str
     date_unix: int
     text: str = ""
+    #: Only global search fills this: a hit in an unknown chat needs a name,
+    #: and `chat_id` alone makes the caller resolve every row itself.
+    chat: Peer | None = None
     out: bool = False
     kind: Literal["message", "service"] = "message"
     # --- who ---

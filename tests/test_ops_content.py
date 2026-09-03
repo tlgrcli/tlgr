@@ -1561,3 +1561,164 @@ class TestLocationPreview:
             client, in_thread, "location.preview", {"chat": "@alice", "msg_id": 500}
         )
         assert error.exit_code == EXIT_NOT_FOUND
+
+
+# ---------------------------------------------------------------------------
+# search
+# ---------------------------------------------------------------------------
+
+
+class TestSearchGlobal:
+    async def test_hits_carry_the_chat_they_came_from(
+        self, live_daemon, client, in_thread, history
+    ):
+        rows = await result(client, in_thread, "search.global", {"query": "message"})
+        assert rows
+        assert rows[0]["chat"]["id"] == ALICE
+
+    async def test_the_cursor_carries_the_whole_offset_triple(
+        self, live_daemon, client, in_thread, history
+    ):
+        """A message id alone would restart the walk at the top of chat one."""
+        from tlgr.core.pagination import PageKind, decode_cursor
+
+        envelope = await call(client, in_thread, "search.global", {"query": "message"}, limit=2)
+        token = envelope["page"]["next_cursor"]
+        assert token
+        state = decode_cursor(token, op="search.global", kind=PageKind.RATE, account="work")
+        assert set(state) == {"offset_rate", "offset_peer", "offset_id"}
+        assert state["offset_rate"] == 42
+
+        await call(client, in_thread, "search.global", {"query": "message"}, cursor=token, limit=2)
+        request = history.called("SearchGlobalRequest")[-1]
+        assert request.offset_rate == 42
+        assert request.offset_id == state["offset_id"]
+
+    async def test_the_scope_flags_reach_the_request(self, live_daemon, client, in_thread, history):
+        await result(client, in_thread, "search.global", {"query": "x", "only": "channel"})
+        request = history.called("SearchGlobalRequest")[0]
+        assert request.broadcasts_only is True
+        assert request.groups_only is None
+
+    async def test_archived_means_folder_one(self, live_daemon, client, in_thread, history):
+        await result(client, in_thread, "search.global", {"query": "x", "archived": True})
+        assert history.called("SearchGlobalRequest")[0].folder_id == 1
+
+    async def test_missed_calls_are_a_filter_flag_not_a_separate_search(
+        self, live_daemon, client, in_thread, history
+    ):
+        await result(
+            client, in_thread, "search.global", {"query": "", "type": "call", "missed": True}
+        )
+        request = history.called("SearchGlobalRequest")[0]
+        assert type(request.filter).__name__ == "InputMessagesFilterPhoneCalls"
+        assert request.filter.missed is True
+
+    async def test_an_unknown_filter_is_a_usage_error(
+        self, live_daemon, client, in_thread, history
+    ):
+        error = await fails(client, in_thread, "search.global", {"type": "banana"})
+        assert error.exit_code == EXIT_USAGE
+
+    async def test_the_layer_229_community_scope_is_not_supported(
+        self, live_daemon, client, in_thread, history
+    ):
+        error = await fails(
+            client, in_thread, "search.global", {"query": "x", "community": "@alice"}
+        )
+        assert error.exit_code == EXIT_INDETERMINATE
+        assert error.code == "NOT_SUPPORTED"
+
+    async def test_sent_media_uses_its_own_method_and_does_not_paginate(
+        self, live_daemon, client, in_thread, history
+    ):
+        envelope = await call(client, in_thread, "search.global", {"query": "", "sent_media": True})
+        assert history.called("SearchSentMediaRequest")
+        assert envelope["page"]["has_more"] is False
+
+
+class TestSearchHashtag:
+    async def test_an_in_chat_search_is_a_plain_messages_search(
+        self, live_daemon, client, in_thread, history
+    ):
+        await result(client, in_thread, "search.hashtag", {"tag": "release", "chat": "@alice"})
+        assert history.called("SearchRequest")[0].q == "#release"
+
+    async def test_a_bare_tag_gets_its_hash(self, live_daemon, client, in_thread, history):
+        await result(client, in_thread, "search.hashtag", {"tag": "release"})
+        assert history.called("SearchPostsRequest")[0].hashtag == "release"
+
+    async def test_a_cashtag_keeps_its_dollar(self, live_daemon, client, in_thread, history):
+        await result(client, in_thread, "search.hashtag", {"tag": "$TON", "chat": "@alice"})
+        assert history.called("SearchRequest")[0].q == "$TON"
+
+    async def test_no_tag_is_a_usage_error(self, live_daemon, client, in_thread, history):
+        error = await fails(client, in_thread, "search.hashtag", {})
+        assert error.exit_code == EXIT_USAGE
+
+    async def test_the_recent_list_is_local_state_that_round_trips(
+        self, live_daemon, client, in_thread, history
+    ):
+        """This layer has no getRecentHashtags; the official clients keep it too."""
+        await result(client, in_thread, "search.hashtag", {"tag": "release"})
+        await result(client, in_thread, "search.hashtag", {"tag": "hotfix"})
+        rows = await result(client, in_thread, "search.hashtag", {"recent": True})
+        assert [row["text"] for row in rows] == ["#hotfix", "#release"]
+
+    async def test_one_tag_can_be_forgotten_and_the_whole_list_cleared(
+        self, live_daemon, client, in_thread, history
+    ):
+        await result(client, in_thread, "search.hashtag", {"tag": "release"})
+        await result(client, in_thread, "search.hashtag", {"tag": "hotfix"})
+        rows = await result(
+            client, in_thread, "search.hashtag", {"recent": True, "forget": "#hotfix"}
+        )
+        assert [row["text"] for row in rows] == ["#release"]
+        rows = await result(client, in_thread, "search.hashtag", {"recent": True, "forget": "*"})
+        assert rows == []
+
+    async def test_story_hashtags_are_the_story_groups_surface(
+        self, live_daemon, client, in_thread, history
+    ):
+        error = await fails(
+            client, in_thread, "search.hashtag", {"tag": "release", "stories": True}
+        )
+        assert error.exit_code == EXIT_INDETERMINATE
+        assert error.code == "NOT_SUPPORTED"
+
+
+class TestSearchPost:
+    async def test_the_quota_is_reported_without_searching(
+        self, live_daemon, client, in_thread, history
+    ):
+        envelope = await call(client, in_thread, "search.post", {"query": "release"})
+        envelope = await call(client, in_thread, "search.post", {"query": "release", "quota": True})
+        assert envelope["result"] == []
+        assert "3 free searches left" in envelope["meta"]["warnings"][0]
+
+    async def test_a_free_search_does_not_offer_to_pay(
+        self, live_daemon, client, in_thread, history
+    ):
+        await result(client, in_thread, "search.post", {"query": "release"})
+        assert history.called("SearchPostsRequest")[0].allow_paid_stars is None
+
+    async def test_an_exhausted_quota_refuses_to_spend_by_itself(
+        self, live_daemon, client, in_thread, history
+    ):
+        history.search_flood_remains = 0
+        error = await fails(client, in_thread, "search.post", {"query": "release"})
+        assert error.exit_code == EXIT_USAGE
+        assert "--pay-stars 10" in str(error)
+        assert history.called("SearchPostsRequest") == []
+
+    async def test_paying_too_little_is_refused(self, live_daemon, client, in_thread, history):
+        history.search_flood_remains = 0
+        error = await fails(client, in_thread, "search.post", {"query": "release", "pay_stars": 2})
+        assert error.exit_code == EXIT_USAGE
+
+    async def test_an_explicit_agreement_is_passed_through(
+        self, live_daemon, client, in_thread, history
+    ):
+        history.search_flood_remains = 0
+        await result(client, in_thread, "search.post", {"query": "release", "pay_stars": 10})
+        assert history.called("SearchPostsRequest")[0].allow_paid_stars == 10

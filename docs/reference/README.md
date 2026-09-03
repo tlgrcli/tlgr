@@ -2,7 +2,7 @@
 
 # Command reference
 
-132 operations across 9 groups, generated from the operation registry. Groups still served by v1's hand-written commands are not listed here; they arrive with their own PR.
+135 operations across 10 groups, generated from the operation registry. Groups still served by v1's hand-written commands are not listed here; they arrive with their own PR.
 
 | Group | Operations | Reference |
 |---|---:|---|
@@ -14,6 +14,7 @@
 | `message` | 39 | [message.md](message.md) |
 | `poll` | 9 | [poll.md](poll.md) |
 | `reaction` | 17 | [reaction.md](reaction.md) |
+| `search` | 3 | [search.md](search.md) |
 | `todo` | 5 | [todo.md](todo.md) |
 
 - [PARITY.md](PARITY.md) — coverage against the Telegram feature catalog.

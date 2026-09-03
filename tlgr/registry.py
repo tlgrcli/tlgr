@@ -191,6 +191,12 @@ VERBS: frozenset[str] = frozenset(
         "stealth",
         "schema",
         "parity",
+        # `search` is one of COMMANDS.md's verb-first nouns: the tail of
+        # `search global` / `search hashtag` names the *scope*, not an
+        # action. They are listed here because L1 checks the last segment
+        # and has no way to know which nouns are verb-first.
+        "global",
+        "hashtag",
     ]
 )
 

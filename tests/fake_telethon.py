@@ -1180,6 +1180,60 @@ class FakeTelegramClient:
             votes_graph=types.StatsGraph(json=types.DataJSON(data='{"columns":[]}'))
         )
 
+    # -- search ------------------------------------------------------------
+
+    def _slice(self, messages: list[Any], *, next_rate: int | None = None) -> Any:
+        """A `messagesSlice`, which is what every global search answers with."""
+        return types.messages.MessagesSlice(
+            count=len(messages),
+            messages=messages,
+            topics=[],
+            chats=list(self.world.chats.values()),
+            users=list(self.world.users.values()),
+            next_rate=next_rate,
+        )
+
+    def _raw_SearchGlobalRequest(self, request: Any) -> Any:
+        found: list[Any] = []
+        for history in self.world.messages.values():
+            for message in history:
+                if request.q and request.q.lower() not in (message.message or "").lower():
+                    continue
+                if request.offset_id and message.id >= request.offset_id:
+                    continue
+                found.append(message)
+        found.sort(key=lambda m: m.id, reverse=True)
+        return self._slice(found[: int(request.limit)], next_rate=42)
+
+    def _raw_SearchSentMediaRequest(self, request: Any) -> Any:
+        found = [
+            message
+            for history in self.world.messages.values()
+            for message in history
+            if getattr(message, "out", False)
+        ]
+        return self._slice(found[: int(request.limit)])
+
+    def _raw_SearchRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        found = [
+            message
+            for message in self.world.history(chat_id)
+            if not request.q or request.q.lower() in (message.message or "").lower()
+        ]
+        return self._slice(sorted(found, key=lambda m: m.id, reverse=True)[: int(request.limit)])
+
+    def _raw_SearchPostsRequest(self, request: Any) -> Any:
+        return self._slice(list(self.world.public_posts)[: int(request.limit)], next_rate=7)
+
+    def _raw_CheckSearchPostsFloodRequest(self, request: Any) -> Any:
+        return types.SearchPostsFlood(
+            total_daily=10,
+            remains=self.world.search_flood_remains,
+            query_is_free=self.world.search_flood_remains > 0 or None,
+            stars_amount=self.world.search_flood_stars,
+        )
+
     # -- reaction policy, tags and paid reactions --------------------------
 
     def _full_channel(self, chat_id: int) -> Any:

@@ -434,3 +434,138 @@ so the ordinary confirmation applies. A failed payment is never retried
 automatically. `reaction pay` also builds the non-standard `random_id` the
 paid-reaction method wants — `(unixtime << 32) | random_uint32` — which is
 unlike every other send in the API.
+## 2026-09-03 — login is a sequence of commands, and `account add` does not finish it
+
+v1's `account add` sent the code, blocked on `input()` while a human read
+their phone, and signed in from the same client — because Telethon keeps
+`phone_code_hash` in memory on the client object, so a second process has
+lost it. A daemon cannot prompt, and an agent has no `input()`. PR-2 keeps
+the pending login *in the daemon*, keyed by alias, and mirrors phone +
+`phone_code_hash` + code type into `<account>/login-state.json` at 0600. So
+`tlgr account add +98…` now starts the login and returns the exact next
+command (`tlgr auth verify-code <code> --alias …`) instead of holding a
+terminal open. `--bot` still finishes in one call, because a bot token is a
+complete credential. AGENT.md and README say so in the same words.
+
+## 2026-09-03 — `auth sign-up` exists, and a *login* still never signs up
+
+ARCHITECTURE §1.2 said "`auth.signUp` is never called", and the PR-2 work
+list has `auth sign-up` as a P2 command with its own consent gate. Both
+concerns are satisfied by splitting them: a login that finds no account stops
+with `{"status": "signup_required"}` and names the other command — it never
+registers one as a side effect of a failed sign-in — while registering is a
+separate run that requires `--first-name` *and* `--accept-tos`, because
+accepting Terms of Service is a legal act tlgr will not perform implicitly.
+§1.2's bullet is amended to "no *silent* account creation", which is what the
+rule was protecting.
+
+## 2026-09-03 — `passport authorize` is registered and refuses
+
+`account.acceptAuthorization` takes a `secureCredentialsEncrypted` blob: the
+requested documents re-encrypted under the service's RSA key with a secret
+derived from the cloud password. Telethon 1.44 implements none of that KDF.
+The command is registered anyway, so `tlgr passport authorize` exists and
+explains itself, and it raises NOT_SUPPORTED (exit 13 — nothing refused this,
+it was never asked) pointing at `passport form get`, which reads the whole
+request. Half-implementing it would either hand a service identity documents
+encrypted wrongly or produce an error nobody outside Telegram can diagnose.
+Reading, deleting and phone/email verification need no crypto and are fully
+implemented, which is why the catalog ids stay *partial* rather than covered.
+
+## 2026-09-03 — logging out is not removing the account
+
+v1's `account remove` deleted the local files and never called
+`auth.logOut`, so the authorization went on appearing in every other client's
+Devices list forever. PR-2 splits the two. `account logout` revokes the
+authorization, stores the returned `future_auth_token` (0600, capped at 20)
+and deletes the dead session file, but keeps the alias and its credentials so
+`tlgr auth send-code` can log back in. `account remove` deletes the record;
+without `--logout` it says, in the response, that the server-side
+authorization is still alive.
+
+## 2026-09-03 — `account check` reports states instead of raising them
+
+"The network is down" and "Telegram revoked this auth key" both look like a
+disconnected client to `daemon status`, and only one of them is fixed by
+waiting. `account check` distinguishes `authorized` / `revoked` / `banned` /
+`deactivated` / `frozen` / `offline` and returns a row per account rather
+than raising, because `tlgr account check` with no alias has to answer for
+every configured account even when one of them is dead. `frozen` carries
+Telegram's own appeal URL from `help.getAppConfig`; the appeal itself is a
+web form a CLI cannot submit.
+
+## 2026-09-03 — `account password change` refuses rather than destroy Passport data
+
+The Passport secure secret is encrypted under the cloud password, and
+Telethon's `edit_2fa` helper drops `new_secure_settings` — so the obvious
+implementation silently destroys a user's stored identity documents. When
+`account.getPassword` reports `has_secure_values`, the change is refused with
+a usage error naming both ways out (delete the documents, or `--keep-passport`
+to accept the loss). Refusing is the conservative half of a choice between
+"refuse" and "destroy something irreplaceable".
+
+## 2026-09-03 — secrets get `--x-env/--x-stdin/--x-file` and no value flag
+
+The work list spells `--api-hash` alongside `--api-hash-env`. STYLE §3 says a
+secret never takes a value-bearing flag, because argv is world-readable
+through `ps` and lands in shell history. Every secret in this group —
+the cloud password, the new password, the bot token, the api_hash — is
+therefore declared `secret=True` and generates only the three reading flags,
+with the documented environment variable as the default source. The same rule
+is why `account export` refuses to print to stdout unless `--stdout` says so.
+
+## 2026-09-03 — `completion` is `agent.completion` until PR-4 deletes the legacy `config` group
+
+The work list gives the op id `config.completion`, whose canonical path would
+create a generated top-level `config` group — and `build_cli()` fails the
+import when a group is defined both by the registry and by `cli/legacy`,
+which `config` still is until PR-4. The op is registered as
+`agent.completion` with `completion` as both an alias and a legacy path, so
+`tlgr completion bash` — the only spelling v1 documented, and the one §12.4
+protects — is unchanged. Two aliases from the work list are dropped for the
+same reason and land with their groups: `config terms` (PR-4) and
+`user support` (PR-5).
+
+## 2026-09-03 — an alias may not shadow a sub-noun group
+
+`account device-locked`, `account smsjobs`, `account support`, `auth
+autologin-url` and `passport form` are listed as aliases of their `… set`/
+`… get` command. Each would be placed at a path the canonical command has
+already turned into a Click *group*, replacing it — so `account
+device-locked set` would stop existing the moment its own alias was
+registered. They are dropped; the canonical three-level paths remain.
+
+## 2026-09-03 — an op tagged `text` prints its `text` field verbatim
+
+`tlgr completion bash` produces a blob meant to be pasted into a shell rc
+file. Rendering it as a one-row key/value table truncates it into something
+unusable, and forcing `--json` would change v1's output. The generator
+therefore honours one new tag: an op tagged `text` prints `result.text` and
+nothing else in human and plain mode, and the normal envelope under `--json`.
+
+## 2026-09-03 — an empty page is `[]`, not `{"total": 0}`
+
+`Page.items` defaults to an empty list and `Model` sets `omit_defaults=True`,
+so an empty page serialised to `{"total": 0}` and the dispatcher's
+`"items" in body` check left it un-unwrapped — a *different shape* for "no
+results", which is exactly what a consumer cannot branch on. The dispatcher
+now unwraps any dict body from a paginated op with `.get("items", [])`. For
+the same reason `Whoami` and `AccountRecord` set `omit_defaults=False`:
+`daemon_running: false` and `active: false` are answers v1 printed, and a
+consumer reading them must not get a `KeyError` because the answer was "no".
+
+## 2026-09-03 — a streaming op must mark its pages `has_more`
+
+`walk_pages` stops when a page reports `has_more` false, which is right for a
+`--all` walk and wrong for a stream: `auth qr` printed one token and ended.
+Every non-terminal frame of a streaming operation now sets `has_more=True`,
+and only the final one (authorized, or expired) says otherwise.
+
+## 2026-09-03 — no test may reach the developer's real `~/.tlgr`
+
+`TlgrPaths` falls back to `~/.tlgr` when `TLGR_HOME` is unset, so a test that
+forgot the `tlgr_home` fixture silently operated on a real installation —
+real accounts, a real session file, a real daemon socket. One did.
+`tests/conftest.py` now has an autouse fixture that points `TLGR_HOME` at a
+throwaway directory whenever it is unset, so forgetting the fixture costs a
+temp directory rather than somebody's session.

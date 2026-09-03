@@ -21,11 +21,17 @@ list, the per-chat settings and the chat folders. `tlgr/cli/legacy/chat.py`
 keeps exactly `chat create` and `chat members`, which are member-and-admin
 operations and migrate with the groups-and-channels group.
 
+`auth`, `account` and `passport` follow: 51 more operations covering logging
+in, the Devices list, 2-step verification, connected websites, passkeys and
+Telegram Passport. `tlgr/cli/legacy/account.py`, `completion.py` and `agent.py`
+are deleted, not shadowed.
+
 ### Breaking
 
 Every change below applies **only to commands generated from the operation
-registry** — in this release that is the `message`, `draft`, `chat` and
-`folder` groups, `tlgr agent exit-codes`, `tlgr agent parity` and
+registry** — in this release that is the `message`, `draft`, `chat`,
+`folder`, `auth`, `account` and `passport` groups, `tlgr completion`,
+`tlgr agent exit-codes`, `tlgr agent whoami`, `tlgr agent parity` and
 `tlgr schema`. Commands still hand-written under `tlgr/cli/legacy/` behave
 exactly as they did in v1 until their own migration PR, at which point these
 rules apply to them too.
@@ -33,8 +39,8 @@ rules apply to them too.
 No documented command path disappears. Every migrated operation declares its
 v1 paths, so `tlgr send`, `tlgr msg list`, `tlgr message react` and the rest
 still work; `tests/test_agentmd_compat.py` asserts it, and asserts that every
-JSON key v1's `AGENT.md` documented is still there — except for the nine
-changes in the table below, which is the whole list.
+JSON key v1's `AGENT.md` documented is still there — except for the
+thirteen changes in the table below, which is the whole list.
 
 | # | Change | v1 | v2 | Migration |
 |---|---|---|---|---|
@@ -47,6 +53,10 @@ changes in the table below, which is the whole list.
 | 7 | `message.edit` timestamp | `date` — the moment the message was *sent* | `edit_date` — the moment it was *edited*, which is what the field always held | rename only; `edited`, `id` and `chat_id` are unchanged, and `--select edit_date` reaches it |
 | 8 | `chat.list` rows | `{"chats":[{"id","name","type","username","unread_count",…}]}` | `Page[Dialog]`, each row's peer nested under `chat` (`chat.id`, `chat.title`, `chat.kind`, `chat.username`) | `--results-only` yields `{items, has_more, next_cursor, total}`; `--select chat.id,unread_count` reaches the fields. `chats`, `inbox` and `catchup` keep working and now carry the same shape |
 | 9 | `chat.poster.list` (`chat posters`) | each poster had `id`, `last_date`, `last_message_id` | `user_id` beside v1's `id`, and `date`/`date_unix`/`last_msg_id` | `posters`, `scanned_messages`, `distinct_posters`, `partial` and `flood_wait` are unchanged, and `id` is still emitted |
+| 10 | `account add <phone>` | prompted for the api_id/api_hash and the code, and finished the login in one process | starts the login and returns the next command (`auth verify-code`) | a daemon cannot prompt and an agent has no `input()`. `--bot` still finishes in one call; credentials come from `--api-id` and `--api-hash-env`. See "Logging in" in `AGENT.md` |
+| 11 | `account remove` | `{"removed": "work"}` — the alias as a string | `{"alias": "work", "removed": true, "server_logout": false}` | `--select alias` yields the old value. `removed` is now the answer to "did it happen", and `account logout` is the command that revokes the authorization server-side |
+| 12 | `account switch` / `account rename` | `{"active": "work"}` / `{"old": …, "new": …}` | `{"ok": true, "account": "work", "already": …}` / the same plus `old`/`new` | `old` and `new` are unchanged on `rename`; `--select account` replaces `active` |
+| 13 | An empty paginated result | `{"total": 0}` — a different shape from a non-empty page | `[]` under `result` (`{"items": [], …}` with `--results-only`) | this was a bug: `omit_defaults` dropped the empty `items` list, so "no results" and "some results" had different shapes. Nothing to migrate — the shape is now the one the non-empty case always had |
 
 `tlgr agent whoami --json` reports `output_schema_version: 2`, so an agent can
 branch on the two sets without probing for each change.
@@ -124,14 +134,63 @@ Two more, outside the documented output shapes:
   durations that actually work (COR-01), and every list is a signed page.
   The four secret-chat commands that need end-to-end keys are registered and
   refuse with `NOT_SUPPORTED` (exit 13) rather than pretending.
+- **The `auth`, `account` and `passport` groups, generated from the registry.**
+  51 operations. Logging in is now a *sequence of commands* rather than one
+  held-open process: `auth send-code` writes the pending login (phone,
+  `phone_code_hash`, code type) to `<account>/login-state.json` at 0600 and
+  `auth verify-code` finishes it from another process, so an unattended login
+  works. `auth qr` streams QR tokens and re-exports each one as it expires;
+  `auth recover`, `auth resend-code`, `auth tos`, `auth login-email set`,
+  `auth code list` (read the login code Telegram delivered to chat 777000 —
+  which is what makes scripted multi-account onboarding possible) and
+  `auth reset-account` complete the flow.
+- **`account session *`** — the Devices list, with the two deadlines nobody
+  can derive by hand: `deny_deadline` (when an unconfirmed login stops being
+  deniable because Telegram auto-confirms it) and
+  `sensitive_actions_eligible_at` (what `SESSION_TOO_FRESH_X` counts down to).
+  Terminate one, several, or all others; confirm or deny a new login; approve
+  another device's QR login; set per-session call/secret-chat permissions and
+  the account-wide inactive-session TTL.
+- **`account password *`** — 2-step verification: status, set, change,
+  remove, the 7-day reset, and a temporary payment password. The SRP loop is
+  written once (`inputCheckPasswordEmpty`, then refetch on `SRP_ID_INVALID`,
+  because an `srp_id` is single-use) and every sensitive operation reuses it.
+  `password change` **refuses** when the account holds Telegram Passport
+  documents unless `--keep-passport` acknowledges the loss, because the
+  secure secret is encrypted under the password and Telethon's helper drops
+  it silently.
+- **`account website *`, `account passkey *`** — the connected-websites list
+  is a *different* list from Devices and the one people forget; passkeys are
+  auditable but never creatable from here, because the server only accepts
+  the relying-party id `telegram.org`.
+- **`account logout`** — v1 had no way to revoke an authorization: `account
+  remove` deleted the local files and left the session alive in every other
+  client's Devices list forever. Logout revokes it, keeps the returned
+  `future_auth_token` (0600, capped at 20) for a code-less re-login, and
+  keeps the alias; `account remove --logout` does both.
+- **`account check`** — the distinction `daemon status` cannot make:
+  `authorized` / `revoked` / `banned` / `deactivated` / `frozen` / `offline`,
+  one row per account, reported rather than raised so one dead account cannot
+  hide the health of the others. `frozen` carries Telegram's own appeal URL.
+- **`account export` / `account import`** — a StringSession or a session file,
+  in and out. The export is a bearer credential: it goes to a 0600 file unless
+  `--stdout` says printing it is intended, and the reply warns that one auth
+  key on two live connections earns `AUTH_KEY_DUPLICATED`.
+- **`passport *`** — list the stored documents, read what a service is asking
+  for, delete documents, verify a phone or email. `passport authorize` is
+  registered and refuses with `NOT_SUPPORTED`: it needs a secure-value crypto
+  stack (AES-256-CBC plus a SHA-512 KDF over the cloud password) that Telethon
+  does not provide, and shipping a half-correct implementation of a format
+  carrying identity documents is worse than not offering it.
 - **`tlgr agent parity`** — coverage of the pinned feature catalog by
   priority and domain, with every uncovered id either waived to a named PR or
   reported as a gap. `--uncovered` prints the full list; `docs/reference/PARITY.md`
   is the same report, generated. Neither number is hand-maintained.
 - **Generated reference docs.** `docs/reference/message.md`, `draft.md`,
-  `chat.md`, `folder.md`, `agent.md` and `PARITY.md` come out of the registry via `make docs` /
-  `make parity`; `tests/test_docs_fresh.py` fails the build on a stale page,
-  so a flag cannot ship undocumented.
+  `chat.md`, `folder.md`, `auth.md`, `account.md`, `passport.md`, `agent.md`
+  and `PARITY.md` come out of the registry via `make docs` / `make parity`;
+  `tests/test_docs_fresh.py` fails the build on a stale page, so a flag cannot
+  ship undocumented.
 - `tlgr agent whoami` reports `output_schema_version: 2` (§12.4), so an agent
   can tell v1 output from v2 without probing for each changed shape.
 - Global flags work anywhere on the line: `tlgr agent exit-codes --json` and
@@ -189,6 +248,18 @@ Two more, outside the documented output shapes:
 - **`from tlgr.models import DraftCleared` raised ImportError.** The name was
   in `__all__` but never imported.
 
+- `tlgr account add` left the Telethon session database world-readable (0644
+  under a default umask) while `account import` chmod-ed it to 0600. A session
+  file is a complete account credential; both paths now secure the database
+  and every sqlite sibling Telethon creates.
+- `account info` and `account sync` ignored the global `-a/--account` and
+  acted on the *active* account instead — and `sync` writes, so a stored
+  profile record was overwritten under an alias the caller never named. Every
+  account operation now resolves the alias in one place: positional, then
+  `-a`, then the active account.
+- A test that forgot the `tlgr_home` fixture operated on the developer's real
+  `~/.tlgr`. `tests/conftest.py` now points `TLGR_HOME` at a throwaway
+  directory whenever it is unset.
 - `.gitignore`'s blanket `*.yaml` rule was swallowing `.github/workflows`
   siblings, documentation YAML and test fixtures (PKG-04).
 - Errors raised anywhere now map to the exit-code table in one place, so an

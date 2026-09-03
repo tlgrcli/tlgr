@@ -57,7 +57,23 @@ __all__ = [
 #: The taxonomy, as a tuple, for the callers that want to iterate it. The
 #: table itself is `tlgr.core.eventtypes`, which `ops/` and the doc generator
 #: read too — `daemon/` must not be the only place that knows the vocabulary.
+#: The five `story_*` types live there with every other name; PR-8 added the
+#: payload shaping below, not a second vocabulary.
 EVENT_TYPES: tuple[str, ...] = tuple(sorted(eventtypes.TYPES))
+
+#: Raw story `Update*` class name → the fine-grained `kind` its payload
+#: carries. The bus *type* comes from `eventtypes`, which already maps all six
+#: constructors; two of them share `story_reaction`, and `kind` is what tells
+#: a received reaction from one this account sent. Matched by class name so
+#: this module still imports no Telethon.
+_STORY_KINDS: dict[str, str] = {
+    "UpdateStory": "story.new",
+    "UpdateStoryID": "story.id-assigned",
+    "UpdateReadStories": "story.read",
+    "UpdateNewStoryReaction": "story.reaction-received",
+    "UpdateSentStoryReaction": "story.reaction-sent",
+    "UpdateStoriesStealthMode": "story.stealth",
+}
 
 _HEARTBEAT_SECONDS = 15.0
 _STATE_FLUSH_SECONDS = 5.0
@@ -297,6 +313,36 @@ def normalise_update(
         }
         return event_type, payload, chat_id, None
 
+    if event_type in ("story_new", "story_id", "story_read", "story_reaction", "story_stealth"):
+        payload = {"kind": _STORY_KINDS.get(name, event_type)}
+        if chat_id is not None:
+            payload["peer"] = chat_id
+        story = getattr(update, "story", None)
+        story_id = getattr(story, "id", None) if story is not None else None
+        if story_id is None:
+            story_id = getattr(update, "story_id", None)
+        if story_id is None and event_type == "story_id":
+            story_id = getattr(update, "id", None)
+        if story_id is not None:
+            payload["story_id"] = int(story_id)
+        max_id = _int(getattr(update, "max_id", None))
+        if max_id is not None:
+            payload["max_read_id"] = max_id
+        reaction = getattr(update, "reaction", None)
+        if reaction is not None:
+            emoticon = getattr(reaction, "emoticon", None)
+            document = getattr(reaction, "document_id", None)
+            payload["reaction"] = (
+                str(emoticon) if emoticon else (f"custom:{document}" if document else "?")
+            )
+        stealth = getattr(update, "stealth_mode", None)
+        if stealth is not None:
+            payload["stealth_mode"] = {
+                "active_until_unix": _epoch(getattr(stealth, "active_until_date", None)),
+                "cooldown_until_unix": _epoch(getattr(stealth, "cooldown_until_date", None)),
+            }
+        return event_type, payload, chat_id, None
+
     # Everything else is delivered as the update's own fields, JSON-safe. The
     # taxonomy says so per type, so a consumer is never guessing.
     payload = tl_to_builtins(update)
@@ -379,6 +425,11 @@ def normalise(
         )
 
     return None
+
+
+def _epoch(value: Any) -> int | None:
+    timestamp = getattr(value, "timestamp", None)
+    return int(timestamp()) if callable(timestamp) else None
 
 
 def _event_kind(event: Any) -> str | None:

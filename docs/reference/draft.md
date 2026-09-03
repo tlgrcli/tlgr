@@ -18,7 +18,7 @@ Clear one draft or every draft.
 tlgr draft clear [CHAT] [OPTIONS]
 ```
 
-**mutating · destructive (needs `--yes` off a TTY) · idempotent (reports `already`) · returns `Draft`**
+**mutating · destructive (needs `--yes` off a TTY) · idempotent (reports `already`) · returns `DraftCleared`**
 
 | Argument | Type | Required | Meaning |
 |---|---|---|---|

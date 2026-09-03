@@ -18,6 +18,7 @@ from tlgr.core.pagination import PageKind
 from tlgr.core.timefmt import fmt_dt
 from tlgr.models.base import Request
 from tlgr.models.dialog import Draft
+from tlgr.models.message import DraftCleared
 from tlgr.models.page import Page
 from tlgr.models.peer import PeerRef
 from tlgr.ops import _send
@@ -252,7 +253,7 @@ class ClearReq(Request):
     clear_all: Annotated[bool, opt("--all", help="Clear every draft.")] = False
 
 
-async def clear(ctx: OpContext, req: ClearReq) -> Draft:
+async def clear(ctx: OpContext, req: ClearReq) -> DraftCleared:
     """Clear one draft, or every draft.
 
     Clearing one is `saveDraft` with an empty body — Telegram has no delete
@@ -266,7 +267,7 @@ async def clear(ctx: OpContext, req: ClearReq) -> Draft:
     if req.clear_all:
         await client(fn.ClearAllDraftsRequest())
         ctx.emit("draft_clear", {"all": True})
-        return Draft(chat_id=0, empty=True, text="", entities=[])
+        return DraftCleared(cleared=True, count=0)
     if req.chat is None:
         raise UsageError("give a chat, or --all to clear every draft", field="chat")
 
@@ -274,21 +275,21 @@ async def clear(ctx: OpContext, req: ClearReq) -> Draft:
     chat_id = _send.peer_id_of(peer)
     await client(fn.SaveDraftRequest(peer=peer, message=""))
     ctx.emit("draft_clear", {"chat_id": chat_id})
-    return Draft(chat_id=chat_id, text="", empty=True)
+    return DraftCleared(cleared=True, chat_id=chat_id)
 
 
 SPEC_CLEAR = OperationSpec(
     id="draft.clear",
     request=ClearReq,
-    response=Draft,
+    response=DraftCleared,
     impl=clear,
     summary="Clear one draft or every draft",
     legacy_paths=("draft clear",),
     mutating=True,
     destructive=True,
     idempotent=True,
-    columns=("chat_id", "empty"),
-    example={"chat_id": 777123, "text": "", "empty": True},
+    columns=("chat_id", "cleared"),
+    example={"cleared": True, "chat_id": 777123, "count": 1},
     example_args="draft clear @alice",
     covers=(
         "dialogs.draft-clear",

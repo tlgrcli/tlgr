@@ -71,6 +71,7 @@ __all__ = [
     "Dialog",
     "DiceCatalog",
     "Draft",
+    "DraftCleared",
     "EditResult",
     "Effect",
     "EntityReport",

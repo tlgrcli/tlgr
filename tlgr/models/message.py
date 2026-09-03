@@ -20,6 +20,7 @@ __all__ = [
     "ComposeResult",
     "DeleteResult",
     "DiceCatalog",
+    "DraftCleared",
     "EditResult",
     "Effect",
     "EntityReport",
@@ -257,6 +258,9 @@ class EditResult(Model):
 
     id: int
     chat_id: int
+    #: v1's `{"edited": true, …}`, kept for the shape AGENT.md documents.
+    #: False by default so `omit_defaults` does not drop it when it is true.
+    edited: bool = False
     edit_date: str | None = None
     text: str = ""
     entities: list[MessageEntity] = []
@@ -264,6 +268,14 @@ class EditResult(Model):
     edit_time_limit: int | None = None
     caption: bool | None = None
     already: bool = False
+
+
+class DraftCleared(Model):
+    """What `draft clear` reports: v1's `{"cleared": true, "chat_id": …}`."""
+
+    cleared: bool = False
+    chat_id: int | None = None
+    count: int = 0
 
 
 class ForwardedMessage(Model):
@@ -287,6 +299,11 @@ class PinResult(Model):
 
 class ReadResult(Model):
     chat_id: int
+    #: v1 answered `{"read": true, "chat_id": …}` and AGENT.md documents it,
+    #: so the flag stays. Defaulted to False rather than True because
+    #: `omit_defaults` would drop a field whose value equals its default —
+    #: and a compatibility key that is absent is not a compatibility key.
+    read: bool = False
     read_up_to: int | None = None
     still_unread: int | None = None
     mentions_read: int | None = None

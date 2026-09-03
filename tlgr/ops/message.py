@@ -21,6 +21,7 @@ registry is what builds `tlgr --help`, and that must not pull in Telethon.
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import Annotated, Any
 
 from tlgr.core.errors import (
@@ -196,9 +197,31 @@ async def _fetch(
 
 
 def _is_not_modified(exc: BaseException) -> bool:
-    """MESSAGE_NOT_MODIFIED is success: the world already looks like that."""
-    text = f"{type(exc).__name__} {exc}".upper()
-    return "NOT_MODIFIED" in text
+    """MESSAGE_NOT_MODIFIED is success: the world already looks like that.
+
+    Matched on the class name *and* the message with underscores stripped,
+    because Telethon spells it `MessageNotModifiedError` and the server
+    spells it `MESSAGE_NOT_MODIFIED`.
+    """
+    text = f"{type(exc).__name__} {exc}".upper().replace("_", "")
+    return "NOTMODIFIED" in text
+
+
+def _input_channel(peer: Any) -> Any:
+    """The `InputChannel` a `channels.*` request wants, or a usage error.
+
+    `utils.get_input_channel` is arithmetic on the peer we already hold; going
+    back to `get_input_entity` would be a round trip for something that is
+    already known, and would hide the real problem when the peer is a user.
+    """
+    from telethon import utils
+
+    try:
+        return utils.get_input_channel(peer)
+    except (TypeError, ValueError) as exc:
+        raise UsageError(
+            "this operation only works in a channel or supergroup", field="chat"
+        ) from exc
 
 
 async def _affected_loop(ctx: OpContext, make_request: Any) -> int:
@@ -1605,13 +1628,14 @@ async def edit(ctx: OpContext, req: EditReq) -> EditResult:
         if not _is_not_modified(exc):
             raise
         _already(ctx)
-        return EditResult(id=req.msg_id, chat_id=chat_id, text=text, already=True)
+        return EditResult(id=req.msg_id, chat_id=chat_id, text=text, edited=True, already=True)
 
     edited = _send.message_from_updates(result, chat_id=chat_id, sent_text=text)
     ctx.emit("message_edit", {"chat_id": chat_id, "id": req.msg_id})
     return EditResult(
         id=edited.id or req.msg_id,
         chat_id=chat_id,
+        edited=True,
         edit_date=edited.edit_date,
         text=edited.text or text,
         entities=edited.entities or entities,
@@ -1640,6 +1664,7 @@ SPEC_EDIT = OperationSpec(
     example={
         "id": 12345,
         "chat_id": 777123,
+        "edited": True,
         "edit_date": "2026-09-03T09:20:00Z",
         "text": "on my way (5 min)",
     },
@@ -1697,7 +1722,7 @@ async def delete(ctx: OpContext, req: DeleteReq) -> DeleteResult:
 
     if req.from_user is not None:
         member = await _send.resolve(ctx, req.from_user)
-        channel = await client.get_input_entity(peer)
+        channel = _input_channel(peer)
         affected = await _affected_loop(
             ctx,
             lambda offset: ch.DeleteParticipantHistoryRequest(channel=channel, participant=member),
@@ -2062,12 +2087,12 @@ async def read(ctx: OpContext, req: ReadReq) -> ReadResult:
     chat_id = _send.peer_id_of(peer)
     client = _client(ctx)
     is_channel = isinstance(peer, types.InputPeerChannel)
-    result = ReadResult(chat_id=chat_id)
+    result = ReadResult(chat_id=chat_id, read=True)
 
     if req.contents:
         ids = _ids(tuple(req.contents))
         if is_channel:
-            channel = await client.get_input_entity(peer)
+            channel = _input_channel(peer)
             await client(ch.ReadMessageContentsRequest(channel=channel, id=ids))
         else:
             await client(fn.ReadMessageContentsRequest(id=ids))
@@ -2093,7 +2118,7 @@ async def read(ctx: OpContext, req: ReadReq) -> ReadResult:
     elif req.topic is not None:
         await client(fn.ReadDiscussionRequest(peer=peer, msg_id=req.topic, read_max_id=max_id))
     elif is_channel:
-        channel = await client.get_input_entity(peer)
+        channel = _input_channel(peer)
         await client(ch.ReadHistoryRequest(channel=channel, max_id=max_id))
     else:
         affected = await client(fn.ReadHistoryRequest(peer=peer, max_id=max_id))
@@ -2119,7 +2144,7 @@ SPEC_READ = OperationSpec(
     mutating=True,
     idempotent=True,
     columns=("chat_id", "read_up_to"),
-    example={"chat_id": 777123, "read_up_to": 12345},
+    example={"chat_id": 777123, "read": True, "read_up_to": 12345},
     example_args="message read @alice",
     covers=(
         "messages-core.monoforum-topic-manage",
@@ -2249,8 +2274,13 @@ async def link(ctx: OpContext, req: LinkReq) -> LinkResult:
     chat_id = _send.peer_id_of(peer)
     url = ""
     public = False
+    if chat_id >= 0:
+        raise UsageError(
+            "a private chat has no shareable message link; only channels and supergroups have one",
+            field="chat",
+        )
     try:
-        channel = await _client(ctx).get_input_entity(peer)
+        channel = _input_channel(peer)
         exported = await _client(ctx)(
             ch.ExportMessageLinkRequest(channel=channel, id=req.msg_id, thread=req.topic or None)
         )
@@ -2514,6 +2544,38 @@ AUTO_ENTITIES = frozenset(
     {"url", "email", "mention", "hashtag", "cashtag", "bot_command", "phone", "bank_card"}
 )
 
+#: The automatic entities, detected locally. Telethon's markdown and HTML
+#: parsers do not emit them — the *server* does, on receipt — so a caller
+#: asking "what will Telegram find in this text" gets nothing back unless
+#: they are re-derived here. Deliberately close to Telegram's own rules and
+#: deliberately not authoritative: the report says these are what the server
+#: will add, not what tlgr sends.
+_AUTO_PATTERNS: tuple[tuple[str, str], ...] = (
+    ("url", r"(?:https?://|www\.)[^\s<>\"]+"),
+    ("email", r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"),
+    ("mention", r"(?<![\w@])@[A-Za-z][A-Za-z0-9_]{3,31}"),
+    ("hashtag", r"(?<![\w#])#[^\s#@$]{1,64}"),
+    ("cashtag", r"(?<![\w$])\$[A-Z]{1,8}\b"),
+    ("bot_command", r"(?<![\w/])/[A-Za-z0-9_]{1,64}(?:@[A-Za-z0-9_]{4,32})?"),
+    ("phone", r"(?<![\d+])\+\d[\d \-()]{6,18}\d"),
+)
+
+
+def _auto_entities(text: str) -> list[MessageEntity]:
+    """Re-derive the entities Telegram adds server-side, in UTF-16 offsets."""
+    found: list[MessageEntity] = []
+    taken: list[tuple[int, int]] = []
+    for kind, pattern in _AUTO_PATTERNS:
+        for match in re.finditer(pattern, text):
+            start, end = match.span()
+            if any(start < other_end and end > other_start for other_start, other_end in taken):
+                continue
+            taken.append((start, end))
+            offset = utf16_len(text[:start])
+            found.append(MessageEntity(type=kind, offset=offset, length=utf16_len(text[start:end])))
+    found.sort(key=lambda entity: (entity.offset, entity.length))
+    return found
+
 
 async def entity_list(ctx: OpContext, req: EntityListReq) -> EntityReport:
     """Show what a parse mode did, in the units Telegram counts in.
@@ -2523,7 +2585,7 @@ async def entity_list(ctx: OpContext, req: EntityListReq) -> EntityReport:
     """
     text, entities = _send.body(req.text, parse=req.parse, entities=req.entities, stdin=req.stdin)
     manual = [e for e in entities if e.type not in AUTO_ENTITIES]
-    automatic = [e for e in entities if e.type in AUTO_ENTITIES]
+    automatic = [e for e in entities if e.type in AUTO_ENTITIES] + _auto_entities(text)
     if req.offset_units and req.offset_units != "utf16":
         manual = [_recount(text, e, req.offset_units) for e in manual]
         automatic = [_recount(text, e, req.offset_units) for e in automatic]
@@ -3065,13 +3127,13 @@ async def report(ctx: OpContext, req: ReportReq) -> ReportResult:
     ids = _ids(req.msg_id)
 
     if req.from_user is not None:
-        channel = await client.get_input_entity(peer)
+        channel = _input_channel(peer)
         member = await _send.resolve(ctx, req.from_user)
         await client(ch.ReportSpamRequest(channel=channel, participant=member, id=ids))
         return ReportResult(ok=True, title="reported as spam")
 
     if req.not_spam:
-        channel = await client.get_input_entity(peer)
+        channel = _input_channel(peer)
         if len(ids) != 1:
             raise UsageError("--not-spam takes exactly one message id", field="msg_id")
         await client(ch.ReportAntiSpamFalsePositiveRequest(channel=channel, msg_id=ids[0]))
@@ -3340,7 +3402,7 @@ async def sponsored_hide(ctx: OpContext, req: SponsoredHideReq) -> SponsoredHidd
     client = _client(ctx)
     if req.chat is not None:
         peer = await _send.resolve(ctx, req.chat)
-        channel = await client.get_input_entity(peer)
+        channel = _input_channel(peer)
         await client(ch.RestrictSponsoredMessagesRequest(channel=channel, restricted=hide))
         return SponsoredHidden(hidden=hide, chat_id=_send.peer_id_of(peer))
     await client(acc.ToggleSponsoredMessagesRequest(enabled=not hide))

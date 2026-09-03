@@ -115,6 +115,10 @@ class DownloadPlan:
     limit: int | None = None
     resume: bool = True
     part_size: int = DEFAULT_PART_SIZE
+    #: Ranged readers running side by side. One is the safe default; the cap
+    #: that matters is the server's (`*_queue_max_active_operations_count`),
+    #: and exceeding it earns a flood wait rather than more bandwidth.
+    connections: int = 1
 
     @property
     def part_file(self) -> Path:
@@ -156,6 +160,8 @@ async def download(
     refresh means something other than an expired reference.
     """
     plan.target.parent.mkdir(parents=True, exist_ok=True)
+    if plan.connections > 1 and plan.size:
+        return await _download_striped(client, location, plan, slots=slots, progress=progress)
     part = plan.part_file
     start = plan.offset
     if plan.resume and part.exists():
@@ -202,13 +208,76 @@ async def download(
                 location = await refresh()
                 start = done
 
-    if plan.size and done < plan.size:
+    # A ranged read is *meant* to stop short; only a whole-file download that
+    # ended early is an incomplete download.
+    if plan.size and plan.limit is None and done < plan.size:
         raise TlgrError(
             f"the download stopped at {done} of {plan.size} bytes; the file is incomplete"
         )
     os.replace(part, plan.target)
     if progress is not None:
         progress(done, plan.size or done)
+    return plan.target
+
+
+async def _download_striped(
+    client: Any,
+    location: Any,
+    plan: DownloadPlan,
+    *,
+    slots: TransferSlots | None = None,
+    progress: Progress | None = None,
+) -> Path:
+    """`--connections N`: N ranged readers over one file (checklist 13).
+
+    A single `iter_download` is bounded by round-trip latency, not bandwidth.
+    Telegram serves an arbitrary offset, so the file is cut into N contiguous
+    stripes written with `pwrite` — no locking, no ordering, and a stripe that
+    fails takes only itself down.
+
+    Deliberately *not* resumable: a striped download has N frontiers rather
+    than one, and a `.part` file that records only a single offset would
+    silently resume in the wrong place. `--resume` uses one connection.
+    """
+    total = plan.size
+    workers = max(1, min(plan.connections, 8))
+    stripe = -(-total // workers)
+    slot = (slots or TransferSlots()).slot(plan.dc_id, total)
+    done = 0
+    throttle = _Throttle()
+    lock = asyncio.Lock()
+
+    with open(plan.part_file, "wb") as handle:
+        handle.truncate(total)
+        descriptor = handle.fileno()
+
+        async def read(index: int) -> None:
+            nonlocal done
+            start = index * stripe
+            length = min(stripe, total - start)
+            if length <= 0:
+                return
+            position = start
+            async for chunk in client.iter_download(
+                location, offset=start, request_size=plan.part_size, limit=length
+            ):
+                os.pwrite(descriptor, chunk, position)
+                position += len(chunk)
+                async with lock:
+                    done += len(chunk)
+                    if progress is not None and throttle.should(done):
+                        progress(done, total)
+                if position - start >= length:
+                    break
+
+        async with slot:
+            await asyncio.gather(*(read(index) for index in range(workers)))
+        handle.flush()
+        os.fsync(descriptor)
+
+    os.replace(plan.part_file, plan.target)
+    if progress is not None:
+        progress(total, total)
     return plan.target
 
 

@@ -74,6 +74,9 @@ class DaemonContext:
     daemon: Any = None
     limiter: Any = None
     bus: Any = None
+    #: The daemon's transfer store (`daemon/transfers.py`), so `--background`,
+    #: `media transfer list/stop/retry` all see the same jobs.
+    transfers: Any = None
     paths: Any = None
     config: Any = None
     flood_wait_max: int | None = None
@@ -99,6 +102,46 @@ class DaemonContext:
         from tlgr.daemon.files import UploadPlan, upload
 
         return await upload(self.client, UploadPlan(source=Path(path), **kwargs))
+
+    async def download_file(
+        self,
+        location: Any,
+        target: Any,
+        *,
+        size: int = 0,
+        dc_id: int = 0,
+        offset: int = 0,
+        limit: int | None = None,
+        resume: bool = True,
+        part_size: int = 512 * 1024,
+        connections: int = 1,
+        refresh: Any = None,
+        progress: Any = None,
+    ) -> Any:
+        """Stream a file to disk through the daemon's pipeline.
+
+        The mirror image of `upload_file`, and for the same reason: resume,
+        the per-DC concurrency caps and the one-shot file-reference refresh
+        live in `daemon/files.py`, which `ops/` may not import (§2.2).
+        """
+        from pathlib import Path
+
+        from tlgr.daemon.files import DownloadPlan, download
+
+        plan = DownloadPlan(
+            target=Path(target),
+            size=size,
+            dc_id=dc_id,
+            offset=offset,
+            limit=limit,
+            resume=resume,
+            part_size=part_size,
+            connections=connections,
+        )
+        slots = getattr(self.daemon, "transfer_slots", None)
+        return await download(
+            self.client, location, plan, slots=slots, progress=progress, refresh=refresh
+        )
 
     def mark_already(self) -> None:
         """Record that the world already looked the way the caller asked for."""
@@ -251,6 +294,7 @@ async def execute(daemon: Daemon, request: OpRequest) -> tuple[OperationSpec, Da
         dry_run=request.dry_run,
         daemon=daemon,
         bus=daemon.bus,
+        transfers=getattr(daemon, "transfers", None),
         paths=daemon.paths,
         config=daemon.config,
         flood_wait_max=request.flood_wait_max,

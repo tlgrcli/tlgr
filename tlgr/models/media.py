@@ -386,15 +386,18 @@ class AutoSaveSaved(Model):
 
 
 class ContentSettings(Model):
-    sensitive_enabled: bool = False
-    sensitive_can_change: bool = False
+    # Neither field carries a default: both states of a two-state setting
+    # matter, and `omit_defaults` would drop whichever one happened to equal
+    # the default — leaving a caller unable to tell "off" from "not reported".
+    sensitive_enabled: bool
+    sensitive_can_change: bool
     age_verification_required: bool = False
     age_verification_bot: str | None = None
     reason: str | None = None
 
 
 class ContentSettingsSaved(Model):
-    sensitive_enabled: bool = False
+    sensitive_enabled: bool
     ok: bool = True
     already: bool = False
 

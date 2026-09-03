@@ -174,17 +174,14 @@ class Daemon:
         try:
             from telethon import events as tl_events
 
-            for builder in (
-                tl_events.NewMessage(),
-                tl_events.MessageEdited(),
-                tl_events.MessageDeleted(),
-                tl_events.MessageRead(),
-                tl_events.ChatAction(),
-                tl_events.UserUpdate(),
-            ):
-                register(on_update, builder)
+            # One `Raw` handler, not six high-level ones. The high-level
+            # builders drop service messages, topic ids and every action kind
+            # Telethon does not model, so a stream built on them can only ever
+            # show a subset of what the GUI shows; `normalise` names all 163
+            # update constructors instead (docs/design/EVENTS.md).
+            register(on_update, tl_events.Raw())
         except Exception as exc:  # pragma: no cover - a fake client has no builders
-            log.debug("could not register Telethon handlers for %s: %s", alias, exc)
+            log.debug("could not register the raw Telethon handler for %s: %s", alias, exc)
             register(on_update)
 
     # -- v1 compatibility surface -----------------------------------------

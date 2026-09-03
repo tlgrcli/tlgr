@@ -49,17 +49,28 @@ class _GatewayJobConfig:
         self.account = gw.account
 
 
-#: v1's job event names → the bus taxonomy (§3.7), and back for the pipeline,
-#: which still labels envelopes with v1's names.
-_BUS_TYPE_MAP = {
-    "new_message": "message_new",
+#: v1's job event names → the bus taxonomy, and back for the pipeline, which
+#: still labels envelopes with v1's names. The expansion is the taxonomy's own
+#: alias table (`core.eventtypes.ALIASES`), so a job and a `watch` accept the
+#: same words; a job may also name any v2 type directly.
+def _bus_types(names: list[str]) -> set[str]:
+    from tlgr.core import eventtypes
+
+    wanted: set[str] = set()
+    for name in names:
+        wanted.update(eventtypes.ALIASES.get(name, (name,)))
+    return wanted
+
+
+_V1_TYPE_MAP = {
+    "message_new": "new_message",
     "message_edited": "message_edited",
     "message_deleted": "message_deleted",
-    "chat_action": "chat_action",
-    "user_joined": "user_status",
-    "message_read": "message_read",
+    "message_service": "chat_action",
+    "user_status": "user_joined",
+    "read_inbox": "message_read",
+    "read_outbox": "message_read",
 }
-_V1_TYPE_MAP = {v: k for k, v in _BUS_TYPE_MAP.items()}
 
 _EVENT_TYPE_MAP = {
     "new_message": (events.NewMessage, {}),
@@ -106,7 +117,7 @@ class Gateway(BaseJob):
 
     async def _run_on_bus(self) -> None:
         """Subscribe to the daemon's bus instead of the update loop (ROB-02)."""
-        wanted = {_BUS_TYPE_MAP.get(name, name) for name in self._gw.events}
+        wanted = _bus_types(list(self._gw.events))
         account = self._gw.account
 
         async def on_event(envelope, raw) -> None:

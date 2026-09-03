@@ -36,10 +36,10 @@ __all__ = [
     "ContentSettings",
     "ContentSettingsSaved",
     "Downloaded",
-    "ExportResult",
     "FileRef",
     "MediaEdited",
     "MediaEvent",
+    "MediaExportResult",
     "MediaFile",
     "MediaInfo",
     "MediaItem",
@@ -260,7 +260,7 @@ class FileRef(Model):
     path: str | None = None
 
 
-class ExportResult(Model):
+class MediaExportResult(Model):
     job_id: str | None = None
     chat_id: int = 0
     planned: int = 0

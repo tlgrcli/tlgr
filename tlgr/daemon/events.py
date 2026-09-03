@@ -38,6 +38,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from tlgr.core import eventtypes
 from tlgr.core.paths import write_private
 from tlgr.models.event import EventEnvelope
 
@@ -48,21 +49,14 @@ __all__ = [
     "EventBus",
     "Subscriber",
     "normalise",
+    "normalise_update",
+    "tl_to_builtins",
 ]
 
-#: The starter taxonomy (§3.7). The full vocabulary lands in PR-4; every name
-#: is a lowercase snake_case noun-verb and new ones are additive.
-EVENT_TYPES: tuple[str, ...] = (
-    "message_new",
-    "message_edited",
-    "message_deleted",
-    "message_read",
-    "chat_action",
-    "user_status",
-    "reaction_changed",
-    "draft_changed",
-    "daemon_health",
-)
+#: The taxonomy, as a tuple, for the callers that want to iterate it. The
+#: table itself is `tlgr.core.eventtypes`, which `ops/` and the doc generator
+#: read too — `daemon/` must not be the only place that knows the vocabulary.
+EVENT_TYPES: tuple[str, ...] = tuple(sorted(eventtypes.TYPES))
 
 _HEARTBEAT_SECONDS = 15.0
 _STATE_FLUSH_SECONDS = 5.0
@@ -131,6 +125,88 @@ class Subscriber:
 # ---------------------------------------------------------------------------
 
 
+_CHANNEL_MARK = -1000000000000
+
+#: How deep `tl_to_builtins` will walk before it stops. A `Message` inside a
+#: `Story` inside a `WebPage` is real; anything past this is a cycle or a
+#: payload nobody wanted in a stream frame.
+_MAX_DEPTH = 8
+
+
+def tl_to_builtins(value: Any, *, depth: int = 0) -> Any:
+    """A TL object tree → JSON-safe builtins, with the class name kept.
+
+    COR-07 in one function. v1 delivered `to_dict()` through
+    `json.dumps(default=str)`, so a `datetime` became a string in one place, a
+    `bytes` blew up in another, and a message with media could fail to
+    serialise *at delivery time* — counted as a delivery failure rather than
+    as the bug it was. Here datetimes become RFC-3339, bytes become hex, and
+    the constructor name survives as `_` so a consumer can still branch on it.
+    """
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return bytes(value).hex()
+    if isinstance(value, datetime):
+        return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if depth >= _MAX_DEPTH:
+        return type(value).__name__
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [tl_to_builtins(item, depth=depth + 1) for item in value]
+    if isinstance(value, dict):
+        return {str(k): tl_to_builtins(v, depth=depth + 1) for k, v in value.items()}
+    out: dict[str, Any] = {"_": type(value).__name__}
+    attributes = getattr(value, "__dict__", None)
+    names: list[str]
+    if isinstance(attributes, dict) and attributes:
+        names = [name for name in attributes if not name.startswith("_")]
+    else:
+        names = [
+            name
+            for klass in type(value).__mro__
+            for name in getattr(klass, "__slots__", ())
+            if not str(name).startswith("_")
+        ]
+    if not names:
+        # A TLObject with nothing set, or an object we have no handle on.
+        # Its class name is the honest answer; `str()` would call Telethon's
+        # pretty-printer, which re-enters `to_dict()` and can raise.
+        return out
+    for name in names:
+        out[str(name)] = tl_to_builtins(getattr(value, name, None), depth=depth + 1)
+    return out
+
+
+def peer_marked_id(peer: Any) -> int | None:
+    """A TL `Peer*` → the marked id tlgr uses everywhere else.
+
+    Kept here rather than imported from `ops/_serialize` because the bus runs
+    on the update loop's hot path and must not reach across a layer for
+    arithmetic it can do in four lines.
+    """
+    if peer is None:
+        return None
+    if isinstance(peer, int):
+        return peer
+    name = type(peer).__name__
+    if name == "PeerUser":
+        return _int(getattr(peer, "user_id", None))
+    if name == "PeerChat":
+        chat_id = _int(getattr(peer, "chat_id", None))
+        return -chat_id if chat_id is not None else None
+    if name == "PeerChannel":
+        channel_id = _int(getattr(peer, "channel_id", None))
+        return _CHANNEL_MARK - channel_id if channel_id is not None else None
+    return None
+
+
+def _int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _message_payload(message: Any, chat_id: int | None) -> dict[str, Any]:
     from tlgr.models.base import to_builtins
     from tlgr.ops._serialize import message_to_model
@@ -140,22 +216,178 @@ def _message_payload(message: Any, chat_id: int | None) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def _channel_chat_id(update: Any) -> int | None:
+    channel_id = _int(getattr(update, "channel_id", None))
+    return _CHANNEL_MARK - channel_id if channel_id is not None else None
+
+
+def _chat_of(update: Any) -> int | None:
+    """The chat an update is about, from whichever field carries it."""
+    for attr in ("peer", "peer_id", "saved_peer_id"):
+        marked = peer_marked_id(getattr(update, attr, None))
+        if marked is not None:
+            return marked
+    channel = _channel_chat_id(update)
+    if channel is not None:
+        return channel
+    chat_id = _int(getattr(update, "chat_id", None))
+    if chat_id is not None:
+        return -chat_id
+    return _int(getattr(update, "user_id", None))
+
+
+def normalise_update(
+    account: str, update: Any
+) -> tuple[str, dict[str, Any], int | None, int | None] | None:
+    """One raw TL `Update*` → `(type, payload, chat_id, sender_id)`, or None.
+
+    Raw rather than Telethon's high-level events, on purpose: `events.NewMessage`
+    and friends drop service messages, topic ids and every action kind Telethon
+    does not model, so a `watch` built on them can only ever show a subset of
+    what the GUI shows. Everything the taxonomy names is reachable from here.
+
+    None means the constructor is `INTERNAL` (a container, a transport signal)
+    or is not an update at all. tlgr never invents a type name for it: a name
+    meaning "we did not look" cannot be filtered on and changes meaning the
+    day the real one arrives.
+    """
+    name = type(update).__name__
+    event_type = eventtypes.type_for_constructor(name)
+    if event_type is None:
+        return None
+
+    chat_id = _chat_of(update)
+    sender_id: int | None = None
+    payload: dict[str, Any]
+
+    if event_type in ("message_new", "message_edited", "message_scheduled_new"):
+        message = getattr(update, "message", None)
+        if message is None or isinstance(message, str):
+            # updateShortMessage/updateShortChatMessage carry the text, not a
+            # Message; Telethon normalises them before they reach a handler,
+            # so this branch only fires for a hand-built update.
+            payload = tl_to_builtins(update)
+            return event_type, payload, chat_id, sender_id
+        if type(message).__name__ == "MessageService":
+            action = getattr(message, "action", None)
+            payload = _message_payload(message, chat_id)
+            payload["action"] = type(action).__name__ if action is not None else ""
+            return (
+                "message_service",
+                payload,
+                chat_id or payload.get("chat_id"),
+                payload.get("sender_id"),
+            )
+        payload = _message_payload(message, chat_id)
+        return event_type, payload, chat_id or payload.get("chat_id"), payload.get("sender_id")
+
+    if event_type == "message_deleted":
+        payload = {
+            "message_ids": [int(i) for i in (getattr(update, "messages", None) or [])],
+        }
+        channel = _channel_chat_id(update)
+        if channel is not None:
+            payload["channel_id"] = channel
+        return event_type, payload, channel, None
+
+    if event_type in ("read_inbox", "read_outbox"):
+        payload = {
+            "max_id": _int(getattr(update, "max_id", None)),
+            "outbox": event_type == "read_outbox",
+        }
+        unread = getattr(update, "still_unread_count", None)
+        if unread is not None:
+            payload["still_unread_count"] = _int(unread)
+        return event_type, payload, chat_id, None
+
+    if event_type == "typing":
+        action = getattr(update, "action", None)
+        actor = peer_marked_id(getattr(update, "from_id", None))
+        user_id = _int(getattr(update, "user_id", None))
+        payload = {
+            "user_id": user_id if user_id is not None else actor,
+            "action": type(action).__name__ if action is not None else "",
+            "progress": _int(getattr(action, "progress", None)),
+            "top_msg_id": _int(getattr(update, "top_msg_id", None)),
+        }
+        return event_type, payload, chat_id, payload["user_id"]
+
+    if event_type == "user_status":
+        status = getattr(update, "status", None)
+        status_name = type(status).__name__ if status is not None else None
+        user_id = _int(getattr(update, "user_id", None))
+        payload = {
+            "user_id": user_id,
+            "status": status_name,
+            "online": status_name == "UserStatusOnline",
+            "was_online": _int(getattr(status, "was_online", None)),
+        }
+        return event_type, payload, user_id, user_id
+
+    if event_type == "message_reactions":
+        payload = {
+            "msg_id": _int(getattr(update, "msg_id", None)),
+            "top_msg_id": _int(getattr(update, "top_msg_id", None)),
+            "reactions": tl_to_builtins(getattr(update, "reactions", None)),
+        }
+        return event_type, payload, chat_id, None
+
+    if event_type == "dialog_draft":
+        payload = {
+            "peer": tl_to_builtins(getattr(update, "peer", None)),
+            "draft": tl_to_builtins(getattr(update, "draft", None)),
+            "top_msg_id": _int(getattr(update, "top_msg_id", None)),
+        }
+        return event_type, payload, chat_id, None
+
+    if event_type == "message_id_assigned":
+        payload = {
+            "msg_id": _int(getattr(update, "id", None)),
+            "random_id": _int(getattr(update, "random_id", None)),
+        }
+        return event_type, payload, chat_id, None
+
+    if event_type == "message_pinned":
+        payload = {
+            "message_ids": [int(i) for i in (getattr(update, "messages", None) or [])],
+            "pinned": bool(getattr(update, "pinned", False)),
+        }
+        return event_type, payload, chat_id, None
+
+    if event_type == "sync_channel_too_long":
+        payload = {
+            "channel_id": _channel_chat_id(update),
+            "pts": _int(getattr(update, "pts", None)),
+        }
+        return event_type, payload, chat_id, None
+
+    # Everything else is delivered as the update's own fields, JSON-safe. The
+    # taxonomy says so per type, so a consumer is never guessing.
+    payload = tl_to_builtins(update)
+    if not isinstance(payload, dict):
+        payload = {"value": payload}
+    return event_type, payload, chat_id, sender_id
+
+
 def normalise(
     account: str, event: Any
 ) -> tuple[str, dict[str, Any], int | None, int | None] | None:
-    """Map one Telethon event onto `(type, payload, chat_id, sender_id)`.
+    """Map one Telethon *event or update* onto `(type, payload, chat, sender)`.
 
-    Returns None for an update tlgr has no name for yet; the full taxonomy is
-    PR-4's job and the bus must not invent type names in the meantime.
+    Raw updates go through `normalise_update`; the high-level event classes
+    still work because a gateway job, a test and the v1 code path all hand
+    them over, and dropping that would be a compatibility break with nothing
+    gained.
     """
-    name = type(event).__name__
+    if type(event).__name__ in eventtypes.CONSTRUCTORS or type(event).__name__ in (
+        eventtypes.INTERNAL
+    ):
+        return normalise_update(account, event)
+
     chat_id = getattr(event, "chat_id", None)
     if chat_id is not None:
         with contextlib.suppress(TypeError, ValueError):
             chat_id = int(chat_id)
-
-    if name in ("NewMessage.Event", "Event") and hasattr(event, "message"):
-        name = "NewMessage.Event"
 
     kind = _event_kind(event)
     if kind is None:
@@ -164,24 +396,26 @@ def normalise(
     if kind in ("message_new", "message_edited"):
         message = getattr(event, "message", None)
         payload = _message_payload(message, chat_id) if message is not None else {}
+        if message is not None and type(message).__name__ == "MessageService":
+            action = getattr(message, "action", None)
+            payload["action"] = type(action).__name__ if action is not None else ""
+            kind = "message_service"
         return kind, payload, chat_id, payload.get("sender_id")
 
     if kind == "message_deleted":
         ids = list(getattr(event, "deleted_ids", None) or [])
         return kind, {"message_ids": ids}, chat_id, None
 
-    if kind == "message_read":
+    if kind == "read":
+        outbox = bool(getattr(event, "outbox", False))
         return (
-            kind,
-            {
-                "max_id": getattr(event, "max_id", None),
-                "outbox": bool(getattr(event, "outbox", False)),
-            },
+            "read_outbox" if outbox else "read_inbox",
+            {"max_id": getattr(event, "max_id", None), "outbox": outbox},
             chat_id,
             None,
         )
 
-    if kind == "chat_action":
+    if kind == "message_service":
         action_message = getattr(event, "action_message", None)
         action = type(getattr(action_message, "action", None)).__name__ if action_message else ""
         return (
@@ -212,7 +446,7 @@ def normalise(
 
 
 def _event_kind(event: Any) -> str | None:
-    """The tlgr type name for a Telethon event object.
+    """The tlgr type name for a Telethon *high-level* event object.
 
     Matched on the qualified class name rather than by `isinstance`, so this
     module — and therefore the bus — does not import Telethon at all and can
@@ -223,8 +457,8 @@ def _event_kind(event: Any) -> str | None:
         ("newmessage", "message_new"),
         ("messageedited", "message_edited"),
         ("messagedeleted", "message_deleted"),
-        ("messageread", "message_read"),
-        ("chataction", "chat_action"),
+        ("messageread", "read"),
+        ("chataction", "message_service"),
         ("userupdate", "user_status"),
     ):
         if needle in qualname.lower():

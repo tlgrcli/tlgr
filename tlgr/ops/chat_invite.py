@@ -122,7 +122,7 @@ def _render_qr(ctx: OpContext, link: str, png: str | None) -> tuple[str | None, 
     tlgr should carry when `pip install tlgr[qr]` says it in one line.
     """
     try:
-        import segno  # type: ignore[import-not-found]
+        import segno
     except ImportError:
         ctx.warn(
             "no QR encoder is installed; `pip install 'tlgr[qr]'` (segno) to render "

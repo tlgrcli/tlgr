@@ -13,7 +13,7 @@ import base64
 from typing import Any
 
 from tlgr.core.timefmt import fmt_dt, to_unix
-from tlgr.models.dialog import ActionBar, ChatTheme, NotifySettings, Wallpaper
+from tlgr.models.dialog import ActionBar, ChatTheme, ChatWallpaper, NotifySettings
 from tlgr.models.message import (
     MediaSummary,
     Message,
@@ -589,12 +589,12 @@ def chat_theme(raw: Any) -> ChatTheme | None:
     )
 
 
-def wallpaper(raw: Any) -> Wallpaper | None:
+def wallpaper(raw: Any) -> ChatWallpaper | None:
     """A `wallPaper` (or `wallPaperNoFile`) reduced to what a CLI can echo."""
     if raw is None:
         return None
     settings = getattr(raw, "settings", None)
-    return Wallpaper(
+    return ChatWallpaper(
         id=getattr(raw, "id", None),
         slug=getattr(raw, "slug", None),
         dark=bool(getattr(raw, "dark", False)),

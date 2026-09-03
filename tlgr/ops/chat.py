@@ -47,6 +47,7 @@ from tlgr.models.dialog import (
     ChatInfo,
     ChatSwitches,
     ChatTheme,
+    ChatWallpaper,
     ClearResult,
     DeleteChatResult,
     Dialog,
@@ -71,7 +72,6 @@ from tlgr.models.dialog import (
     TtlResult,
     TypingResult,
     UnreadResult,
-    Wallpaper,
     WallpaperResult,
 )
 from tlgr.models.message import Message, ReportResult
@@ -3016,7 +3016,7 @@ async def wallpaper_set(ctx: OpContext, req: WallpaperSetReq) -> WallpaperResult
             model = wallpaper(found)
             break
     if model is None and paper is not None:
-        model = Wallpaper(slug=req.slug, blur=req.blur, intensity=req.intensity)
+        model = ChatWallpaper(slug=req.slug, blur=req.blur, intensity=req.intensity)
     ctx.emit("chat_wallpaper", {"chat_id": chat_id})
     return WallpaperResult(
         chat_id=chat_id,

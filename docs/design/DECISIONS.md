@@ -641,12 +641,12 @@ scripted by an agent. `--msg-id` exists because `updateMessageExtendedMedia`
 carries no `pts`, so a client that was offline can only learn about a purchase
 made elsewhere by asking.
 
-## 2026-09-03 — the media_files domain keeps 25 ids it does not own
+## 2026-09-03 — the media_files domain keeps 22 ids it does not own
 
 The catalog groups by subject — anything that moves a file — while tlgr is
 organised by command group. A profile photo, a chat avatar, a notification
 sound and a cloud theme are all `media_files` ids and all belong to other
 groups' commands (`profile photo set`, `chat photo set`, `notify`,
-`settings`). Each of the 25 is waived to the PR that owns the command, rather
+`settings`). Each of the 22 is waived to the PR that owns the command, rather
 than implemented here under a `media` noun where nobody would look for it.
-`media_files` is 82.5 % covered and 100 % accounted.
+`media_files` is 84.6 % covered and 100 % accounted.

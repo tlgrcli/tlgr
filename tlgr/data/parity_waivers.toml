@@ -721,10 +721,6 @@ id = "emoji.status-set"
 pr = 12
 reason = "Setting your own emoji status is `profile status set` (PR-12)."
 
-[[id]]
-id = "media.content-protection"
-pr = 7
-reason = "Restricting saving is a chat setting (PR-7); `media upload --protect` sets it per message."
 
 [[id]]
 id = "profile.contact-personal-photo"
@@ -791,12 +787,4 @@ id = "theme.cloud-themes"
 pr = 12
 reason = "Cloud themes are the `settings` group (PR-12)."
 
-[[id]]
-id = "wallpaper.set-for-channel-group"
-pr = 7
-reason = "A channel or group wallpaper is boost-gated chat administration (PR-7)."
 
-[[id]]
-id = "wallpaper.set-for-chat"
-pr = 3
-reason = "A per-chat wallpaper is `chat wallpaper` (PR-3)."

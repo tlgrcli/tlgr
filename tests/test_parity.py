@@ -302,7 +302,7 @@ class TestTheGate:
         assert "dialogs_chats" not in waivers().domains
 
     def test_media_files_is_fully_accounted_for(self, report):
-        """PR-6's own domain. The 25 remaining ids belong to other groups.
+        """PR-6's own domain. The 22 remaining ids belong to other groups.
 
         They are catalogued here because they concern a file — a profile
         photo, a chat avatar, a notification sound — and every one of them is

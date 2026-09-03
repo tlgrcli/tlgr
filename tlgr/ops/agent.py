@@ -357,13 +357,17 @@ SPEC_PARITY = OperationSpec(
 # ---------------------------------------------------------------------------
 
 
-class WhoAmI(Model):
+class WhoAmI(Model, omit_defaults=False):
     """What an agent needs before its first real command.
 
     `output_schema_version` is the field to branch on: v2 changed a handful of
     documented shapes (RFC-3339 dates, marked ids, `Page` envelopes, `none` as
     the default parse mode), and a consumer must be able to tell which set it
     is looking at without probing for one of them.
+
+    `omit_defaults=False` for the whole struct: v1 printed `daemon_running`
+    even when it was false, and a consumer that reads `info["daemon_running"]`
+    must not get a KeyError because the answer happened to be "no".
     """
 
     #: No default, deliberately: `Model` omits a field equal to its default,

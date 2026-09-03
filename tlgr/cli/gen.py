@@ -32,7 +32,13 @@ from tlgr.cli.globals import (
     resolve_account,
     state_from,
 )
-from tlgr.core.errors import EXIT_EMPTY, DaemonError, PermissionError_, UsageError
+from tlgr.core.errors import (
+    EXIT_EMPTY,
+    EXIT_INDETERMINATE,
+    DaemonError,
+    PermissionError_,
+    UsageError,
+)
 from tlgr.core.pagination import DATE_OFFSET_KINDS
 from tlgr.models.base import UNSET
 from tlgr.models.peer import PeerRef
@@ -79,6 +85,9 @@ class LocalContext:
 
     def mark_already(self) -> None:
         """No-op: a local operation has no envelope meta to flag."""
+
+    def mark_indeterminate(self, reason: str = "") -> None:
+        """No-op: a local operation answers from data it already holds."""
 
 
 Dispatcher = Callable[[OperationSpec, msgspec.Struct, CliState], dict[str, Any]]
@@ -544,6 +553,11 @@ def build_command(
             wide=state.wide,
             no_header=state.no_header,
         )
+        # An operation that could not *establish* its answer still returns
+        # the partial result; the non-zero status is what makes a caller
+        # gating on it fail closed rather than read "unknown" as "no".
+        if (envelope.get("meta") or {}).get("indeterminate"):
+            ctx.exit(EXIT_INDETERMINATE)
         result = envelope.get("result")
         if spec.empty_exit == EXIT_EMPTY and not result:
             ctx.exit(EXIT_EMPTY)

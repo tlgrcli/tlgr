@@ -183,6 +183,11 @@ VERBS: frozenset[str] = frozenset(
         "dialog-status",
         "hide-stories",
         "rename",
+        # `resolve <kind>` is verb-first (COMMANDS.md conventions): the noun
+        # is `resolve` and the tail names what is being resolved.
+        "peer",
+        "phone",
+        "username",
         "info",
         "temp",
         "retry",

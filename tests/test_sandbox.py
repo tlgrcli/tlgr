@@ -28,9 +28,15 @@ class TestEnableCommands:
         assert "not enabled" in result.output
 
     def test_legacy_top_level_block_still_exits_2(self, runner):
-        """`contact` is still hand-written; `chat` became generated in PR-3."""
-        result = runner.invoke(cli, ["--enable-commands", "message", "contact", "list"])
+        """`media` is still hand-written; `contact` became generated in PR-5."""
+        result = runner.invoke(cli, ["--enable-commands", "message", "media", "download"])
         assert result.exit_code == 2
+        assert "not enabled" in result.output
+
+    def test_a_generated_group_blocks_with_permission_denied(self, runner):
+        """`contact` is generated now, so its block is PERMISSION_DENIED (6)."""
+        result = runner.invoke(cli, ["--enable-commands", "message", "contact", "list"])
+        assert result.exit_code == 6
         assert "not enabled" in result.output
 
     def test_top_level_allow(self, runner):

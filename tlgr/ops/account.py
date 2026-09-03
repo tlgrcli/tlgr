@@ -565,7 +565,7 @@ SPEC_EXPORT = OperationSpec(
     example={"alias": "work", "format": "string", "path": "/home/me/work.session"},
     example_args="account export work --out ./work.string",
     covers=("auth.session-export", "auth.single-connection-guard"),
-    tags=frozenset({"redact"}),
+    tags=frozenset({"bearer-credential"}),
 )
 
 
@@ -1895,7 +1895,7 @@ SPEC_PASSWORD_TEMP = OperationSpec(
     example={"tmp_password": "3q2-7w", "valid_until": "2026-09-03T10:14:07Z"},
     example_args="account password temp --period 1h",
     covers=("password.temporary-payment-password",),
-    tags=frozenset({"redact"}),
+    tags=frozenset({"bearer-credential"}),
 )
 
 

@@ -93,6 +93,7 @@ replace (not extend) the job-level processor chain.
 # tlgr/actions/react.py
 from tlgr.actions import register_action
 
+
 @register_action("react")
 async def action_react(event, config, client, chain=None):
     if event.source != "telegram":

@@ -17,19 +17,18 @@ credential.
 
 from __future__ import annotations
 
-import json
 import stat
 
 import pytest
 
-from tlgr.cli.account import _resolve_alias, _secure_session_files
+from tlgr.cli.legacy.account import _resolve_alias, _secure_session_files
 from tlgr.core.accounts import AccountManager
 
 
 @pytest.fixture
 def mgr(tmp_path):
     m = AccountManager(tmp_path)
-    m.add_account("Mr")          # first added becomes active
+    m.add_account("Mr")  # first added becomes active
     m.add_account("Pouri256")
     return m
 

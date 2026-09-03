@@ -50,9 +50,11 @@ def test_mark_chat_unread_can_clear():
 # --- the manual mark has to survive into list_chats/--unread, or the badge is
 # --- visible in the phone and invisible to every tool that looks for work.
 
+
 class _Dlg:
     def __init__(self, cid, unread_count, unread_mark):
         from telethon.tl.types import User
+
         self.id = cid
         self.entity = User(id=cid, first_name=f"u{cid}", bot=False)
         self.unread_count = unread_count
@@ -75,6 +77,7 @@ def _list(dialogs):
 
     async def _run():
         return [c async for c in w.list_chats(unread_only=True)]
+
     return asyncio.run(_run())
 
 

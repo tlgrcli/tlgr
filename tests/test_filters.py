@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
-from tlgr.gateway.event import Event
 from tlgr.filters import get_filter, list_filters, register_filter
 from tlgr.filters.compose import (
     FilterNode,
@@ -14,11 +12,12 @@ from tlgr.filters.compose import (
     evaluate,
     parse_filter_config,
 )
-
+from tlgr.gateway.event import Event
 
 # ---------------------------------------------------------------------------
 # Helpers — mock Telethon events
 # ---------------------------------------------------------------------------
+
 
 def _make_tg_event(
     *,
@@ -75,6 +74,7 @@ def _wrap(tg_event) -> Event:
 # Registry
 # ---------------------------------------------------------------------------
 
+
 class TestRegistry:
     def test_builtin_filters_registered(self):
         names = list_filters()
@@ -101,6 +101,7 @@ class TestRegistry:
 # ---------------------------------------------------------------------------
 # Individual filters
 # ---------------------------------------------------------------------------
+
 
 class TestContextFilters:
     def test_chat_type_private(self):
@@ -286,6 +287,7 @@ class TestUserFilters:
 # Composition
 # ---------------------------------------------------------------------------
 
+
 class TestComposition:
     def test_parse_empty(self):
         assert parse_filter_config(None) is None
@@ -303,20 +305,24 @@ class TestComposition:
         assert len(node.children) == 2
 
     def test_parse_any_of(self):
-        node = parse_filter_config({
-            "any_of": [
-                {"contains": ["hello"]},
-                {"from_users": [42]},
-            ]
-        })
+        node = parse_filter_config(
+            {
+                "any_of": [
+                    {"contains": ["hello"]},
+                    {"from_users": [42]},
+                ]
+            }
+        )
         assert node.op is Op.OR
 
     def test_parse_none_of(self):
-        node = parse_filter_config({
-            "none_of": [
-                {"contains": ["spam"]},
-            ]
-        })
+        node = parse_filter_config(
+            {
+                "none_of": [
+                    {"contains": ["spam"]},
+                ]
+            }
+        )
         assert node.op is Op.NOT
 
     def test_evaluate_and(self):
@@ -333,58 +339,68 @@ class TestComposition:
 
     def test_evaluate_or(self):
         ev = _wrap(_make_tg_event(text="goodbye", sender_id=42))
-        node = parse_filter_config({
-            "any_of": [
-                {"contains": ["hello"]},
-                {"from_users": [42]},
-            ]
-        })
+        node = parse_filter_config(
+            {
+                "any_of": [
+                    {"contains": ["hello"]},
+                    {"from_users": [42]},
+                ]
+            }
+        )
         ok, _ = evaluate(node, ev)
         assert ok
 
     def test_evaluate_or_fail(self):
         ev = _wrap(_make_tg_event(text="goodbye", sender_id=1))
-        node = parse_filter_config({
-            "any_of": [
-                {"contains": ["hello"]},
-                {"from_users": [42]},
-            ]
-        })
+        node = parse_filter_config(
+            {
+                "any_of": [
+                    {"contains": ["hello"]},
+                    {"from_users": [42]},
+                ]
+            }
+        )
         ok, _ = evaluate(node, ev)
         assert not ok
 
     def test_evaluate_not(self):
         ev = _wrap(_make_tg_event(text="good content"))
-        node = parse_filter_config({
-            "none_of": [
-                {"contains": ["spam"]},
-            ]
-        })
+        node = parse_filter_config(
+            {
+                "none_of": [
+                    {"contains": ["spam"]},
+                ]
+            }
+        )
         ok, _ = evaluate(node, ev)
         assert ok
 
     def test_evaluate_not_fail(self):
         ev = _wrap(_make_tg_event(text="this is spam"))
-        node = parse_filter_config({
-            "none_of": [
-                {"contains": ["spam"]},
-            ]
-        })
+        node = parse_filter_config(
+            {
+                "none_of": [
+                    {"contains": ["spam"]},
+                ]
+            }
+        )
         ok, _ = evaluate(node, ev)
         assert not ok
 
     def test_nested_composition(self):
         ev = _wrap(_make_tg_event(is_private=True, text="hello", sender_id=42))
-        node = parse_filter_config({
-            "chat_type": "private",
-            "any_of": [
-                {"contains": ["hello"]},
-                {"from_users": [99]},
-            ],
-            "none_of": [
-                {"contains": ["spam"]},
-            ],
-        })
+        node = parse_filter_config(
+            {
+                "chat_type": "private",
+                "any_of": [
+                    {"contains": ["hello"]},
+                    {"from_users": [99]},
+                ],
+                "none_of": [
+                    {"contains": ["spam"]},
+                ],
+            }
+        )
         ok, _ = evaluate(node, ev)
         assert ok
 

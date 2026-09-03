@@ -22,7 +22,7 @@ from types import SimpleNamespace
 
 import pytest
 from telethon.errors import FloodWaitError
-from telethon.tl.functions.messages import GetPeerDialogsRequest, GetHistoryRequest
+from telethon.tl.functions.messages import GetHistoryRequest, GetPeerDialogsRequest
 from telethon.tl.types import InputPeerUser, User
 
 from tlgr.core.client import ClientWrapper
@@ -44,8 +44,9 @@ def _dialog(user: User, top_message: int = 0):
 class _FakeTelethon:
     """A Telethon stand-in whose entity cache can be cold on purpose."""
 
-    def __init__(self, *, dialogs=None, cached_ids=(), totals=None,
-                 peer_dialog_top=None, dialogs_raise=None):
+    def __init__(
+        self, *, dialogs=None, cached_ids=(), totals=None, peer_dialog_top=None, dialogs_raise=None
+    ):
         self._dialogs = dialogs or []
         self._cached = set(cached_ids)
         self._totals = totals or {}
@@ -104,13 +105,15 @@ def _u(uid, username=None):
 # The regression itself
 # --------------------------------------------------------------------------
 
+
 def test_unresolvable_id_is_never_reported_as_no_dialog():
     """THE bug. A cold cache must produce "unknown", not a green light."""
-    fake = _FakeTelethon(dialogs=[], cached_ids=(), dialogs_raise=(0, FloodWaitError(
-        GetHistoryRequest, capture=30)))
+    fake = _FakeTelethon(
+        dialogs=[], cached_ids=(), dialogs_raise=(0, FloodWaitError(GetHistoryRequest, capture=30))
+    )
     r = asyncio.run(_wrap(fake).dialog_status(1863814631))
     assert r["resolved"] is False
-    assert r["has_dialog"] is None          # NOT False
+    assert r["has_dialog"] is None  # NOT False
     assert r["source"] == "unknown"
     assert r["message_count"] is None
     assert "did not complete" in r["reason"]
@@ -121,7 +124,7 @@ def test_cold_cache_still_finds_a_real_dialog_via_the_server_scan():
     target = _u(1863814631, "E_Gurl")
     fake = _FakeTelethon(
         dialogs=[_dialog(_u(1)), _dialog(target), _dialog(_u(3))],
-        cached_ids=(),                       # entity cache is cold
+        cached_ids=(),  # entity cache is cold
         totals={1863814631: 12},
         peer_dialog_top={1863814631: 44},
     )
@@ -169,6 +172,7 @@ def test_flood_wait_mid_scan_is_indeterminate():
 # The cheap path
 # --------------------------------------------------------------------------
 
+
 def test_cached_peer_is_confirmed_against_the_server_not_the_cache():
     """Resolving an entity is not evidence of a dialog — a group co-member
     resolves fine and has never been messaged. Only the server's answer counts."""
@@ -177,7 +181,7 @@ def test_cached_peer_is_confirmed_against_the_server_not_the_cache():
     assert r["resolved"] is True
     assert r["has_dialog"] is False
     assert r["source"] == "peer_dialogs"
-    assert fake.dialogs_iterated == 0        # no scan needed
+    assert fake.dialogs_iterated == 0  # no scan needed
 
 
 def test_cached_peer_with_history_reports_the_server_message_total():
@@ -195,8 +199,9 @@ def test_top_message_alone_establishes_a_dialog():
 
 
 def test_string_numeric_ref_behaves_like_the_int():
-    fake = _FakeTelethon(dialogs=[_dialog(_u(42))], cached_ids=(),
-                         totals={42: 4}, peer_dialog_top={42: 9})
+    fake = _FakeTelethon(
+        dialogs=[_dialog(_u(42))], cached_ids=(), totals={42: 4}, peer_dialog_top={42: 9}
+    )
     r = asyncio.run(_wrap(fake).dialog_status("42"))
     assert r["resolved"] is True and r["has_dialog"] is True
 
@@ -214,7 +219,7 @@ def test_username_ref_is_matched_during_the_scan():
 
 def test_indeterminate_has_its_own_stable_exit_code():
     assert EXIT_CODE_MAP["INDETERMINATE"]["code"] == EXIT_INDETERMINATE == 13
-    assert EXIT_INDETERMINATE not in (0, 3)   # not success, not "empty results"
+    assert EXIT_INDETERMINATE not in (0, 3)  # not success, not "empty results"
 
 
 @pytest.mark.parametrize("outcome", ["positive", "negative", "indeterminate"])
@@ -224,22 +229,25 @@ def test_the_three_outcomes_are_distinguishable(outcome):
     elif outcome == "negative":
         fake = _FakeTelethon(dialogs=[_dialog(_u(1))], cached_ids=())
     else:
-        fake = _FakeTelethon(dialogs=[], cached_ids=(),
-                             dialogs_raise=(0, RuntimeError("rpc died")))
+        fake = _FakeTelethon(dialogs=[], cached_ids=(), dialogs_raise=(0, RuntimeError("rpc died")))
     r = asyncio.run(_wrap(fake).dialog_status(5))
     seen = (r["resolved"], r["has_dialog"])
-    assert seen == {
-        "positive": (True, True),
-        "negative": (True, False),
-        "indeterminate": (False, None),
-    }[outcome]
+    assert (
+        seen
+        == {
+            "positive": (True, True),
+            "negative": (True, False),
+            "indeterminate": (False, None),
+        }[outcome]
+    )
 
 
 def test_scan_hit_wins_even_if_the_follow_up_count_is_zero():
     """Presence in the dialog list IS the dialog. A zero message total (both
     sides wiped history) must not downgrade that to "never spoke"."""
-    fake = _FakeTelethon(dialogs=[_dialog(_u(8))], cached_ids=(),
-                         totals={8: 0}, peer_dialog_top={8: 0})
+    fake = _FakeTelethon(
+        dialogs=[_dialog(_u(8))], cached_ids=(), totals={8: 0}, peer_dialog_top={8: 0}
+    )
     r = asyncio.run(_wrap(fake).dialog_status(8))
     assert r["resolved"] is True
     assert r["has_dialog"] is True

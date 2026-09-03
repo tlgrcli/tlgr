@@ -52,19 +52,31 @@ tlgr up <chat> <path>                 # media upload
 ### Messages
 
 ```bash
-tlgr message send <chat> <text>        # --file, --caption, --reply-to, --silent
-tlgr message list <chat>               # --limit, --sender, --media, --reactions
+tlgr message send <chat> <text>        # --file, --caption, --reply-to, --silent, --parse,
+                                       # --schedule, --topic, --send-as, --split
+tlgr message list <chat>               # --limit, --cursor, --all, --since, --until
 tlgr message get <chat> <msg_id>       # full metadata
 tlgr message delete <chat> <ids...>
-tlgr message search <chat> <query>     # --local for regex, --regex <pattern>
-tlgr message pin <chat> <msg_id>
+tlgr message search <chat> <query>     # --from, --media-type, --cursor
+tlgr message pin <chat> <msg_id>       # and: message unpin
 tlgr message react <chat> <id> <emoji>
+tlgr message read <chat>               # --up-to
 tlgr message edit <chat> <id> <text>   # --typing N
-tlgr message forward <from> <to> <ids...>
+tlgr message forward <from> <ids...> --to <chat>
+tlgr message link <chat> <msg_id>      # shareable t.me link
+tlgr message entity list <text>        # --parse md: what the formatting actually did
 ```
 
 `message send` supports `--typing N` / `--typing-auto` to show a realistic
-"typing…" indicator before the message lands.
+"typing…" indicator before the message lands. Text over 4096 UTF-16 units is
+refused unless you pass `--split`.
+
+That is the everyday tenth of the group. It also has `preview`, `compose`,
+`summarize`, `translate`, `transcribe`, `report`, `thread list`, `view get`,
+`read-receipt list`, `scheduled send`, `paid set`, `fact-check set`,
+`dice list`, `effect list`, `game *`, `sponsored *`, `suggested *` and
+`tone *` — 43 operations in all, generated from one registry, with generated
+reference in [`docs/reference/message.md`](docs/reference/message.md).
 
 `msg` is an alias for `message` (e.g. `tlgr msg send @user "hello"`).
 
@@ -74,10 +86,14 @@ Prepare a reply without sending it — you send (or discard) it later from any
 Telegram client. The human-in-the-loop primitive for agents.
 
 ```bash
-tlgr draft set <chat> <text>           # --reply-to
-tlgr draft clear <chat>
+tlgr draft set <chat> <text>           # --reply-to, --parse
+tlgr draft clear <chat>                # --all --yes to clear every draft
 tlgr draft list                        # all non-empty drafts across chats
 ```
+
+`draft set` returns the saved draft, and `draft list` reports marked chat ids
+(`-100…` for channels) with `raw_id` beside them. See
+[`docs/reference/draft.md`](docs/reference/draft.md).
 
 ### Chats
 
@@ -150,10 +166,31 @@ Session files are stored `0600` — they are full account credentials.
 
 ```bash
 tlgr daemon start                     # --foreground
-tlgr daemon stop
-tlgr daemon status
+tlgr daemon stop                      # drains in-flight work rather than killing it
+tlgr daemon status                    # running/ready/healthy/disconnected/version/protocol
 tlgr daemon logs                      # --follow
 ```
+
+#### Protocol v2
+
+The CLI reaches the daemon over `~/.tlgr/daemon.sock`, created `srw-------`
+with the connecting peer's uid checked on every request — v1 left it
+world-writable with no authentication at all.
+
+- **The account is always explicit.** The CLI resolves it (`-a` →
+  `TLGR_ACCOUNT` → `[accounts] default` → active alias) and sends it. The
+  daemon never picks one: with two accounts configured, v1 used whichever
+  alias came first out of a set, so you could send from the wrong identity
+  with no signal.
+- **Handshake, and one restart.** A client newer than the running daemon
+  restarts it exactly once and says so on stderr; `--no-daemon-restart`
+  refuses instead (exit 11). Two `tlgr` commands racing with no daemon
+  running produce exactly one daemon.
+- **`status` distinguishes alive from working.** `running` is a live process;
+  `ready` is a daemon that can serve. An account whose connection dropped is
+  `degraded` and its requests answer exit 8 with a hint instead of
+  `Cannot send requests while disconnected`; a revoked session is
+  `needs_login` and answers exit 4.
 
 ### Global Flags
 
@@ -285,7 +322,36 @@ tlgr schema                            # full CLI schema as JSON
 tlgr schema message send               # schema for a specific command
 ```
 
-Agents can discover all commands, flags, positionals, types, and defaults without parsing `--help`.
+Agents can discover all commands, flags, positionals, types, and defaults
+without parsing `--help`. For commands generated from the operation registry
+the schema also carries JSON Schema (draft 2020-12) for the request *and* the
+response, plus a generated example — so a call can be validated before it is
+made. `tlgr agent whoami --json` reports `output_schema_version: 2`.
+
+### Feature parity
+
+```bash
+tlgr agent parity                      # coverage of the pinned Telegram feature catalog
+tlgr agent parity --json --uncovered   # every gap, by priority and domain
+```
+
+The answer to "can tlgr do X yet" without guessing. Every uncovered id is
+either waived to a named later PR or reported as a gap; nothing in the report
+is hand-maintained. The same report is generated into
+[`docs/reference/PARITY.md`](docs/reference/PARITY.md).
+
+### JSON envelope
+
+Generated commands wrap their answer:
+
+```json
+{"ok": true, "op": "message.send", "result": {...}, "meta": {"request_id": "...", "elapsed_ms": 42}}
+{"ok": false, "error": {"error": "...", "code": "RATE_LIMITED", "exit_code": 7, "wait_seconds": 30}}
+```
+
+`--results-only` prints the inner value in either case, which is v1's shape;
+`--select` projects fields by dot path. Paginated operations return
+`{items, has_more, next_cursor, total}` with an opaque signed cursor.
 
 ### Stable exit codes
 
@@ -321,6 +387,12 @@ tlgr --enable-commands="message,chat,schema" account remove foo  # blocked (exit
 ```
 
 Or via environment: `TLGR_ENABLE_COMMANDS=message,chat,schema`.
+
+For generated commands the allowlist is matched by canonical operation id and
+enforced **inside the daemon**, so an alias cannot be used to get past it
+(`--enable-commands message.list` permits `tlgr msg list`), and a blocked
+operation exits 6. It is a usability guard, not a sandbox: anything that can
+reach the socket can reach the session. See [SECURITY.md](SECURITY.md).
 
 ### JSON transforms
 

@@ -109,6 +109,7 @@ class TestProcessorChain:
     def test_unknown_processor_raises(self):
         chain = ProcessorChain()
         import pytest
+
         with pytest.raises(ValueError, match="Unknown processor"):
             chain.add("nonexistent_proc")
 
@@ -142,15 +143,19 @@ class TestChainFromList:
         assert chain.apply("hello") == "[NEWS]\nhello"
 
     def test_dict_items(self):
-        chain = create_chain_from_list([
-            {"pattern": "foo", "replacement": "bar", "flags": "i"},
-        ])
+        chain = create_chain_from_list(
+            [
+                {"pattern": "foo", "replacement": "bar", "flags": "i"},
+            ]
+        )
         assert len(chain) == 1
         assert chain.apply("Foo") == "bar"
 
     def test_mixed(self):
-        chain = create_chain_from_list([
-            "strip_formatting",
-            {"pattern": "hello", "replacement": "world"},
-        ])
+        chain = create_chain_from_list(
+            [
+                "strip_formatting",
+                {"pattern": "hello", "replacement": "world"},
+            ]
+        )
         assert len(chain) == 2

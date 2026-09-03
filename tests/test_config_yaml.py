@@ -2,18 +2,12 @@
 
 from __future__ import annotations
 
-import pytest
-import tempfile
-from pathlib import Path
-
+from tlgr.filters.compose import Op
 from tlgr.gateway.config import (
-    GatewayConfig,
-    ActionConfig,
-    load_gateway_configs,
     _parse_action,
     _parse_job,
+    load_gateway_configs,
 )
-from tlgr.filters.compose import Op
 
 
 class TestParseAction:
@@ -29,69 +23,87 @@ class TestParseAction:
         assert ac.config["drop_author"] is True
 
     def test_action_with_filters(self):
-        ac = _parse_action({"forward": {
-            "to": ["@dest"],
-            "filters": {"chat_type": "private"},
-        }})
+        ac = _parse_action(
+            {
+                "forward": {
+                    "to": ["@dest"],
+                    "filters": {"chat_type": "private"},
+                }
+            }
+        )
         assert ac.filters is not None
         assert ac.filters.filter_name == "chat_type"
 
     def test_action_with_processors(self):
-        ac = _parse_action({"forward": {
-            "to": ["@dest"],
-            "processors": ["strip_formatting"],
-        }})
+        ac = _parse_action(
+            {
+                "forward": {
+                    "to": ["@dest"],
+                    "processors": ["strip_formatting"],
+                }
+            }
+        )
         assert ac.processors is not None
         assert len(ac.processors) == 1
 
 
 class TestParseJob:
     def test_minimal(self):
-        cfg = _parse_job({
-            "name": "test",
-            "account": "main",
-            "actions": [{"reply": "hi"}],
-        })
+        cfg = _parse_job(
+            {
+                "name": "test",
+                "account": "main",
+                "actions": [{"reply": "hi"}],
+            }
+        )
         assert cfg.name == "test"
         assert cfg.account == "main"
         assert cfg.enabled is True
         assert len(cfg.actions) == 1
 
     def test_with_filters(self):
-        cfg = _parse_job({
-            "name": "test",
-            "filters": {"chat_type": "private", "contains": ["hello"]},
-            "actions": [{"reply": "hi"}],
-        })
+        cfg = _parse_job(
+            {
+                "name": "test",
+                "filters": {"chat_type": "private", "contains": ["hello"]},
+                "actions": [{"reply": "hi"}],
+            }
+        )
         assert cfg.filters is not None
         assert cfg.filters.op is Op.AND
 
     def test_disabled(self):
-        cfg = _parse_job({
-            "name": "disabled",
-            "enabled": False,
-            "actions": [{"reply": "hi"}],
-        })
+        cfg = _parse_job(
+            {
+                "name": "disabled",
+                "enabled": False,
+                "actions": [{"reply": "hi"}],
+            }
+        )
         assert cfg.enabled is False
 
     def test_multiple_actions(self):
-        cfg = _parse_job({
-            "name": "multi",
-            "actions": [
-                {"reply": "hello!"},
-                {"forward": {"to": ["@dest"]}},
-            ],
-        })
+        cfg = _parse_job(
+            {
+                "name": "multi",
+                "actions": [
+                    {"reply": "hello!"},
+                    {"forward": {"to": ["@dest"]}},
+                ],
+            }
+        )
         assert len(cfg.actions) == 2
         assert cfg.actions[0].name == "reply"
         assert cfg.actions[1].name == "forward"
 
     def test_job_level_processors(self):
-        cfg = _parse_job({
-            "name": "proc",
-            "processors": ["strip_formatting"],
-            "actions": [{"reply": "hi"}],
-        })
+        cfg = _parse_job(
+            {
+                "name": "proc",
+                "processors": ["strip_formatting"],
+                "actions": [{"reply": "hi"}],
+            }
+        )
         assert cfg.processors is not None
         assert len(cfg.processors) == 1
 

@@ -1,24 +1,36 @@
 """Gateway engine — generic event-driven pipeline.
 
-Replaces AutoforwardJob and AutoreplyJob with a single class that runs:
     event -> filters -> processors -> actions
+
+Where the events come from changed in v2. A job used to register its own
+Telethon handlers, so a rule whose action posted to a slow endpoint ran
+*inside* the update loop and, with `sequential_updates=True`, made every
+account deaf until it returned (ROB-02). A job now subscribes to the daemon's
+event bus, which runs handlers on bounded worker lanes keyed by chat: per-chat
+order is preserved, the update loop is never blocked, and a job that falls
+behind is bounded rather than unbounded.
+
+The pipeline itself is unchanged, and filters still read the raw Telethon
+event, which is why the bus carries it beside the normalised envelope. The
+full move to model-based filters belongs to the updates group (PR-4).
+
+Without a bus — a unit test, or a daemon that has not started one — the job
+falls back to registering Telethon handlers exactly as v1 did.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
 
 from telethon import events
 
 from tlgr.actions import get_action
 from tlgr.core.client import ClientWrapper
 from tlgr.filters.compose import evaluate
-from tlgr.gateway.config import GatewayConfig, ActionConfig
+from tlgr.gateway.config import ActionConfig, GatewayConfig
 from tlgr.gateway.event import Event
 from tlgr.jobs.base import BaseJob
-from tlgr.processors import ProcessorChain
 
 log = logging.getLogger("tlgr.gateway")
 
@@ -29,12 +41,25 @@ class _GatewayJobConfig:
     BaseJob expects a config object with ``.name``, ``.type``, and
     ``.enabled`` attributes.
     """
+
     def __init__(self, gw: GatewayConfig) -> None:
         self.name = gw.name
         self.type = "gateway"
         self.enabled = gw.enabled
         self.account = gw.account
 
+
+#: v1's job event names → the bus taxonomy (§3.7), and back for the pipeline,
+#: which still labels envelopes with v1's names.
+_BUS_TYPE_MAP = {
+    "new_message": "message_new",
+    "message_edited": "message_edited",
+    "message_deleted": "message_deleted",
+    "chat_action": "chat_action",
+    "user_joined": "user_status",
+    "message_read": "message_read",
+}
+_V1_TYPE_MAP = {v: k for k, v in _BUS_TYPE_MAP.items()}
 
 _EVENT_TYPE_MAP = {
     "new_message": (events.NewMessage, {}),
@@ -54,11 +79,14 @@ class Gateway(BaseJob):
         config: GatewayConfig,
         client: ClientWrapper,
         webhook=None,
+        bus=None,
     ) -> None:
         self._gw = config
         shim = _GatewayJobConfig(config)
         super().__init__(shim, client, webhook)  # type: ignore[arg-type]
         self._handlers: list = []
+        self._bus = bus
+        self._bus_handler = None
         self._stats: dict[str, int] = {"matched": 0, "skipped": 0, "errors": 0}
 
     async def setup(self) -> None:
@@ -71,6 +99,35 @@ class Gateway(BaseJob):
         )
 
     async def run(self) -> None:
+        if self._bus is not None:
+            await self._run_on_bus()
+            return
+        await self._run_on_client()
+
+    async def _run_on_bus(self) -> None:
+        """Subscribe to the daemon's bus instead of the update loop (ROB-02)."""
+        wanted = {_BUS_TYPE_MAP.get(name, name) for name in self._gw.events}
+        account = self._gw.account
+
+        async def on_event(envelope, raw) -> None:
+            if envelope.type not in wanted:
+                return
+            if account and envelope.account != account:
+                return
+            if raw is None:
+                # A self-origin echo or a synthesised event: the filters read
+                # the raw Telethon object, so there is nothing to evaluate.
+                return
+            await self._handle(raw, _V1_TYPE_MAP.get(envelope.type, envelope.type))
+
+        self._bus_handler = on_event
+        self._bus.add_handler(on_event)
+        try:
+            await asyncio.Future()
+        except asyncio.CancelledError:
+            raise
+
+    async def _run_on_client(self) -> None:
         for event_type_name in self._gw.events:
             mapping = _EVENT_TYPE_MAP.get(event_type_name)
             if not mapping:
@@ -94,6 +151,9 @@ class Gateway(BaseJob):
             raise
 
     async def teardown(self) -> None:
+        if self._bus is not None and self._bus_handler is not None:
+            self._bus.remove_handler(self._bus_handler)
+            self._bus_handler = None
         for h in self._handlers:
             self.client.client.remove_event_handler(h)
         self._handlers.clear()

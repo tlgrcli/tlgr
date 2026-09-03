@@ -4,32 +4,28 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from tlgr.core.errors import (
-    TlgrError,
-    AuthenticationError,
-    SessionError,
-    ConfigurationError,
-    ChatNotFoundError,
-    PermissionError_,
-    RateLimitError,
-    DaemonError,
-    DaemonNotRunningError,
-    IPCError,
-    EXIT_SUCCESS,
-    EXIT_GENERIC,
-    EXIT_USAGE,
     EXIT_AUTH,
+    EXIT_CONFIG,
+    EXIT_DAEMON,
+    EXIT_GENERIC,
+    EXIT_IPC,
     EXIT_NOT_FOUND,
     EXIT_PERMISSION,
     EXIT_RATE_LIMITED,
-    EXIT_CONFIG,
-    EXIT_DAEMON,
-    EXIT_IPC,
+    AuthenticationError,
+    ChatNotFoundError,
+    ConfigurationError,
+    DaemonError,
+    DaemonNotRunningError,
+    IPCError,
+    PermissionError_,
+    RateLimitError,
+    SessionError,
+    TlgrError,
+    emit_error,
     exit_code_for,
     format_error_json,
-    emit_error,
 )
 
 

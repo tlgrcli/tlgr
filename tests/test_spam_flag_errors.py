@@ -48,10 +48,19 @@ def test_flood_wait_still_rate_limited_with_wait_seconds():
     assert body["wait_seconds"] == 42
 
 
-def test_unrelated_errors_stay_generic():
+def test_unrelated_errors_are_generic_not_ipc_error():
+    """An unclassified failure is GENERIC/exit 1, not IPC_ERROR/exit 12.
+
+    v1 answered IPC_ERROR for everything it did not recognise, which said
+    "the channel between you and the daemon failed" about an error that had
+    nothing to do with the channel. COR-06 routes the legacy handler through
+    the same table as the v2 dispatcher, and an unknown exception lands on
+    the table's GENERIC row.
+    """
     resp = _handle_exception(ValueError("boom"))
     assert resp.status == 500
-    assert _body(resp)["code"] == "IPC_ERROR"
+    assert _body(resp)["code"] == "GENERIC"
+    assert _body(resp)["exit_code"] == 1
 
 
 @pytest.mark.parametrize("code", ["PEER_FLOOD", "ACCOUNT_FROZEN"])

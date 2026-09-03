@@ -1,7 +1,20 @@
-"""macOS LaunchAgent management for the tlgr daemon.
+"""macOS LaunchAgent management for the tlgr daemon (§6.12).
 
-Installs/uninstalls a plist in ~/Library/LaunchAgents so the daemon
-starts at login and restarts automatically if it crashes.
+`KeepAlive.SuccessfulExit = false` means "restart it unless it exited 0",
+which is only safe if the daemon never exits 0 on its own. It did: the idle
+monitor stopped it after thirty minutes, launchd saw a clean exit, and the
+daemon never came back — jobs silently stopped and the webhook silently
+unsubscribed until someone noticed. That is COR-39.
+
+Two changes close it. The plist passes `--base`, and the daemon forces
+`idle_timeout` to 0 whenever a supervisor owns it, so the clean exit that
+launchd will not restart cannot happen. And a manually started second daemon
+exits 0 with "already running" rather than 1, so `KeepAlive` does not turn a
+duplicate start into a respawn loop.
+
+The `ExecStart` also runs `tlgr.daemon.main`, not `tlgr.daemon.server`; the
+latter still works as an alias, and an already-installed v1 plist keeps
+running until it is reinstalled.
 """
 
 from __future__ import annotations
@@ -22,13 +35,13 @@ def _python_executable() -> str:
 
 
 def _build_plist(base: Path, log_dir: Path) -> dict:
-    log_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     return {
         "Label": SERVICE_LABEL,
         "ProgramArguments": [
             _python_executable(),
             "-m",
-            "tlgr.daemon.server",
+            "tlgr.daemon.main",
             "--base",
             str(base),
             "--foreground",
@@ -36,6 +49,9 @@ def _build_plist(base: Path, log_dir: Path) -> dict:
         "RunAtLoad": True,
         "KeepAlive": {"SuccessfulExit": False},
         "ThrottleInterval": 30,
+        # Tells the daemon a supervisor owns it, which forces idle_timeout to
+        # 0 — the other half of the COR-39 fix.
+        "EnvironmentVariables": {"XPC_SERVICE_NAME": SERVICE_LABEL},
         "StandardOutPath": str(log_dir / "daemon.log"),
         "StandardErrorPath": str(log_dir / "daemon.log"),
     }

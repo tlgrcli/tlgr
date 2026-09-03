@@ -124,7 +124,8 @@ tlgr/
 │
 ├── ops/                         operation definitions — one module per (sub)domain
 │   ├── __init__.py              imports every module, builds REGISTRY, runs lints
-│   ├── _spec.py                 OperationSpec, PageKind, OpFlags, OpContext, helpers
+│   ├── _spec.py                 OperationSpec, OpContext, Surface, helpers (PageKind is
+│   │                            re-exported from core/pagination — core sits below ops)
 │   ├── _params.py               request-field annotation vocabulary (positional(), secret(), …)
 │   ├── message.py               ← FOUNDATION: the whole `message` group (proof of the model)
 │   ├── draft.py                 ← FOUNDATION: `draft set|clear|list` (rides the same models)
@@ -139,6 +140,8 @@ tlgr/
 ├── cli/
 │   ├── __init__.py              build_cli(): generated tree + not-yet-migrated legacy groups
 │   ├── gen.py                   OperationSpec → click.Command (params, aliases, help, examples)
+│   ├── introspect.py            describes the click tree for `tlgr schema` (handed to
+│   │                            tlgr/schema.py, which imports no click)
 │   ├── params.py                click ParamTypes: PEER, USER, MSGREF, DURATION, DATETIME, SECRET…
 │   ├── globals.py               global flags attached to every command; CliState
 │   ├── render.py                JSON / plain / human renderers driven by op.columns
@@ -181,7 +184,7 @@ tlgr/
 ├── core/
 │   ├── errors.py                ERROR_MAP (the single Telethon-exception table), TlgrError tree
 │   ├── peers.py                 entity resolution service (per account)
-│   ├── pagination.py            Cursor encode/decode/validate, PageKind state machines
+│   ├── pagination.py            PageKind, Cursor encode/decode/validate, Page building
 │   ├── paths.py                 ~/.tlgr layout, alias validation, write_private(), 0600 audit
 │   ├── config.py                config.toml → typed Structs; reload; defaults
 │   ├── accounts.py              AccountManager (validated aliases, health, active alias)
@@ -1011,7 +1014,7 @@ From `REGISTRY`, deterministically:
 
 1. **The Click tree** — `cli/gen.py::build_click_tree()` produces groups (`message`), sub-groups (`chat member`), commands, aliases, shortcuts, `--help`, and shell completion. One factory; zero per-command modules.
 2. **The daemon dispatch table** — `daemon/dispatch.py` looks the op up by id; there is no route per operation.
-3. **`tlgr schema`** — JSON Schema for every request and response (`msgspec.json.schema_components`), plus `example`, flags, columns, exit codes, aliases and catalog coverage. Emitted as one document with `$defs` so the models are defined once.
+3. **`tlgr schema`** — JSON Schema for every request and response (`msgspec.json.schema_components`), plus `example`, flags, columns, exit codes, aliases and catalog coverage. Emitted as one document with `$defs` so the models are defined once. The click tree it also carries comes from `cli/introspect.py` and is passed *in*: `tlgr/schema.py` and `ops/` must not import `cli/`.
 4. **`docs/reference/<group>.md`** — synopsis, argument table, flag table, response schema summary, example invocation + example JSON, covered catalog ids. `make docs` regenerates; CI fails on a diff (this is PKG-03's fix).
 5. **Contract tests** — `tests/test_registry_contract.py` parametrised over `REGISTRY` (§11.3).
 6. **`docs/reference/PARITY.md`** — §1.3.
@@ -1280,7 +1283,9 @@ Restart is attempted at most once per CLI invocation, and never for a daemon man
 4. on timeout: read the last 20 lines of daemon.log into the error message; exit 11.
 ```
 
-The daemon itself takes the same `flock` for its whole lifetime inside `main()` **before** any other work, so two daemons cannot coexist even if two CLIs spawn simultaneously. Nothing ever unlinks another process's socket or pid file; a stale socket is removed only while holding the lock. `PermissionError` on the pid file is never treated as "not running" (COR-14c).
+The daemon itself takes a `flock` for its whole lifetime inside `main()` **before** any other work, so two daemons cannot coexist even if two CLIs spawn simultaneously. Nothing ever unlinks another process's socket or pid file; a stale socket is removed only while holding the lock. `PermissionError` on the pid file is never treated as "not running" (COR-14c).
+
+> **Correction (implemented 2026-09-03).** The probe's lock and the daemon's singleton lock cannot be the same file. The probe holds its lock *across* the spawn, and the child takes the singleton lock as its first act, so one file would deadlock every start. The probe uses `~/.tlgr/daemon.spawn.lock`; `daemon.lock` remains the daemon's own. The property this section wanted — twenty simultaneous CLIs produce one daemon — is unchanged and tested.
 
 ---
 
@@ -1308,6 +1313,8 @@ main()
 ```
 
 Accounts connected at start = the union of: accounts referenced by enabled jobs, `[accounts] default`, the active alias, and every alias listed in `[daemon] preconnect`. Everything else connects on demand (§6.3). The connect list is an **ordered list**, never a `set` (COR-02).
+
+> **Correction (implemented 2026-09-03).** The jobs part is deferred: jobs are created after the accounts connect, and reading `jobs.yaml` at start to discover aliases would make the connect order depend on a file the account registry does not own. A job whose account is not in the list connects it through the same on-demand path every request uses, one second later.
 
 ### 6.2 `AccountSession` state machine
 
@@ -1416,7 +1423,7 @@ Additional triggers for `catch_up()`:
 * **Token bucket per `rate_class`** — `read` (10/s burst 20), `resolve` (0.5/s burst 5 — `contacts.resolveUsername` floods at ~50 per short period), `send` (1/s burst 3, plus a configurable per-new-peer daily cap), `bulk` (2/s), `file` (governed by transfer slots instead, §6.7). Defaults are config keys; the values above are the shipped defaults for an unwarmed account.
 * **Per-chat slow mode** — `channelFull.slowmode_next_send_date` is cached per chat; a send that would violate it is refused with `RATE_LIMITED` and `wait_seconds` **without** a network round trip.
 * **Persisted flood memory** — every `FloodWaitError` / `SlowModeWaitError` / `FloodPremiumWaitError` / `TakeoutInitDelayError` writes `{account, method, peer_id, until_unix, seconds}` to `~/.tlgr/accounts/<alias>/flood.json` (0600, atomic replace). Loaded at start. A request whose `(method, peer)` deadline has not passed fails immediately with the remaining `wait_seconds` — Telethon's in-process `_flood_waited_requests` is lost on restart, so v1 re-hit every wait after a bounce.
-* **Sleep policy** — a wait ≤ `min(request.flood_wait_max, remaining op timeout)` is slept inside the daemon and reported as `meta.flood_wait_slept`; anything longer returns `RATE_LIMITED` immediately. Per-request `flood_wait_max` is honoured by passing `flood_sleep_threshold` per call (COR-15, ROB-06).
+* **Sleep policy** — a wait ≤ `min(request.flood_wait_max, remaining op timeout)` is slept inside the daemon and reported as `meta.flood_wait_slept`; anything longer returns `RATE_LIMITED` immediately. Per-request `flood_wait_max` is honoured by setting `flood_sleep_threshold` around the call (COR-15, ROB-06). *Correction (2026-09-03): Telethon has no per-call form — it reads the attribute off the client at call time — so concurrent requests on one account necessarily share it. The active budgets are stacked and the **smallest** is in force, which can only make a request return sooner than it had to.*
 * **Circuit breaker** — `PeerFloodError`, `FrozenMethodInvalidError`/`FROZEN_*`, or three consecutive `USER_PRIVACY_RESTRICTED`-class refusals within 60 s on new peers open the breaker: state `frozen`, all `rate_class="send"` ops refused with exit 9, jobs for that account paused, a `daemon_health` event emitted, and `help.getAppConfig` polled for `freeze_since_date`/`freeze_until_date`/`freeze_appeal_url`. Reset is manual (`tlgr account unfreeze --yes`) or automatic once `freeze_until_date` passes.
 * **Idempotent sends (checklist 8)** — every outgoing message gets a `random_id` generated and journalled to `~/.tlgr/accounts/<alias>/outbox.jsonl` *before* the RPC, and cleared on a confirmed result. A retry after a lost `rpc_result` reuses the same `random_id`, so the server dedupes; `updateMessageID` reconciles the real id. `RANDOM_ID_DUPLICATE` is therefore a success, not an error.
 
@@ -1438,6 +1445,8 @@ UserUpdate, Album) + events.Raw(<everything else>)
 ```
 
 **Handlers never block the update loop.** With `sequential_updates=True` a slow subscriber would stall every account (ROB-02: v1's webhook could hold the loop for ~97 s). The Telethon handler does exactly three things: normalise, assign `seq`, `put_nowait` into each subscriber's queue (dropping the oldest and counting on overflow). All real work happens in a bounded worker pool. **Per-chat order is preserved** by hashing `chat_id` to a fixed worker lane (`workers = config [daemon] event_workers`, default 8); events for one chat always run on one lane, in order, while different chats run concurrently.
+
+> **Correction (implemented 2026-09-03).** A bus handler is called as `handler(envelope, raw)`, where `raw` is the source Telethon object for an in-process consumer and `None` for a synthesised event. The gateway's filters read the raw event, and re-deriving them from the normalised payload would be lossy and a second source of truth. Only the envelope leaves the process. An update with no taxonomy entry is **dropped**, never delivered as `unknown`: a type name meaning "we have not looked at this yet" cannot be filtered on and changes meaning the day the real type is added.
 
 **Own actions are echoed.** Telethon marks results of our own requests `_self_outgoing` and does not dispatch them, so a message the daemon sends never fires `NewMessage`. Every mutating op therefore feeds its returned `Updates` through the same normaliser with `self_origin: true`. That is what makes `tlgr watch` show the account's own sends, and what lets a gateway job react to them.
 
@@ -1551,6 +1560,8 @@ Telethon exception / msgspec ValidationError / tlgr exception
         │  (raised inside impl, inside asyncio.timeout, inside the dispatcher)
         ▼
 core/errors.py::classify(exc)  ── the ONLY place Telethon exception classes are named
+        │  (as *strings*: keying ERROR_MAP by class name is what lets cli/ stay
+        │   Telethon-free while this table still classifies every Telethon error)
         │  → ErrorBody{code, message, exit_code, retryable, wait_seconds?, field?, rpc?, hint?}
         ▼
 daemon: log (structured, redacted, with request_id) → HTTP status from the table → JSON envelope
@@ -1707,6 +1718,8 @@ Columns come from `op.columns` (3–6 by default); `--columns a,b,c` overrides; 
 ├── cursor.key                  0600  cursor HMAC key
 ├── identity.json               0600  stable initConnection identity strings
 ├── daemon.lock                 0600  flock target (single instance)
+├── daemon.spawn.lock           0600  flock target (serialises the autostart probe;
+│                                     separate from daemon.lock — see §5.8)
 ├── daemon.pid                  0600
 ├── daemon.sock                 0600  srw-------
 ├── daemon.state                0600  {version, protocol, pid, socket, managed_by, started_at}

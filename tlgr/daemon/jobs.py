@@ -23,8 +23,9 @@ class JobRunner:
         config: GatewayConfig,
         client: ClientWrapper,
         webhook: WebhookPusher | None = None,
+        bus: Any = None,
     ) -> BaseJob:
-        job = Gateway(config, client, webhook)
+        job = Gateway(config, client, webhook, bus)
         self._jobs[config.name] = job
         return job
 

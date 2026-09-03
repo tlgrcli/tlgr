@@ -5,7 +5,8 @@ from __future__ import annotations
 import base64
 import json
 import sys
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 
 def _tsv_escape(value: Any) -> str:
@@ -17,10 +18,21 @@ def _tsv_escape(value: Any) -> str:
 # JSON transforms (--results-only, --select)
 # ---------------------------------------------------------------------------
 
-_ENVELOPE_KEYS = frozenset({
-    "next_page_token", "nextPageToken", "next_cursor", "has_more",
-    "count", "total", "query", "dry_run", "dryRun", "op", "action",
-})
+_ENVELOPE_KEYS = frozenset(
+    {
+        "next_page_token",
+        "nextPageToken",
+        "next_cursor",
+        "has_more",
+        "count",
+        "total",
+        "query",
+        "dry_run",
+        "dryRun",
+        "op",
+        "action",
+    }
+)
 
 
 def _unwrap_primary(data: Any) -> Any:
@@ -98,6 +110,7 @@ def apply_json_transforms(
 # Core output functions
 # ---------------------------------------------------------------------------
 
+
 def output_json(
     data: Any,
     *,
@@ -142,10 +155,12 @@ def output_human(
             widths[i] = max(widths[i], len(v))
 
     gap = "   "
-    header_line = gap.join(h.upper().ljust(w) for h, w in zip(display_headers, widths))
+    header_line = gap.join(
+        h.upper().ljust(w) for h, w in zip(display_headers, widths, strict=False)
+    )
     print(header_line.rstrip())
     for cell_row in cells:
-        line = gap.join(v.ljust(w) for v, w in zip(cell_row, widths))
+        line = gap.join(v.ljust(w) for v, w in zip(cell_row, widths, strict=False))
         print(line.rstrip())
     sys.stdout.flush()
 
@@ -193,6 +208,7 @@ def emit(ctx_obj: dict[str, Any], data: Any, **kwargs: Any) -> None:
 # ---------------------------------------------------------------------------
 # Cursor-based pagination helpers
 # ---------------------------------------------------------------------------
+
 
 def encode_cursor(state: dict[str, Any]) -> str:
     """Encode pagination state as an opaque base64 cursor token."""

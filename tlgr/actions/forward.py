@@ -12,7 +12,7 @@ from tlgr.actions import register_action
 from tlgr.core.client import ClientWrapper
 from tlgr.filters.message import is_forwardable
 from tlgr.gateway.event import Event
-from tlgr.processors import ProcessorChain, create_chain_from_list
+from tlgr.processors import ProcessorChain
 
 log = logging.getLogger("tlgr.actions.forward")
 
@@ -59,7 +59,9 @@ async def action_forward(
                     await client.client.send_message(dest_id, transformed)
             else:
                 await client.client.forward_messages(
-                    dest_id, message, drop_author=drop_author,
+                    dest_id,
+                    message,
+                    drop_author=drop_author,
                 )
         except errors.ChatWriteForbiddenError:
             log.warning("cannot write to %s", dest_ref)

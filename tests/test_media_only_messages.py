@@ -31,9 +31,19 @@ class MessageMediaDocument(SimpleNamespace):
 
 def _msg(mid, text, *, out=False, media=None):
     return SimpleNamespace(
-        id=mid, date="2026-09-02", text=text, out=out, action=None,
-        reply_to_msg_id=None, sender=None, sender_id=None, media=media,
-        entities=None, reactions=None, reply_to=None, forward=None,
+        id=mid,
+        date="2026-09-02",
+        text=text,
+        out=out,
+        action=None,
+        reply_to_msg_id=None,
+        sender=None,
+        sender_id=None,
+        media=media,
+        entities=None,
+        reactions=None,
+        reply_to=None,
+        forward=None,
     )
 
 
@@ -47,6 +57,7 @@ class _FakeTelethon:
         async def _gen():
             for m in msgs:
                 yield m
+
         return _gen()
 
     async def get_messages(self, chat_id, ids=None):
@@ -61,8 +72,7 @@ def _wrap(msgs):
 
 def test_media_only_message_is_labelled_without_asking():
     """The caption-less sticker case, with include_media left off."""
-    w = _wrap([_msg(2, "", media=MessageMediaDocument()),
-               _msg(1, "سلام")])
+    w = _wrap([_msg(2, "", media=MessageMediaDocument()), _msg(1, "سلام")])
     out = asyncio.run(w.get_messages(7, limit=10))
     assert out[0]["media_type"] == "MessageMediaDocument"
     assert out[0]["text"] == ""

@@ -1,17 +1,34 @@
-"""Unix socket HTTP server for daemon IPC using aiohttp."""
+"""The v1 route table, kept alive until PR-12 (§2.4, §12.4).
+
+The handlers below are v1's, unchanged in what they return: their JSON shapes
+are a documented contract and each one goes when its group migrates to the
+registry. What *has* changed is everything around them. They are registered
+into the v2 application (`daemon/app.py`), so they now run behind the peer-uid
+check, the policy allowlist, the version handshake and idle accounting; and
+`_handle_exception` funnels through `core.errors.classify`, so a flood wait is
+RATE_LIMITED/exit 7 and a missing chat is NOT_FOUND/exit 5 instead of every
+failure being IPC_ERROR/exit 12 (COR-06).
+"""
 
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
-from telethon.errors import FloodWaitError, PeerFloodError, RPCError
+
+from tlgr.core.errors import (
+    AccountNotFoundError,
+    AccountRequiredError,
+    classify,
+    error_body_dict,
+    http_status_for,
+)
 
 if TYPE_CHECKING:
-    from tlgr.daemon.server import DaemonServer
+    from tlgr.daemon.app import Daemon
 
 log = logging.getLogger("tlgr.daemon.ipc")
 
@@ -44,65 +61,60 @@ async def _get_body(request: web.Request) -> dict[str, Any]:
         return {}
 
 
-def _handle_exception(e: Exception) -> web.Response:
-    """Convert exceptions to appropriate IPC error responses."""
-    if isinstance(e, FloodWaitError):
-        return _json_response(
-            {"error": str(e), "code": "RATE_LIMITED", "wait_seconds": e.seconds},
-            status=429,
+def _no_client(account: str) -> web.Response:
+    """Why there is no client, said precisely.
+
+    v1 answered `404 IPC_ERROR "No client for account"` for three different
+    situations — no account was given, the alias is not registered, and the
+    account is registered but not usable — so the caller could not tell a typo
+    from a revoked session. The empty case is ACCOUNT_REQUIRED (exit 2)
+    because the daemon does not choose an account for you (COR-02).
+    """
+    if not account:
+        return _handle_exception(
+            AccountRequiredError("no account was given and the daemon does not choose one")
         )
-    # PeerFlood and FROZEN_* are account-level spam flags, not transient
-    # rate limits: there is no wait_seconds to sleep off. They must reach the
-    # caller as their own code so outreach automation can stop sending rather
-    # than treat them as a generic failure and keep going.
-    if isinstance(e, PeerFloodError):
-        return _error_response(str(e), 403, code="PEER_FLOOD")
-    if isinstance(e, RPCError) and "FROZEN" in str(e).upper():
-        return _error_response(str(e), 403, code="ACCOUNT_FROZEN")
-    return _error_response(str(e), 500)
+    return _handle_exception(
+        AccountNotFoundError(
+            f"account {account!r} is not connected. "
+            f"Check: tlgr account list, and tlgr daemon status"
+        )
+    )
 
 
-class IPCServer:
-    def __init__(self, daemon: DaemonServer, socket_path: str):
+def _handle_exception(e: Exception) -> web.Response:
+    """Classify once, in the same table the v2 dispatcher uses (COR-06).
+
+    v1 recognised three exception types here and answered 500/IPC_ERROR for
+    everything else, so "this chat does not exist", "you are not an admin" and
+    "the daemon is broken" were one exit code. The body keeps v1's flat shape
+    — `error`, `code`, `exit_code` at the top level — because that is what its
+    callers parse.
+    """
+    return _json_response(error_body_dict(classify(e)), status=http_status_for(e))
+
+
+def register_legacy_routes(app: web.Application, daemon: Daemon) -> None:
+    """Attach the v1 routes to the v2 application.
+
+    They are no longer served by their own aiohttp app with its own
+    (nonexistent) authentication; they are part of the one application whose
+    middleware chain enforces §8.2 for everything.
+    """
+    LegacyRoutes(daemon).register(app)
+
+
+class LegacyRoutes:
+    def __init__(self, daemon: Daemon):
         self.daemon = daemon
-        self.socket_path = socket_path
-        self._runner: web.AppRunner | None = None
 
-    async def start(self) -> None:
-        app = web.Application(middlewares=[self._touch_middleware])
+    def register(self, app: web.Application) -> None:
         self._register_routes(app)
-        self._runner = web.AppRunner(app)
-        await self._runner.setup()
-        site = web.UnixSite(self._runner, self.socket_path)
-        await site.start()
-        log.info("IPC server listening on %s", self.socket_path)
-
-    async def stop(self) -> None:
-        if self._runner:
-            await self._runner.cleanup()
-
-    @web.middleware
-    async def _touch_middleware(self, request: web.Request, handler):
-        self.daemon.touch_ipc()
-        return await handler(request)
 
     def _register_routes(self, app: web.Application) -> None:
         # Daemon
         app.router.add_get("/daemon/status", self._daemon_status)
         app.router.add_post("/daemon/stop", self._daemon_stop)
-
-        # Messages
-        app.router.add_post("/message/send", self._message_send)
-        app.router.add_get("/message/list", self._message_list)
-        app.router.add_get("/message/get", self._message_get)
-        app.router.add_post("/message/delete", self._message_delete)
-        app.router.add_get("/message/search", self._message_search)
-        app.router.add_post("/message/pin", self._message_pin)
-        app.router.add_post("/message/react", self._message_react)
-        app.router.add_post("/message/edit", self._message_edit)
-        app.router.add_post("/message/forward", self._message_forward)
-
-        app.router.add_post("/message/read", self._message_read)
 
         # Chats
         app.router.add_get("/chat/list", self._chat_list)
@@ -117,10 +129,6 @@ class IPCServer:
         app.router.add_post("/chat/typing", self._chat_typing)
         app.router.add_get("/chat/members", self._chat_members)
         app.router.add_get("/chat/posters", self._chat_posters)
-
-        app.router.add_post("/draft/set", self._draft_set)
-        app.router.add_post("/draft/clear", self._draft_clear)
-        app.router.add_get("/draft/list", self._draft_list)
 
         # Contacts
         app.router.add_get("/contact/list", self._contact_list)
@@ -158,202 +166,6 @@ class IPCServer:
         asyncio.get_event_loop().call_soon(self.daemon.request_shutdown)
         return _json_response({"stopping": True})
 
-    # -- Messages --
-
-    async def _message_send(self, request: web.Request) -> web.Response:
-        body = await _get_body(request)
-        account = body.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _error_response("No client for account", 404)
-        try:
-            result = await client.send_message(
-                _ref(body["chat"]),
-                body.get("text", ""),
-                reply_to=body.get("reply_to"),
-                silent=body.get("silent", False),
-                file=body.get("file"),
-                caption=body.get("caption"),
-                typing_s=float(body.get("typing_s", 0) or 0),
-            )
-            return _json_response(result)
-        except Exception as e:
-            return _handle_exception(e)
-
-    async def _message_list(self, request: web.Request) -> web.Response:
-        q = request.query
-        account = q.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _error_response("No client for account", 404)
-        try:
-            msgs = await client.get_messages(
-                _ref(q["chat"]),
-                limit=int(q.get("limit", 20)),
-                offset_id=int(q.get("offset_id", 0)),
-                include_sender=q.get("sender") == "1",
-                include_media=q.get("media") == "1",
-                include_reactions=q.get("reactions") == "1",
-                include_entities=q.get("entities") == "1",
-            )
-            return _json_response({"messages": msgs})
-        except Exception as e:
-            return _handle_exception(e)
-
-    async def _message_get(self, request: web.Request) -> web.Response:
-        q = request.query
-        account = q.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _error_response("No client for account", 404)
-        try:
-            msg = await client.get_message(_ref(q["chat"]), int(q["msg_id"]))
-            return _json_response(msg)
-        except Exception as e:
-            return _handle_exception(e)
-
-    async def _message_delete(self, request: web.Request) -> web.Response:
-        body = await _get_body(request)
-        account = body.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _error_response("No client for account", 404)
-        try:
-            deleted = await client.delete_messages(_ref(body["chat"]), body["msg_ids"])
-            return _json_response({"deleted": deleted})
-        except Exception as e:
-            return _handle_exception(e)
-
-    async def _message_search(self, request: web.Request) -> web.Response:
-        q = request.query
-        account = q.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _error_response("No client for account", 404)
-        try:
-            msgs = await client.search_messages(
-                _ref(q["chat"]),
-                q.get("query", ""),
-                limit=int(q.get("limit", 20)),
-                local=q.get("local") == "1",
-                regex=q.get("regex"),
-            )
-            return _json_response({"messages": msgs})
-        except Exception as e:
-            return _handle_exception(e)
-
-    async def _message_pin(self, request: web.Request) -> web.Response:
-        body = await _get_body(request)
-        account = body.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _error_response("No client for account", 404)
-        try:
-            result = await client.pin_message(_ref(body["chat"]), body["msg_id"])
-            return _json_response(result)
-        except Exception as e:
-            return _handle_exception(e)
-
-    async def _message_react(self, request: web.Request) -> web.Response:
-        body = await _get_body(request)
-        account = body.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _error_response("No client for account", 404)
-        try:
-            result = await client.react_to_message(_ref(body["chat"]), body["msg_id"], body["emoji"])
-            return _json_response(result)
-        except Exception as e:
-            return _handle_exception(e)
-
-    async def _message_edit(self, request: web.Request) -> web.Response:
-        body = await _get_body(request)
-        account = body.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _error_response("No client for account", 404)
-        try:
-            result = await client.edit_message(
-                _ref(body["chat"]),
-                body["msg_id"],
-                body.get("text", ""),
-                typing_s=float(body.get("typing_s", 0) or 0),
-            )
-            return _json_response(result)
-        except Exception as e:
-            return _handle_exception(e)
-
-    async def _message_forward(self, request: web.Request) -> web.Response:
-        body = await _get_body(request)
-        account = body.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _error_response("No client for account", 404)
-        try:
-            result = await client.forward_messages(
-                _ref(body["from_chat"]),
-                body["msg_ids"],
-                _ref(body["to_chat"]),
-            )
-            return _json_response(result)
-        except Exception as e:
-            return _handle_exception(e)
-
-    # -- Drafts --
-
-    async def _draft_set(self, request: web.Request) -> web.Response:
-        body = await _get_body(request)
-        account = body.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _error_response("No client for account", 404)
-        try:
-            result = await client.set_draft(
-                _ref(body["chat"]),
-                body.get("text", ""),
-                reply_to=body.get("reply_to"),
-            )
-            return _json_response(result)
-        except Exception as e:
-            return _handle_exception(e)
-
-    async def _draft_clear(self, request: web.Request) -> web.Response:
-        body = await _get_body(request)
-        account = body.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _error_response("No client for account", 404)
-        try:
-            result = await client.set_draft(_ref(body["chat"]), "")
-            result["cleared"] = True
-            return _json_response(result)
-        except Exception as e:
-            return _handle_exception(e)
-
-    async def _draft_list(self, request: web.Request) -> web.Response:
-        q = request.query
-        account = q.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _error_response("No client for account", 404)
-        try:
-            drafts = await client.list_drafts()
-            return _json_response({"drafts": drafts})
-        except Exception as e:
-            return _handle_exception(e)
-
-    async def _message_read(self, request: web.Request) -> web.Response:
-        body = await _get_body(request)
-        account = body.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _error_response("No client for account", 404)
-        try:
-            result = await client.mark_read(_ref(body["chat"]), up_to=body.get("up_to"))
-            return _json_response(result)
-        except Exception as e:
-            return _handle_exception(e)
-
     # -- Chats --
 
     async def _chat_list(self, request: web.Request) -> web.Response:
@@ -361,7 +173,7 @@ class IPCServer:
         account = q.get("account", "")
         client = await self.daemon.ensure_client(account)
         if not client:
-            return _error_response("No client for account", 404)
+            return _no_client(account)
         try:
             chats: list[dict[str, Any]] = []
             async for c in client.list_chats(
@@ -381,7 +193,7 @@ class IPCServer:
         account = q.get("account", "")
         client = await self.daemon.ensure_client(account)
         if not client:
-            return _error_response("No client for account", 404)
+            return _no_client(account)
         try:
             chats = await client.catchup(
                 limit_chats=int(q.get("limit_chats", 20)),
@@ -397,7 +209,7 @@ class IPCServer:
         account = body.get("account", "")
         client = await self.daemon.ensure_client(account)
         if not client:
-            return _error_response("No client for account", 404)
+            return _no_client(account)
         try:
             result = await client.open_chat(
                 _ref(body["chat"]),
@@ -413,7 +225,7 @@ class IPCServer:
         account = body.get("account", "")
         client = await self.daemon.ensure_client(account)
         if not client:
-            return _error_response("No client for account", 404)
+            return _no_client(account)
         try:
             result = await client.mark_chat_unread(
                 _ref(body["chat"]), unread=body.get("unread", True)
@@ -427,7 +239,7 @@ class IPCServer:
         account = q.get("account", "")
         client = await self.daemon.ensure_client(account)
         if not client:
-            return _error_response("No client for account", 404)
+            return _no_client(account)
         try:
             info = await client.get_chat_info(_ref(q["chat"]))
             return _json_response(info)
@@ -439,7 +251,7 @@ class IPCServer:
         account = body.get("account", "")
         client = await self.daemon.ensure_client(account)
         if not client:
-            return _error_response("No client for account", 404)
+            return _no_client(account)
         try:
             result = await client.create_chat(
                 body["name"],
@@ -455,7 +267,7 @@ class IPCServer:
         account = body.get("account", "")
         client = await self.daemon.ensure_client(account)
         if not client:
-            return _error_response("No client for account", 404)
+            return _no_client(account)
         try:
             result = await client.archive_chat(_ref(body["chat"]))
             return _json_response(result)
@@ -467,7 +279,7 @@ class IPCServer:
         account = body.get("account", "")
         client = await self.daemon.ensure_client(account)
         if not client:
-            return _error_response("No client for account", 404)
+            return _no_client(account)
         try:
             result = await client.mute_chat(_ref(body["chat"]), body.get("duration"))
             return _json_response(result)
@@ -479,7 +291,7 @@ class IPCServer:
         account = body.get("account", "")
         client = await self.daemon.ensure_client(account)
         if not client:
-            return _error_response("No client for account", 404)
+            return _no_client(account)
         try:
             result = await client.leave_chat(_ref(body["chat"]))
             return _json_response(result)
@@ -491,7 +303,7 @@ class IPCServer:
         account = body.get("account", "")
         client = await self.daemon.ensure_client(account)
         if not client:
-            return _error_response("No client for account", 404)
+            return _no_client(account)
         try:
             result = await client.send_typing(_ref(body["chat"]), duration=body.get("duration", 5))
             return _json_response(result)
@@ -503,7 +315,7 @@ class IPCServer:
         account = q.get("account", "")
         client = await self.daemon.ensure_client(account)
         if not client:
-            return _error_response("No client for account", 404)
+            return _no_client(account)
         try:
             members = await client.list_participants(
                 _ref(q["chat"]),
@@ -520,7 +332,7 @@ class IPCServer:
         account = q.get("account", "")
         client = await self.daemon.ensure_client(account)
         if not client:
-            return _error_response("No client for account", 404)
+            return _no_client(account)
         try:
             result = await client.chat_posters(
                 _ref(q["chat"]),
@@ -538,7 +350,7 @@ class IPCServer:
         account = q.get("account", "")
         client = await self.daemon.ensure_client(account)
         if not client:
-            return _error_response("No client for account", 404)
+            return _no_client(account)
         try:
             contacts = await client.list_contacts()
             return _json_response({"contacts": contacts})
@@ -550,7 +362,7 @@ class IPCServer:
         account = body.get("account", "")
         client = await self.daemon.ensure_client(account)
         if not client:
-            return _error_response("No client for account", 404)
+            return _no_client(account)
         try:
             result = await client.add_contact(body["phone"], body.get("name", ""))
             return _json_response(result)
@@ -562,7 +374,7 @@ class IPCServer:
         account = body.get("account", "")
         client = await self.daemon.ensure_client(account)
         if not client:
-            return _error_response("No client for account", 404)
+            return _no_client(account)
         try:
             result = await client.remove_contact(_ref(body["user"]))
             return _json_response(result)
@@ -574,7 +386,7 @@ class IPCServer:
         account = body.get("account", "")
         client = await self.daemon.ensure_client(account)
         if not client:
-            return _error_response("No client for account", 404)
+            return _no_client(account)
         try:
             result = await client.rename_contact(
                 _ref(body["user"]),
@@ -590,7 +402,7 @@ class IPCServer:
         account = q.get("account", "")
         client = await self.daemon.ensure_client(account)
         if not client:
-            return _error_response("No client for account", 404)
+            return _no_client(account)
         try:
             contacts = await client.search_contacts(q.get("query", ""))
             return _json_response({"contacts": contacts})
@@ -604,7 +416,7 @@ class IPCServer:
         account = q.get("account", "")
         client = await self.daemon.ensure_client(account)
         if not client:
-            return _error_response("No client for account", 404)
+            return _no_client(account)
         try:
             info = await client.get_user_info(_ref(q["user"]))
             return _json_response(info)
@@ -616,7 +428,7 @@ class IPCServer:
         account = q.get("account", "")
         client = await self.daemon.ensure_client(account)
         if not client:
-            return _error_response("No client for account", 404)
+            return _no_client(account)
         try:
             status = await client.dialog_status(
                 _ref(q["user"]),
@@ -631,7 +443,7 @@ class IPCServer:
         account = body.get("account", "")
         client = await self.daemon.ensure_client(account)
         if not client:
-            return _error_response("No client for account", 404)
+            return _no_client(account)
         try:
             result = await client.set_stories_hidden(
                 _ref(body["user"]), hidden=bool(body.get("hidden", True))
@@ -647,7 +459,7 @@ class IPCServer:
         account = q.get("account", "")
         client = await self.daemon.ensure_client(account)
         if not client:
-            return _error_response("No client for account", 404)
+            return _no_client(account)
         try:
             profile = await client.get_profile()
             return _json_response(profile)
@@ -659,7 +471,7 @@ class IPCServer:
         account = body.get("account", "")
         client = await self.daemon.ensure_client(account)
         if not client:
-            return _error_response("No client for account", 404)
+            return _no_client(account)
         try:
             result = await client.update_profile(
                 first_name=body.get("first_name"),
@@ -678,7 +490,7 @@ class IPCServer:
         account = body.get("account", "")
         client = await self.daemon.ensure_client(account)
         if not client:
-            return _error_response("No client for account", 404)
+            return _no_client(account)
         try:
             result = await client.download_media(
                 _ref(body["chat"]),
@@ -694,7 +506,7 @@ class IPCServer:
         account = body.get("account", "")
         client = await self.daemon.ensure_client(account)
         if not client:
-            return _error_response("No client for account", 404)
+            return _no_client(account)
         try:
             result = await client.upload_file(
                 _ref(body["chat"]),

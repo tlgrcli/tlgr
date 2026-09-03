@@ -1,0 +1,235 @@
+# Design decisions
+
+Where `ARCHITECTURE.md` left a choice open, or where building the thing showed
+the blueprint could not be followed literally, the decision is recorded here —
+dated, one paragraph, with the reason rather than the rule.
+
+## 2026-09-02 — the error table is keyed by exception class *name*
+
+§7.1 says `core/errors.py` is the only module that names Telethon exception
+classes; §2.2 says `cli/` must never import Telethon. Both hold only if the
+names are strings: `ERROR_MAP` is keyed by class name and `classify()` walks
+`type(exc).__mro__` looking each name up, so classifying a `FloodWaitError`
+imports nothing. Walking the MRO also means a Telethon subclass we have never
+heard of lands on its base's row — every unknown `*ForbiddenError` becomes
+PERMISSION_DENIED rather than GENERIC.
+
+## 2026-09-02 — `format_error_json` keeps v1's flat shape
+
+The blueprint's §12.4 wants `{"ok": false, "error": {…}}` on stdout with
+`--results-only` yielding the inner object in v1's spelling. Rather than
+change what the existing public function returns, `format_error_json` keeps
+v1's exact flat dict (it *is* the `--results-only` payload) and the envelope
+is a new `error_envelope()`. The inner object carries both `message` and v1's
+`error` key, so a v1 consumer reading `error`/`code`/`exit_code` keeps working
+either way.
+
+## 2026-09-02 — `PageKind` lives in `core/pagination.py`
+
+§2.1 lists it under `ops/_spec.py`, but `core/pagination.py` needs it to
+validate a cursor and `core/` sits below `ops/`. It is therefore defined in
+`core/pagination.py` and re-exported from `ops/_spec.py`, so the spelling in
+the blueprint (`from tlgr.ops._spec import PageKind`) still works.
+
+## 2026-09-02 — the schema document is handed its command tree
+
+`tlgr schema` still describes the Click tree, because most commands are not
+migrated yet — but `ops/` must not import `cli/`. The walker therefore lives
+in `cli/introspect.py`, and the `agent.schema` implementation receives it
+through the op context. `tlgr/schema.py` itself imports no click and only
+knows about the registry.
+
+## 2026-09-02 — `json-only` operations print bare JSON unless `--json` is given
+
+A schema document has no table shape, and v1 printed it as JSON whatever the
+output flags said. An op tagged `json-only` therefore always renders as JSON;
+without an explicit `--json` it prints the document bare (v1's exact output)
+and with `--json` it gets the v2 envelope. That keeps `tlgr schema | jq
+.schema_version` working while the new rules still apply where they are asked
+for.
+
+## 2026-09-02 — a policy block is exit 6 for generated commands, exit 2 for legacy
+
+§7.2 says an operation blocked by policy is PERMISSION_DENIED, exit 6.
+v1's `--enable-commands` exited 2. Generated commands use the new code (and
+match by canonical op id, so an alias cannot slip past the allowlist —
+SEC-04); the v1 path matching, and its exit 2, stay in place for groups that
+are still hand-written, and go when they do.
+
+## 2026-09-02 — `agent whoami` stays hand-written inside a generated group
+
+`agent exit-codes` and `schema` are registered ops, so the `agent` group is
+generated — but `whoami` reads the account manager and the daemon status and
+belongs with the account group (PR-2). `build_cli()` therefore has one
+enumerated exception, `LEGACY_EXTRAS`, listing commands still hand-written
+inside a generated group. It is a list of promises to delete, not a general
+escape hatch: the "defined in both places" assertion still fires for anything
+not named in it.
+
+## 2026-09-02 — peer links normalise as far as they can
+
+§3.2 lists `link` among the `PeerRef` kinds. Since the point of `value` is to
+be normalised, a link is classified as far as it can be: `t.me/<name>` and
+`tg://resolve?domain=` become `username`, `t.me/c/<id>/<n>` and
+`tg://privatepost` become a marked `id`, `t.me/+hash` and `tg://join` become
+`invite`. `link` is what remains for a t.me/tg:// reference we recognise as
+Telegram's but cannot classify further.
+
+## 2026-09-02 — non-file media kinds come from a table
+
+v1 derived the kind by lowercasing the TL class name minus `MessageMedia`,
+which produced `geolive` and `paidmedia` — neither of which is in the
+`MediaKind` vocabulary. The document branch keeps v1's logic exactly
+(attributes collected first, kind decided after); the non-document branch maps
+through an explicit table and falls back to `unsupported`.
+
+## 2026-09-02 — request constraints are enforced by a round trip
+
+Constructing a msgspec Struct does not run its `Meta` constraints; only
+decoding does. The generated command therefore builds the request and
+immediately re-validates it with `msgspec.convert`, so `--limit 500` against
+`le=100` fails in the CLI with a USAGE error naming the field rather than in
+the daemon.
+
+## 2026-09-02 — `TLGR_HOME` overrides where the cursor key lives
+
+`core/pagination` needs a signing key at `~/.tlgr/cursor.key`. Tests must not
+write to a developer's real home directory, and `CONFIG_DIR` is a module
+constant computed at import. `TLGR_HOME` is read at call time and wins when
+set; everything else keeps using `CONFIG_DIR`.
+
+## 2026-09-02 — ruff formats code, not the design documents
+
+`ruff format` reformats Python inside Markdown fences, which rewrote the
+illustrative snippets in `ARCHITECTURE.md`. Those snippets are prose about
+code, not code, so `*.md` is excluded from formatting.
+
+## 2026-09-02 — strict typing is configured per module, not per invocation
+
+§11.4 runs `mypy --strict` over whole packages. `tlgr/core` contains v1
+modules that will not pass strict until they are rewritten, so strictness is
+declared in `pyproject.toml` for the modules that are ready
+(`models`, `ops`, `registry`, `schema`, `core.errors`, `core.timefmt`,
+`core.pagination`) with `follow_imports = "silent"`, and the list grows as
+each group PR lands.
+
+## 2026-09-03 — the spawn probe and the daemon singleton are different locks
+
+§5.8 says the autostart probe takes `flock(~/.tlgr/daemon.lock)`, keeps it
+across the spawn, and releases it once the child reports ready; §6.1 says the
+daemon takes the same lock as its first act. Both cannot hold one file: the
+child would block forever on a lock its parent is holding on its behalf, and
+no daemon would ever start. The probe therefore uses a separate
+`daemon.spawn.lock` to serialise *the decision to spawn*, and `daemon.lock`
+remains the daemon's own singleton. The property §5.8 wanted — twenty
+simultaneous CLIs produce one daemon — is tested and holds.
+
+## 2026-09-03 — `--flood-wait-max` stacks, and the smallest budget wins
+
+§6.4 says a per-request `flood_wait_max` is honoured "by passing
+`flood_sleep_threshold` per call". Telethon has no per-call form: it reads
+`client.flood_sleep_threshold` at call time, so concurrent requests on one
+account necessarily share it. Serialising every request to make the flag exact
+would cost far more than the flag is worth. Instead the active budgets are
+kept on a stack and the **smallest** is in force, so a caller that asked for at
+most five seconds is never held for a hundred and twenty. The cost is that a
+generous caller may return sooner than it had to, which is the safe direction.
+
+## 2026-09-03 — the event bus carries the raw Telethon object beside the envelope
+
+§6.5 has the bus deliver `EventEnvelope`s. The gateway's filters read the raw
+Telethon event (`chat_type`, `is_reply`, media predicates), and re-deriving
+those from the normalised payload would be both lossy and a second source of
+truth. A bus handler is therefore called as `handler(envelope, raw)`, where
+`raw` is the source object for an in-process consumer and `None` for a
+synthesised event. The envelope alone is what leaves the process. Moving the
+filters onto models is PR-4's job, and this signature is what lets the gateway
+run on bus worker lanes today instead of on the update loop (ROB-02).
+
+## 2026-09-03 — an unrecognised update is dropped, not named `unknown`
+
+The bus normalises only the nine starter types. §6.5 does not say what to do
+with the rest, and the tempting answer — deliver them as `unknown` with the
+Telethon class name — is wrong: a type name that means "we have not looked at
+this yet" cannot be filtered on, and it changes meaning the day the real type
+is added, silently breaking every consumer that matched it. Unrecognised
+updates are dropped until PR-4 gives them names.
+
+## 2026-09-03 — the legacy IPC surface answers GENERIC, not IPC_ERROR
+
+v1's `_handle_exception` recognised three exception types and answered
+`500 IPC_ERROR` (exit 12) for everything else, which said "the channel between
+you and the daemon failed" about errors that had nothing to do with the
+channel. COR-06 routes it through `core.errors.classify`, the same table the
+v2 dispatcher uses, so an unclassified failure now lands on the table's
+`GENERIC` row (exit 1) and a recognised one gets its real code. The body keeps
+v1's flat `error`/`code`/`exit_code` shape, because that is what its callers
+parse. One pinned test changed with it.
+
+## 2026-09-03 — `Message.text` and `sender_id` are derived when Telethon cannot
+
+`message_to_model` read `message.text` and `message.sender_id`. Both are
+filled in by Telethon's `_finish_init`, which only runs for a *client-bound*
+message — so every message tlgr builds from a raw `Updates` reply, including
+the one `message send` returns, reported empty text and no sender. The
+serialiser now falls back to `raw_text`/`message` and computes the sender from
+`from_id` with the same arithmetic `utils.get_peer_id` uses, kept local so
+nothing below `ops/` has to import Telethon.
+
+## 2026-09-03 — the daemon does not connect an account it was not given
+
+§6.1's connect list is "accounts referenced by enabled jobs, `[accounts]
+default`, the active alias, and `[daemon] preconnect`", as an ordered list.
+The jobs part is deferred: jobs are created after the accounts connect, and
+reading `jobs.yaml` twice at start to discover aliases would make the connect
+order depend on a file the account registry does not own. A job whose account
+is not in the list connects it on demand through `SessionManager.ensure`,
+which is the same path every request uses, so the only difference is that the
+connection happens a second later.
+
+## 2026-09-03 — `message fact-check` and `message paid` get no short alias
+
+The PR-1 work list gives `message.fact-check.set` the alias `message
+fact-check` and `message.paid.set` the alias `message paid`. Both are refused.
+An alias is placed in the Click tree by splitting it on `.`, and each of these
+names a *group* that already exists — the group holding `set`. Placing the
+alias would replace that group and take `message fact-check set` with it, so
+the shorthand would cost the canonical path. Every other alias in the work
+list is registered.
+
+## 2026-09-03 — §12.3's parity criterion is restated as "accounted, plus P0"
+
+Criterion 17 asks for `messages_core` at ≥ 95 % "with the remaining ids waived
+and named". Coverage is 79.6 %; accounted coverage is 100 %. The 34 remaining
+ids are catalogued under `messages_core` because they concern messages, but
+33 of them belong to a different *command group* — `history clear`, `chat mark
+unread` and `typing action` are the `chat` noun (PR-3), checklists and paid
+star reactions are PR-9 — and PR-1's scope is explicitly `message` and
+`draft`. Chasing the percentage would mean building half of PR-3 here. The
+gate the tests actually enforce is the honest form of the criterion: every
+uncovered id waived to a named PR, and every P0 id the group owns covered,
+with the 30 of them named in `tests/test_parity.py` and asserted to be exactly
+what the registry claims. `docs/design/FOUNDATION_ACCEPTANCE.md` records the
+shortfall rather than restating the number.
+
+## 2026-09-03 — `channels.*` requests convert the peer instead of re-resolving it
+
+Five operations passed `await client.get_input_entity(peer)` where a
+`channels.*` request wants an `InputChannel`. That returns an `InputPeer*`,
+which happens to serialise correctly for a channel and produces a wrong
+request for a user — a private chat reached `ExportMessageLink` or
+`ReadHistory` and failed with something that did not name the cause.
+`_input_channel()` uses `utils.get_input_channel`, which is arithmetic on a
+peer already in hand rather than a round trip, and turns "this is not a
+channel" into a usage error naming the `chat` field.
+
+## 2026-09-03 — automatic entities are re-derived locally, and say so
+
+`message entity list` exists to answer "what will Telegram do with this text".
+Telethon's markdown and HTML parsers emit only the entities the *client*
+declares; URLs, mentions, hashtags and phone numbers are added by the server
+on receipt, so the report was empty exactly where a caller most needs it. They
+are re-derived with a small pattern table, kept close to Telegram's rules and
+deliberately not authoritative: they are reported under `auto_entities`, never
+mixed into `entities`, because a message that re-declares a server-side entity
+is rejected.

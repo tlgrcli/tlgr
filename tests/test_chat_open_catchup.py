@@ -31,6 +31,7 @@ class _FakeTelethon:
         async def _gen():
             for m in msgs:
                 yield m
+
         return _gen()
 
     async def send_read_acknowledge(self, chat_id, **kw):
@@ -38,9 +39,17 @@ class _FakeTelethon:
 
 
 def _msg(mid, text, out=False):
-    return _FakeMsg(id=mid, date="2026-08-31", text=text, out=out,
-                    reply_to_msg_id=None, sender=None, sender_id=None,
-                    media=None, entities=None)
+    return _FakeMsg(
+        id=mid,
+        date="2026-08-31",
+        text=text,
+        out=out,
+        reply_to_msg_id=None,
+        sender=None,
+        sender_id=None,
+        media=None,
+        entities=None,
+    )
 
 
 def _make(unreads):
@@ -48,8 +57,7 @@ def _make(unreads):
     dialogs, messages = [], {}
     for cid, unread in unreads.items():
         user = User(id=cid, first_name=f"u{cid}", bot=False)
-        dialogs.append(SimpleNamespace(id=cid, entity=user, unread_count=unread,
-                                       message=None))
+        dialogs.append(SimpleNamespace(id=cid, entity=user, unread_count=unread, message=None))
         messages[cid] = [_msg(i, f"m{i}") for i in range(6, 0, -1)]
     w = ClientWrapper(Path("/nonexistent"), 1, "x")
     w._client = _FakeTelethon(dialogs, messages)

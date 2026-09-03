@@ -19,21 +19,29 @@ from tlgr.processors import ProcessorChain, create_chain_from_list
 @dataclass
 class ActionConfig:
     """A single action in a job's action list."""
+
     name: str = ""
     config: Any = None
     filters: FilterNode | None = None
     processors: ProcessorChain | None = None
 
 
-ALL_EVENT_TYPES = frozenset({
-    "new_message", "message_edited", "message_deleted",
-    "chat_action", "user_joined", "message_read",
-})
+ALL_EVENT_TYPES = frozenset(
+    {
+        "new_message",
+        "message_edited",
+        "message_deleted",
+        "chat_action",
+        "user_joined",
+        "message_read",
+    }
+)
 
 
 @dataclass
 class GatewayConfig:
     """Parsed configuration for one Gateway job."""
+
     name: str = ""
     account: str = ""
     enabled: bool = True
@@ -115,7 +123,7 @@ def load_gateway_configs(base: Path | None = None) -> list[GatewayConfig]:
             "PyYAML is required for jobs.yaml support. Install with: pip install pyyaml"
         ) from e
 
-    with open(jobs_path, "r") as f:
+    with open(jobs_path) as f:
         data = yaml.safe_load(f)
 
     if not data or "jobs" not in data:

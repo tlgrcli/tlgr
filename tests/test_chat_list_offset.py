@@ -37,6 +37,7 @@ def _make_wrapper(n: int) -> ClientWrapper:
 def _collect(gen):
     async def _run():
         return [c async for c in gen]
+
     return asyncio.run(_run())
 
 

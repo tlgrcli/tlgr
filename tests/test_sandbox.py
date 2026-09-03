@@ -14,8 +14,21 @@ def runner():
 
 
 class TestEnableCommands:
+    """Two exit codes on purpose, until every group is generated.
+
+    A registry-generated command enforces the allowlist by canonical op id and
+    answers PERMISSION_DENIED (exit 6, §7.2). The v1 path matching in
+    `TlgrGroup.resolve_command` still answers exit 2, and goes when the last
+    hand-written group does.
+    """
+
     def test_top_level_block(self, runner):
         result = runner.invoke(cli, ["--enable-commands", "chat", "message", "list", "test"])
+        assert result.exit_code == 6
+        assert "not enabled" in result.output
+
+    def test_legacy_top_level_block_still_exits_2(self, runner):
+        result = runner.invoke(cli, ["--enable-commands", "message", "chat", "list"])
         assert result.exit_code == 2
         assert "not enabled" in result.output
 
@@ -24,18 +37,30 @@ class TestEnableCommands:
         assert result.exit_code == 0
 
     def test_subcommand_block(self, runner):
-        result = runner.invoke(cli, [
-            "--enable-commands", "message.list",
-            "message", "send", "test", "hello",
-        ])
-        assert result.exit_code == 2
+        result = runner.invoke(
+            cli,
+            [
+                "--enable-commands",
+                "message.list",
+                "message",
+                "send",
+                "test",
+                "hello",
+            ],
+        )
+        assert result.exit_code == 6
         assert "not enabled" in result.output
 
     def test_subcommand_allow(self, runner):
-        result = runner.invoke(cli, [
-            "--enable-commands", "agent.exit-codes",
-            "agent", "exit-codes",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--enable-commands",
+                "agent.exit-codes",
+                "agent",
+                "exit-codes",
+            ],
+        )
         assert result.exit_code == 0
 
     def test_wildcard_allows_all(self, runner):

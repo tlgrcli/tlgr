@@ -99,6 +99,7 @@ Processors in YAML can be:
 # tlgr/processors/my_proc.py
 from tlgr.processors import register_processor
 
+
 @register_processor("uppercase")
 def uppercase(text, config=None):
     return text.upper()

@@ -90,6 +90,7 @@ def evaluate(node: FilterNode | None, event: Event) -> tuple[bool, str]:
 
     if node.op is Op.LEAF:
         from tlgr.filters import get_filter
+
         func = get_filter(node.filter_name)
         if func is None:
             return False, f"unknown filter: {node.filter_name}"

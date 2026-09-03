@@ -76,7 +76,7 @@ def filter_chat_title(event: Event, value: Any) -> tuple[bool, str]:
         return False, "chat_title requires telegram source"
     title = getattr(tg.chat, "title", "") or ""
     if re.search(str(value), title, re.IGNORECASE):
-        return True, f"chat_title matched"
+        return True, "chat_title matched"
     return False, f"chat_title '{title}' does not match '{value}'"
 
 

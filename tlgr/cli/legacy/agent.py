@@ -31,6 +31,11 @@ def agent_whoami(ctx: click.Context) -> None:
     acct = mgr.get_account(active_alias) if active_alias else None
 
     info: dict = {
+        # The one field an agent branches on. v2 changed a handful of
+        # documented shapes (RFC-3339 dates, marked ids, Page envelopes,
+        # `none` as the default parse mode); a consumer that reads this can
+        # tell which set it is looking at without probing.
+        "output_schema_version": 2,
         "account": active_alias or "",
         "user_id": acct.user_id if acct else None,
         "username": acct.username if acct else None,

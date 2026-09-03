@@ -88,18 +88,18 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `dialogs.block-user` | P0 | Block user | waived until PR-5: Blocking is `user block` (PR-5); `chat report --block` calls it. |
 | `dialogs.resolve-peer` | P0 | Resolve @username / phone / t.me link to a chat | waived until PR-5: Turning a @username, a phone number or a t.me link into a chat is `resolve` (PR-5); the chat group consumes the resolver rather than exposing it. |
 | `dialogs.unblock-user` | P0 | Unblock user | waived until PR-5: Unblocking is `user unblock` (PR-5). |
-| `contact.receive-card` | P1 | Add a received contact card to your address book | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
+| `contact.receive-card` | P1 | Add a received contact card to your address book | waived until PR-5: contact cards, notes and birthdays are the `contact` surface (PR-5). |
 | `dialogs.actionbar-add-contact` | P1 | Add to contacts from the action bar | waived until PR-5: The bar's Add-contact button is `contact add` (PR-5). |
 | `dialogs.block-stories` | P1 | Hide my stories from a user (story blocklist) | waived until PR-5: The story blocklist is a privacy surface on the user group (PR-5). |
 | `dialogs.dialog-exists` | P1 | Does a dialog with this peer exist | waived until PR-5: `user dialog-status` answers this and migrates with the user group (PR-5). |
 | `dialogs.notify-exceptions` | P1 | List notification exceptions | waived until PR-12: The exceptions *list* is `notify exceptions` (PR-12); one chat's exception is `chat notify`. |
 | `messages-core.delete-call-history` | P1 | Delete call-log messages | waived until PR-3: The call log is a chat-level history (PR-3). |
 | `messages-core.message-watch-events` | P1 | Live stream of new / edited / deleted messages and read receipts | waived until PR-4: The live message stream is the event bus surface (PR-4). |
-| `stars.balance` | P1 | Telegram Stars balance | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `contact.note` | P2 | Private note on a contact | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `contact.share-token` | P2 | Share your contact via a link | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `contact.suggest-birthday` | P2 | Suggest a birthday for a contact | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `content.limits` | P2 | Server limits for polls, reactions, checklists and gifts | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
+| `stars.balance` | P1 | Telegram Stars balance | waived until PR-12: the Star balance and top-up packages are the `stars` surface (PR-12). |
+| `contact.note` | P2 | Private note on a contact | waived until PR-5: contact cards, notes and birthdays are the `contact` surface (PR-5). |
+| `contact.share-token` | P2 | Share your contact via a link | waived until PR-5: contact cards, notes and birthdays are the `contact` surface (PR-5). |
+| `contact.suggest-birthday` | P2 | Suggest a birthday for a contact | waived until PR-5: contact cards, notes and birthdays are the `contact` surface (PR-5). |
+| `content.limits` | P2 | Server limits for polls, reactions, checklists and gifts | waived until PR-12: the app-config limit table is read through the settings surface (PR-12). |
 | `dialogs.actionbar-share-phone` | P2 | Share my phone number | waived until PR-5: Sharing my number is `contact share-phone` (PR-5). |
 | `dialogs.bot-stop-restart` | P2 | Stop and block bot / Restart bot | waived until PR-10: Stopping and restarting a bot is the bot group (PR-10). |
 | `dialogs.business-bot-bar` | P2 | Manage connected business bot in a chat | waived until PR-12: The connected-business-bot bar is a business setting (PR-12). |
@@ -111,32 +111,32 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `dialogs.presence-watch` | P2 | Peer online status / last seen | waived until PR-4: Online/last-seen is an update stream (PR-4). |
 | `dialogs.typing-watch` | P2 | See who is typing | waived until PR-4: Watching who is typing is an update stream (PR-4); sending one is `chat typing`. |
 | `dialogs.watch-dialog-events` | P2 | Live dialog-level events | waived until PR-4: Live dialog events are the event bus (PR-4). |
-| `gift.catalog` | P2 | Browse available gifts | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `gift.convert-to-stars` | P2 | Convert a gift back into Stars | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `gift.display-toggle` | P2 | Show / hide a gift on your profile | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `gift.privacy-disallowed` | P2 | Refuse certain kinds of gifts | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `gift.received-list` | P2 | Gifts received by a profile | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `gift.resale-browse` | P2 | Browse the gift marketplace | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `gift.transfer` | P2 | Transfer a collectible gift | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `gift.upgrade` | P2 | Upgrade a gift to a collectible | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `giftcode.apply` | P2 | Redeem a gift code | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `giftcode.check` | P2 | Check a gift code / giftcode link | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `giveaway.boost-status` | P2 | Channel boost level and progress | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `giveaway.boosts-list` | P2 | Who boosted this channel | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `giveaway.gift-code-received` | P2 | Receive a giveaway gift code | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `giveaway.info` | P2 | Giveaway status / did I win? | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `giveaway.join-by-boosting` | P2 | Join a giveaway by boosting the channel | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
+| `gift.catalog` | P2 | Browse available gifts | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `gift.convert-to-stars` | P2 | Convert a gift back into Stars | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `gift.display-toggle` | P2 | Show / hide a gift on your profile | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `gift.privacy-disallowed` | P2 | Refuse certain kinds of gifts | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `gift.received-list` | P2 | Gifts received by a profile | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `gift.resale-browse` | P2 | Browse the gift marketplace | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `gift.transfer` | P2 | Transfer a collectible gift | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `gift.upgrade` | P2 | Upgrade a gift to a collectible | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `giftcode.apply` | P2 | Redeem a gift code | waived until PR-12: gift codes are the `gift` surface (PR-12). |
+| `giftcode.check` | P2 | Check a gift code / giftcode link | waived until PR-12: gift codes are the `gift` surface (PR-12). |
+| `giveaway.boost-status` | P2 | Channel boost level and progress | waived until PR-7: giveaways and channel boosts are the `giveaway`/`boost` surface (PR-7). |
+| `giveaway.boosts-list` | P2 | Who boosted this channel | waived until PR-7: giveaways and channel boosts are the `giveaway`/`boost` surface (PR-7). |
+| `giveaway.gift-code-received` | P2 | Receive a giveaway gift code | waived until PR-12: giveaways and channel boosts are the `giveaway`/`boost` surface (PR-12). |
+| `giveaway.info` | P2 | Giveaway status / did I win? | waived until PR-12: giveaways and channel boosts are the `giveaway`/`boost` surface (PR-12). |
+| `giveaway.join-by-boosting` | P2 | Join a giveaway by boosting the channel | waived until PR-12: giveaways and channel boosts are the `giveaway`/`boost` surface (PR-12). |
 | `messages-core.message-statistics` | P2 | Post statistics and public forwards (channel admins) | waived until PR-4: Post statistics and public forwards are the `stats` surface (PR-4). |
 | `messages-core.quick-reply-list` | P2 | Quick replies (business shortcuts): list shortcuts and their messages | waived until PR-12: Business quick-reply shortcuts are a business setting (PR-12); `message send --quick-reply` uses one. |
 | `messages-core.quick-reply-manage` | P2 | Create/edit/reorder/delete quick reply shortcuts and their messages | waived until PR-12: Business quick-reply shortcuts are a business setting (PR-12). |
 | `messages-core.translate-channel-autotranslation` | P2 | Automatic translation of a channel's posts | waived until PR-3: Channel auto-translation is a channel setting (PR-3). |
 | `messages-core.ttl-default-new-chats` | P2 | Default auto-delete timer for new chats | waived until PR-3: The default auto-delete timer is an account-wide chat setting (PR-3). |
-| `auction.acquired-gifts` | P3 | Gifts I won in an auction | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `auction.active-list` | P3 | Auctions I am bidding in | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `auction.position-estimate` | P3 | My position in the auction | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `auction.state` | P3 | Auction state and bid ladder | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `contact.birthday-accept` | P3 | Accept a suggested birthday | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `contact.birthdays` | P3 | Contacts' birthdays (gift prompts) | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
+| `auction.acquired-gifts` | P3 | Gifts I won in an auction | waived until PR-12: collectible-gift auctions are the `gift` surface (PR-12). |
+| `auction.active-list` | P3 | Auctions I am bidding in | waived until PR-12: collectible-gift auctions are the `gift` surface (PR-12). |
+| `auction.position-estimate` | P3 | My position in the auction | waived until PR-12: collectible-gift auctions are the `gift` surface (PR-12). |
+| `auction.state` | P3 | Auction state and bid ladder | waived until PR-12: collectible-gift auctions are the `gift` surface (PR-12). |
+| `contact.birthday-accept` | P3 | Accept a suggested birthday | waived until PR-5: contact cards, notes and birthdays are the `contact` surface (PR-5). |
+| `contact.birthdays` | P3 | Contacts' birthdays (gift prompts) | waived until PR-5: contact cards, notes and birthdays are the `contact` surface (PR-5). |
 | `dialogs.blocked-set-bulk` | P3 | Replace the whole blocklist | waived until PR-5: Replacing the whole blocklist is `user block --from-file` (PR-5). |
 | `dialogs.business-link-delete` | P3 | Delete a business chat link | waived until PR-12: Business chat links are a business setting (PR-12). |
 | `dialogs.business-link-edit` | P3 | Edit a business chat link | waived until PR-12: Business chat links are a business setting (PR-12). |
@@ -155,40 +155,40 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `dialogs.sponsored-search-peers` | P3 | Sponsored chats in search results | waived until PR-10: Sponsored peers in search are the ads surface (PR-10). |
 | `dialogs.top-peers-toggle` | P3 | Enable / disable frequent-contact suggestions | waived until PR-5: Frequent-contact suggestions are the contact group (PR-5). |
 | `dialogs.wallpaper-gallery` | P3 | Global wallpaper gallery (saved / installed) | waived until PR-6: The global wallpaper gallery is the media group (PR-6); the per-chat one is `chat wallpaper`. |
-| `gift.as-emoji-status` | P3 | Wear a collectible gift as your emoji status | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `gift.as-peer-color` | P3 | Use a collectible as message palette and pattern | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `gift.auto-save-privacy` | P3 | Auto-display received gifts | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `gift.button-visibility` | P3 | Show the gift button in the input bar | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `gift.can-send` | P3 | Can I send this gift? | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `gift.collection-create` | P3 | Create a gift collection | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `gift.collection-delete` | P3 | Delete a gift collection | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `gift.collection-reorder` | P3 | Reorder collections on a profile | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `gift.collection-update` | P3 | Rename or edit a gift collection | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `gift.collections-list` | P3 | Gift collections on a profile | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `gift.craft` | P3 | Craft (combine) collectible gifts | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `gift.craft-candidates` | P3 | Gifts usable for crafting | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `gift.get-one` | P3 | Details of a specific owned gift | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `gift.hosted` | P3 | Hosted collectibles (TON-owned, profile-linked) | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `gift.offer-resolve` | P3 | Accept or decline a purchase offer | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `gift.pin` | P3 | Pin gifts to the top of the profile | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `gift.resale-list-mine` | P3 | Put a collectible up for sale | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `gift.unique-info` | P3 | Look up a collectible gift by link | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `gift.unique-value` | P3 | Estimated value of a collectible | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `gift.upgrade-attributes` | P3 | All possible collectible variants | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `gift.upgrade-preview` | P3 | Preview a gift upgrade | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `giveaway.boosts-unrestrict` | P3 | Let boosters bypass group restrictions | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `giveaway.list-prepaid` | P3 | Prepaid giveaways on a channel | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `giveaway.prize-stars` | P3 | Receive a Stars prize | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `giveaway.results` | P3 | Giveaway results message | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `giveaway.user-boosts` | P3 | Boosts a specific user gave a channel | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `location.business-address` | P3 | Business account location | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `location.channel-geo` | P3 | Set a location for a geo-group | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `location.geogroup-create` | P3 | Create a location-based group | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `location.proximity-alert-event` | P3 | Proximity reached notification | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `location.viewed-receipt` | P3 | Live location viewed receipt | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
+| `gift.as-emoji-status` | P3 | Wear a collectible gift as your emoji status | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `gift.as-peer-color` | P3 | Use a collectible as message palette and pattern | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `gift.auto-save-privacy` | P3 | Auto-display received gifts | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `gift.button-visibility` | P3 | Show the gift button in the input bar | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `gift.can-send` | P3 | Can I send this gift? | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `gift.collection-create` | P3 | Create a gift collection | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `gift.collection-delete` | P3 | Delete a gift collection | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `gift.collection-reorder` | P3 | Reorder collections on a profile | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `gift.collection-update` | P3 | Rename or edit a gift collection | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `gift.collections-list` | P3 | Gift collections on a profile | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `gift.craft` | P3 | Craft (combine) collectible gifts | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `gift.craft-candidates` | P3 | Gifts usable for crafting | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `gift.get-one` | P3 | Details of a specific owned gift | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `gift.hosted` | P3 | Hosted collectibles (TON-owned, profile-linked) | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `gift.offer-resolve` | P3 | Accept or decline a purchase offer | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `gift.pin` | P3 | Pin gifts to the top of the profile | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `gift.resale-list-mine` | P3 | Put a collectible up for sale | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `gift.unique-info` | P3 | Look up a collectible gift by link | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `gift.unique-value` | P3 | Estimated value of a collectible | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `gift.upgrade-attributes` | P3 | All possible collectible variants | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `gift.upgrade-preview` | P3 | Preview a gift upgrade | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `giveaway.boosts-unrestrict` | P3 | Let boosters bypass group restrictions | waived until PR-7: giveaways and channel boosts are the `giveaway`/`boost` surface (PR-7). |
+| `giveaway.list-prepaid` | P3 | Prepaid giveaways on a channel | waived until PR-12: giveaways and channel boosts are the `giveaway`/`boost` surface (PR-12). |
+| `giveaway.prize-stars` | P3 | Receive a Stars prize | waived until PR-4: a Stars prize arrives as an update (PR-4). |
+| `giveaway.results` | P3 | Giveaway results message | waived until PR-12: giveaways and channel boosts are the `giveaway`/`boost` surface (PR-12). |
+| `giveaway.user-boosts` | P3 | Boosts a specific user gave a channel | waived until PR-7: giveaways and channel boosts are the `giveaway`/`boost` surface (PR-7). |
+| `location.business-address` | P3 | Business account location | waived until PR-12: a business account's address is the `business` surface (PR-12). |
+| `location.channel-geo` | P3 | Set a location for a geo-group | waived until PR-7: a geo-group's location is set through the channel admin surface (PR-7). |
+| `location.geogroup-create` | P3 | Create a location-based group | waived until PR-7: creating a location-based group is `chat create` (PR-7). |
+| `location.proximity-alert-event` | P3 | Proximity reached notification | waived until PR-4: a proximity alert arrives as an update, not a command (PR-4). |
+| `location.viewed-receipt` | P3 | Live location viewed receipt | waived until PR-4: a live-location view receipt arrives as an update (PR-4). |
 | `messages-core.chat-welcome-messages` | P3 | Chat welcome messages (empty-chat cards) | waived until PR-3: Empty-chat welcome cards are a chat setting (PR-3). |
 | `messages-core.paid-messages-group-price` | P3 | Charge Stars per message in a supergroup / channel direct messages | waived until PR-7: The per-group Star price is a supergroup setting (PR-7). |
 | `messages-core.search-hashtag-stories` | P3 | Hashtag / location search in public stories | waived until PR-8: Hashtag search over public stories is the story surface (PR-8). |
 | `messages-core.url-authorization` | P3 | Seamless Telegram login when opening a link / login-url button | waived until PR-10: Seamless login-url authorisation is a bot surface (PR-10). |
-| `reaction.story-list` | P3 | Who reacted to my story | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `stars.topup-options` | P3 | Star purchase packages | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
+| `reaction.story-list` | P3 | Who reacted to my story | waived until PR-8: story reactions are the `story` surface (PR-8). |
+| `stars.topup-options` | P3 | Star purchase packages | waived until PR-12: the Star balance and top-up packages are the `stars` surface (PR-12). |

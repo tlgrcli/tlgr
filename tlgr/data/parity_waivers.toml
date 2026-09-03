@@ -48,11 +48,6 @@ pr = 8
 reason = "the story group lands in PR-8, after media."
 
 [[domain]]
-name = "polls_reactions_content"
-pr = 9
-reason = "poll, reaction, todo, location and link land in PR-9."
-
-[[domain]]
 name = "bots_inline_payments"
 pr = 10
 reason = "bot, inline, webapp and payment land in PR-10."
@@ -334,46 +329,6 @@ pr = 8
 reason = "Hashtag search over public stories is the story surface (PR-8)."
 
 [[id]]
-id = "messages-core.reaction-delete-from-sender"
-pr = 9
-reason = "Removing a member's reactions is a reaction-moderation surface (PR-9)."
-
-[[id]]
-id = "messages-core.reaction-paid-star"
-pr = 9
-reason = "The paid Star reaction has its own payment flow (PR-9)."
-
-[[id]]
-id = "messages-core.saved-tags-add"
-pr = 9
-reason = "Saved-message reaction tags are reactions (PR-9); searching by one is `message search --tag`."
-
-[[id]]
-id = "messages-core.saved-tags-manage"
-pr = 9
-reason = "Naming and listing saved tags is a reaction surface (PR-9)."
-
-[[id]]
-id = "messages-core.checklist-create"
-pr = 9
-reason = "Checklists are the `todo` group (PR-9)."
-
-[[id]]
-id = "messages-core.checklist-append-tasks"
-pr = 9
-reason = "Checklists are the `todo` group (PR-9)."
-
-[[id]]
-id = "messages-core.checklist-toggle-task"
-pr = 9
-reason = "Checklists are the `todo` group (PR-9); the rich-body form also needs layer 229."
-
-[[id]]
-id = "messages-core.checklist-edit"
-pr = 9
-reason = "Checklists are the `todo` group (PR-9)."
-
-[[id]]
 id = "messages-core.url-authorization"
 pr = 10
 reason = "Seamless login-url authorisation is a bot surface (PR-10)."
@@ -387,3 +342,315 @@ reason = "Business quick-reply shortcuts are a business setting (PR-12); `messag
 id = "messages-core.quick-reply-manage"
 pr = 12
 reason = "Business quick-reply shortcuts are a business setting (PR-12)."
+
+# ---------------------------------------------------------------------------
+# `polls_reactions_content` after PR-9. PR-9 covered the poll, reaction, todo,
+# location and search surface of this domain; the ids below share the domain
+# but belong to other groups, so each names the PR that owns its noun rather
+# than hiding behind a domain-wide promise PR-9 never made.
+# ---------------------------------------------------------------------------
+
+[[id]]
+id = "auction.acquired-gifts"
+pr = 12
+reason = "collectible-gift auctions are the `gift` surface (PR-12)."
+
+[[id]]
+id = "auction.active-list"
+pr = 12
+reason = "collectible-gift auctions are the `gift` surface (PR-12)."
+
+[[id]]
+id = "auction.position-estimate"
+pr = 12
+reason = "collectible-gift auctions are the `gift` surface (PR-12)."
+
+[[id]]
+id = "auction.state"
+pr = 12
+reason = "collectible-gift auctions are the `gift` surface (PR-12)."
+
+[[id]]
+id = "contact.birthday-accept"
+pr = 5
+reason = "contact cards, notes and birthdays are the `contact` surface (PR-5)."
+
+[[id]]
+id = "contact.birthdays"
+pr = 5
+reason = "contact cards, notes and birthdays are the `contact` surface (PR-5)."
+
+[[id]]
+id = "contact.note"
+pr = 5
+reason = "contact cards, notes and birthdays are the `contact` surface (PR-5)."
+
+[[id]]
+id = "contact.receive-card"
+pr = 5
+reason = "contact cards, notes and birthdays are the `contact` surface (PR-5)."
+
+[[id]]
+id = "contact.share-token"
+pr = 5
+reason = "contact cards, notes and birthdays are the `contact` surface (PR-5)."
+
+[[id]]
+id = "contact.suggest-birthday"
+pr = 5
+reason = "contact cards, notes and birthdays are the `contact` surface (PR-5)."
+
+[[id]]
+id = "content.limits"
+pr = 12
+reason = "the app-config limit table is read through the settings surface (PR-12)."
+
+[[id]]
+id = "gift.as-chat-theme"
+pr = 3
+reason = "a collectible used as a chat theme is set through `chat theme` (PR-3)."
+
+[[id]]
+id = "gift.as-emoji-status"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "gift.as-peer-color"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "gift.auto-save-privacy"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "gift.button-visibility"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "gift.can-send"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "gift.catalog"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "gift.collection-create"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "gift.collection-delete"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "gift.collection-reorder"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "gift.collection-update"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "gift.collections-list"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "gift.convert-to-stars"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "gift.craft"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "gift.craft-candidates"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "gift.display-toggle"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "gift.get-one"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "gift.hosted"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "gift.offer-resolve"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "gift.pin"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "gift.privacy-disallowed"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "gift.received-list"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "gift.resale-browse"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "gift.resale-list-mine"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "gift.transfer"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "gift.unique-info"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "gift.unique-value"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "gift.upgrade"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "gift.upgrade-attributes"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "gift.upgrade-preview"
+pr = 12
+reason = "gifts and collectibles are the `gift` surface (PR-12)."
+
+[[id]]
+id = "giftcode.apply"
+pr = 12
+reason = "gift codes are the `gift` surface (PR-12)."
+
+[[id]]
+id = "giftcode.check"
+pr = 12
+reason = "gift codes are the `gift` surface (PR-12)."
+
+[[id]]
+id = "giveaway.boost-status"
+pr = 7
+reason = "giveaways and channel boosts are the `giveaway`/`boost` surface (PR-7)."
+
+[[id]]
+id = "giveaway.boosts-list"
+pr = 7
+reason = "giveaways and channel boosts are the `giveaway`/`boost` surface (PR-7)."
+
+[[id]]
+id = "giveaway.boosts-unrestrict"
+pr = 7
+reason = "giveaways and channel boosts are the `giveaway`/`boost` surface (PR-7)."
+
+[[id]]
+id = "giveaway.gift-code-received"
+pr = 12
+reason = "giveaways and channel boosts are the `giveaway`/`boost` surface (PR-12)."
+
+[[id]]
+id = "giveaway.info"
+pr = 12
+reason = "giveaways and channel boosts are the `giveaway`/`boost` surface (PR-12)."
+
+[[id]]
+id = "giveaway.join-by-boosting"
+pr = 12
+reason = "giveaways and channel boosts are the `giveaway`/`boost` surface (PR-12)."
+
+[[id]]
+id = "giveaway.list-prepaid"
+pr = 12
+reason = "giveaways and channel boosts are the `giveaway`/`boost` surface (PR-12)."
+
+[[id]]
+id = "giveaway.prize-stars"
+pr = 4
+reason = "a Stars prize arrives as an update (PR-4)."
+
+[[id]]
+id = "giveaway.results"
+pr = 12
+reason = "giveaways and channel boosts are the `giveaway`/`boost` surface (PR-12)."
+
+[[id]]
+id = "giveaway.user-boosts"
+pr = 7
+reason = "giveaways and channel boosts are the `giveaway`/`boost` surface (PR-7)."
+
+[[id]]
+id = "location.business-address"
+pr = 12
+reason = "a business account's address is the `business` surface (PR-12)."
+
+[[id]]
+id = "location.channel-geo"
+pr = 7
+reason = "a geo-group's location is set through the channel admin surface (PR-7)."
+
+[[id]]
+id = "location.geogroup-create"
+pr = 7
+reason = "creating a location-based group is `chat create` (PR-7)."
+
+[[id]]
+id = "location.proximity-alert-event"
+pr = 4
+reason = "a proximity alert arrives as an update, not a command (PR-4)."
+
+[[id]]
+id = "location.viewed-receipt"
+pr = 4
+reason = "a live-location view receipt arrives as an update (PR-4)."
+
+[[id]]
+id = "reaction.story-list"
+pr = 8
+reason = "story reactions are the `story` surface (PR-8)."
+
+[[id]]
+id = "stars.balance"
+pr = 12
+reason = "the Star balance and top-up packages are the `stars` surface (PR-12)."
+
+[[id]]
+id = "stars.topup-options"
+pr = 12
+reason = "the Star balance and top-up packages are the `stars` surface (PR-12)."

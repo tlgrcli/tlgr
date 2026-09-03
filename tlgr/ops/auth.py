@@ -637,7 +637,11 @@ async def qr(ctx: OpContext, req: QrReq) -> Any:
                     alias=alias,
                     ascii=None if req.url_only else _render_qr(ctx, login.url),
                 )
-            ]
+            ],
+            # `has_more` is how the walker learns the stream is not over: a
+            # page that says False ends it, and a QR login that printed one
+            # dead token and stopped would be useless.
+            has_more=True,
         )
         try:
             await login.wait(timeout=min(35.0, max(1.0, deadline - time.monotonic())))

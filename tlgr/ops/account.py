@@ -613,7 +613,7 @@ async def logout(ctx: OpContext, req: LogoutReq) -> AccountState:
             with contextlib.suppress(OSError):
                 path.unlink(missing_ok=True)
     manager.set_health(alias, "needs_login", reason="logged out")
-    ctx.emit("logged_out", {"alias": alias})
+    _auth.emit(ctx, "logged_out", {"alias": alias})
     return AccountState(
         alias=alias,
         account=alias,
@@ -1422,7 +1422,10 @@ async def website_revoke(ctx: OpContext, req: WebsiteRevokeReq) -> WebSessionRev
         done.append(value)
         bot_id = bots.get(value.strip())
         if bot_id:
-            await client(contacts_fn.BlockRequest(id=await client.get_input_entity(bot_id)))
+            # Through the resolver, never `client.get_input_entity`: the
+            # access hash is per account, and the resolver is what makes the
+            # NOT_FOUND / INDETERMINATE distinction in one place (§6.6).
+            await client(contacts_fn.BlockRequest(id=await _send.resolve(ctx, str(bot_id))))
             blocked.append(bot_id)
     return WebSessionRevocation(revoked=len(done), hashes=done, blocked=blocked)
 

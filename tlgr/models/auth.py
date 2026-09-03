@@ -182,12 +182,14 @@ class AccountDeletion(Model):
 # ---------------------------------------------------------------------------
 
 
-class AccountRecord(Model):
+class AccountRecord(Model, omit_defaults=False):
     """One row of `account list`.
 
     `alias` and `name` are both here on purpose: v1 printed the alias under
     the key `alias` and the display name under `name`, and §12.4 says a
-    documented key does not move.
+    documented key does not move. `omit_defaults=False` for the same reason:
+    `active: false` is an answer, and dropping it would make every row of a
+    table look ragged.
     """
 
     alias: str = ""

@@ -26,6 +26,7 @@ any of them wrong once is a security bug rather than a formatting one.
 from __future__ import annotations
 
 import base64
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -44,6 +45,7 @@ __all__ = [
     "client",
     "code_settings",
     "code_type",
+    "emit",
     "empty_password",
     "get_password",
     "iso",
@@ -57,6 +59,9 @@ __all__ = [
     "web_session_model",
     "with_password",
 ]
+
+#: The URL-safe base64 alphabet, and nothing else.
+_B64_RE = re.compile(r"[A-Za-z0-9_-]+")
 
 #: 24 hours. `SESSION_TOO_FRESH_X` and `PASSWORD_TOO_FRESH_X` both count to
 #: this, and neither error says so.
@@ -510,6 +515,11 @@ def unb64(text: str) -> bytes:
     cleaned = text.strip()
     if "token=" in cleaned:
         cleaned = cleaned.split("token=", 1)[1].split("&", 1)[0]
+    # `urlsafe_b64decode` has no `validate=`, and the padded decoder silently
+    # drops anything outside the alphabet — so `token=!!!!` would decode to
+    # empty bytes and be sent to Telegram as a login token. Check first.
+    if not cleaned or not _B64_RE.fullmatch(cleaned):
+        raise UsageError(f"{text!r} is not a tg://login token", field="link")
     padding = "=" * (-len(cleaned) % 4)
     try:
         return base64.urlsafe_b64decode(cleaned + padding)
@@ -575,3 +585,15 @@ def already(ctx: Any) -> None:
     mark = getattr(ctx, "mark_already", None)
     if callable(mark):
         mark()
+
+
+def emit(ctx: Any, event_type: str, payload: dict[str, Any]) -> None:
+    """Echo an action onto the event bus, unless this op runs account-less.
+
+    The login and account-management operations take the alias in the
+    request rather than in `-a`, so `ctx.account` is empty for them — and the
+    bus keys every event by a *valid* alias. Emitting anyway turns a
+    successful logout into a USAGE error about an empty alias.
+    """
+    if (getattr(ctx, "account", "") or "").strip():
+        ctx.emit(event_type, payload)

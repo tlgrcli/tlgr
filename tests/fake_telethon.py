@@ -564,8 +564,8 @@ class FakeTelegramClient:
         self.world.authorized = True
         return self.world.me
 
-    async def qr_login(self) -> Any:
-        self.world.calls.append(("qr_login", None))
+    async def qr_login(self, ignored_ids: Any = None) -> Any:
+        self.world.calls.append(("qr_login", {"ignored_ids": list(ignored_ids or [])}))
         return _QrLogin(self.world)
 
     async def log_out(self) -> bool:
@@ -2392,7 +2392,13 @@ class _QrLogin:
     def __init__(self, world: World) -> None:
         self.world = world
         self.url = "tg://login?token=ZmFrZQ"
+        self.token = b"fake"
         self.expires = None
+
+    async def recreate(self) -> str:
+        """A QR token lives ~30 s; a client that never re-exports shows a dead one."""
+        self.world.calls.append(("qr_recreate", None))
+        return self.url
 
     async def wait(self, timeout: float | None = None) -> Any:
         failure = self.world._fail_next.pop("qr_wait", None)
@@ -2403,8 +2409,21 @@ class _QrLogin:
 
 
 class _FakeSession:
+    """Enough of a Telethon session that `StringSession.save()` works on it.
+
+    `account export` reads the live session rather than the file on disk, so
+    a fake without an auth key would make that operation untestable.
+    """
+
     def __init__(self) -> None:
+        from telethon.crypto import AuthKey
+
         self.saved = 0
+        self.dc_id = 4
+        self.server_address = "149.154.167.51"
+        self.port = 443
+        self.auth_key = AuthKey(bytes(range(256)))
+        self.takeout_id = None
 
     def save(self) -> None:
         self.saved += 1

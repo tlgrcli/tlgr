@@ -338,11 +338,24 @@ async def _non_file_media(ctx: OpContext, req: SendReq) -> Any:
             phone_number=phone, first_name=first, last_name=last, vcard=vcard
         )
     if req.poll is not None:
-        _send.require_supported(
-            "--poll",
-            "polls are the `poll create` command's shape and land in PR-9; "
-            "sending one here would fix a JSON schema this build cannot validate",
-        )
+        # `--poll JSON` takes the same field names as `poll create`, and is
+        # built by the same function: two spellings of "make a poll" that
+        # disagreed about defaults would be worse than one shared builder.
+        import msgspec
+
+        from tlgr.ops import poll as poll_ops
+
+        try:
+            spec = msgspec.json.decode(req.poll, type=dict)
+        except msgspec.DecodeError as exc:
+            raise UsageError(f"--poll is not JSON: {exc}", field="poll") from exc
+        spec.setdefault("chat", "me")
+        spec.setdefault("parse", req.parse)
+        try:
+            request = msgspec.convert(spec, type=poll_ops.CreateReq, strict=False)
+        except msgspec.ValidationError as exc:
+            raise UsageError(f"--poll: {exc}", field="poll") from exc
+        return await poll_ops.build_media(ctx, request)
     if req.preview_url:
         return types.InputMediaWebPage(
             url=req.preview_url,

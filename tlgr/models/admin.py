@@ -48,7 +48,6 @@ __all__ = [
     "DiscussionResult",
     "Graph",
     "Invite",
-    "InviteAdmin",
     "InviteDeleted",
     "InviteInfo",
     "InvitePeek",
@@ -232,6 +231,9 @@ class Invite(Model):
     subscription_pricing: dict[str, int] | None = None
     subscription_expired: int | None = None
     replaced_link: str | None = None
+    #: `--by-admin` rows: how many links this admin has made, and revoked.
+    invites_count: int | None = None
+    revoked_invites_count: int | None = None
 
 
 class InviteInfo(Invite):
@@ -246,13 +248,6 @@ class InviteInfo(Invite):
     public: bool | None = None
     qr: str | None = None
     png: str | None = None
-
-
-class InviteAdmin(Model):
-    admin_id: int
-    invites_count: int = 0
-    revoked_invites_count: int = 0
-    link: str = ""
 
 
 class InviteDeleted(Model):

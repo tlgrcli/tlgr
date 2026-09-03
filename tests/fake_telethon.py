@@ -534,6 +534,7 @@ class FakeTelegramClient:
                     unread_count=0,
                     unread_mentions_count=0,
                     unread_reactions_count=0,
+                    unread_poll_votes_count=0,
                     notify_settings=types.PeerNotifySettings(),
                     draft=self.world.drafts.get(chat_id),
                 )
@@ -569,6 +570,16 @@ class FakeTelegramClient:
         return entity
 
     async def get_input_entity(self, ref: Any) -> Any:
+        if isinstance(
+            ref,
+            (
+                types.InputPeerUser,
+                types.InputPeerChannel,
+                types.InputPeerChat,
+                types.InputPeerSelf,
+            ),
+        ):
+            return ref
         entity = await self.get_entity(ref)
         if isinstance(entity, types.User):
             return types.InputPeerUser(entity.id, entity.access_hash or 0)

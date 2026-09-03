@@ -2,7 +2,7 @@
 
 # Command reference
 
-123 operations across 8 groups, generated from the operation registry. Groups still served by v1's hand-written commands are not listed here; they arrive with their own PR.
+132 operations across 9 groups, generated from the operation registry. Groups still served by v1's hand-written commands are not listed here; they arrive with their own PR.
 
 | Group | Operations | Reference |
 |---|---:|---|
@@ -10,6 +10,7 @@
 | `chat` | 34 | [chat.md](chat.md) |
 | `draft` | 3 | [draft.md](draft.md) |
 | `folder` | 13 | [folder.md](folder.md) |
+| `location` | 9 | [location.md](location.md) |
 | `message` | 39 | [message.md](message.md) |
 | `poll` | 9 | [poll.md](poll.md) |
 | `reaction` | 17 | [reaction.md](reaction.md) |

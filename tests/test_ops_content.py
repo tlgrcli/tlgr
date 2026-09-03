@@ -1241,3 +1241,323 @@ class TestTodoAddAndEdit:
         )
         assert read["title"] == "Release checklist"
         assert len(read["tasks"]) == 3
+
+
+# ---------------------------------------------------------------------------
+# location
+# ---------------------------------------------------------------------------
+
+
+class TestLocationSend:
+    async def test_a_point_lands_in_the_history(self, live_daemon, client, in_thread, peers):
+        out = await result(
+            client,
+            in_thread,
+            "location.send",
+            {"chat": "@alice", "lat": 52.52, "lon": 13.405},
+        )
+        assert out["geo"] == {"lat": 52.52, "lon": 13.405}
+        request = peers.called("SendMediaRequest")[0]
+        assert request.media.geo_point.lat == 52.52
+        assert type(peers.history(ALICE)[-1].media).__name__ == "MessageMediaGeo"
+
+    async def test_a_coordinate_off_the_planet_is_a_usage_error(
+        self, live_daemon, client, in_thread, peers
+    ):
+        error = await fails(
+            client, in_thread, "location.send", {"chat": "@alice", "lat": 91.0, "lon": 0.0}
+        )
+        assert error.exit_code == EXIT_USAGE
+
+    async def test_a_venue_carries_its_provider_fields(self, live_daemon, client, in_thread, peers):
+        out = await result(
+            client,
+            in_thread,
+            "location.venue.send",
+            {
+                "chat": "@alice",
+                "lat": 52.5163,
+                "lon": 13.3777,
+                "title": "Brandenburg Gate",
+                "address": "Pariser Platz",
+                "provider": "foursquare",
+                "venue_id": "4ac518",
+            },
+        )
+        assert out["venue"]["title"] == "Brandenburg Gate"
+        request = peers.called("SendMediaRequest")[0]
+        assert request.media.venue_id == "4ac518"
+
+    async def test_a_venue_without_a_title_is_a_usage_error(
+        self, live_daemon, client, in_thread, peers
+    ):
+        error = await fails(
+            client,
+            in_thread,
+            "location.venue.send",
+            {"chat": "@alice", "lat": 52.52, "lon": 13.405},
+        )
+        assert error.exit_code == EXIT_USAGE
+
+
+class TestLocationLive:
+    async def test_a_share_reports_when_it_expires(self, live_daemon, client, in_thread, peers):
+        out = await result(
+            client,
+            in_thread,
+            "location.live.start",
+            {"chat": "@alice", "lat": 52.52, "lon": 13.405, "period": "1h"},
+        )
+        assert out["period"] == 3600
+        assert out["expires_at_unix"] - out["date_unix"] == 3600
+        assert peers.called("SendMediaRequest")[0].media.period == 3600
+
+    async def test_follow_is_refused_rather_than_silently_doing_nothing(
+        self, live_daemon, client, in_thread, peers
+    ):
+        error = await fails(
+            client,
+            in_thread,
+            "location.live.start",
+            {"chat": "@alice", "lat": 52.52, "lon": 13.405, "follow": "gpsd"},
+        )
+        assert error.exit_code == EXIT_INDETERMINATE
+        assert error.code == "NOT_SUPPORTED"
+
+    async def test_a_bearing_outside_the_compass_is_a_usage_error(
+        self, live_daemon, client, in_thread, peers
+    ):
+        error = await fails(
+            client,
+            in_thread,
+            "location.live.start",
+            {"chat": "@alice", "lat": 52.52, "lon": 13.405, "heading": 400},
+        )
+        assert error.exit_code == EXIT_USAGE
+
+    async def test_editing_only_the_heading_keeps_the_position(
+        self, live_daemon, client, in_thread, peers
+    ):
+        started = await result(
+            client,
+            in_thread,
+            "location.live.start",
+            {"chat": "@alice", "lat": 52.52, "lon": 13.405},
+        )
+        out = await result(
+            client,
+            in_thread,
+            "location.live.edit",
+            {"chat": "@alice", "msg_id": started["msg_id"], "heading": 90},
+        )
+        request = peers.called("EditMessageRequest")[-1]
+        assert request.media.geo_point.lat == 52.52
+        assert request.media.heading == 90
+        assert out["heading"] == 90
+
+    async def test_editing_a_message_that_is_not_live_is_not_found(
+        self, live_daemon, client, in_thread, peers
+    ):
+        peers.add_message(ALICE, "text", message_id=500)
+        error = await fails(
+            client, in_thread, "location.live.edit", {"chat": "@alice", "msg_id": 500}
+        )
+        assert error.exit_code == EXIT_NOT_FOUND
+
+    async def test_stopping_sends_an_empty_point(self, live_daemon, client, in_thread, peers):
+        """A stopped share must not publish where you were when you stopped it."""
+        started = await result(
+            client,
+            in_thread,
+            "location.live.start",
+            {"chat": "@alice", "lat": 52.52, "lon": 13.405},
+        )
+        out = await result(
+            client,
+            in_thread,
+            "location.live.stop",
+            {"chat": "@alice", "msg_id": started["msg_id"]},
+        )
+        request = peers.called("EditMessageRequest")[-1]
+        assert type(request.media.geo_point).__name__ == "InputGeoPointEmpty"
+        assert request.media.stopped is True
+        assert out["stopped"] is True and out["count"] == 1
+
+    async def test_stopping_everything_in_a_chat(self, live_daemon, client, in_thread, peers):
+        for _ in range(2):
+            await result(
+                client,
+                in_thread,
+                "location.live.start",
+                {"chat": "@alice", "lat": 52.52, "lon": 13.405},
+            )
+        out = await result(
+            client, in_thread, "location.live.stop", {"chat": "@alice", "every": True}
+        )
+        assert out["count"] == 2
+
+    async def test_stopping_nothing_is_already(self, live_daemon, client, in_thread, peers):
+        envelope = await call(
+            client, in_thread, "location.live.stop", {"chat": "@alice", "every": True}
+        )
+        assert envelope["result"]["already"] is True
+
+    async def test_stopping_needs_a_target(self, live_daemon, client, in_thread, peers):
+        error = await fails(client, in_thread, "location.live.stop", {"chat": "@alice"})
+        assert error.exit_code == EXIT_USAGE
+
+    async def test_listing_needs_a_chat_because_the_api_has_no_global_answer(
+        self, live_daemon, client, in_thread, peers
+    ):
+        error = await fails(client, in_thread, "location.live.list", {})
+        assert error.exit_code == EXIT_USAGE
+
+    async def test_listing_a_chats_shares(self, live_daemon, client, in_thread, peers):
+        started = await result(
+            client,
+            in_thread,
+            "location.live.start",
+            {"chat": "@alice", "lat": 52.52, "lon": 13.405},
+        )
+        rows = await result(client, in_thread, "location.live.list", {"chat": "@alice"})
+        assert [row["msg_id"] for row in rows] == [started["msg_id"]]
+        assert rows[0]["mine"] is True
+
+
+class TestLocationNearbyAndSearch:
+    async def test_looking_never_publishes(self, live_daemon, client, in_thread, peers):
+        from telethon.tl import types
+
+        peers.nearby = [
+            types.PeerLocated(peer=types.PeerUser(user_id=ALICE), expires=None, distance=120)
+        ]
+        out = await result(client, in_thread, "location.nearby.list", {"lat": 52.52, "lon": 13.405})
+        assert out["items"][0]["peer_id"] == ALICE
+        assert out["items"][0]["distance"] == 120
+        assert peers.called("GetLocatedRequest")[0].self_expires is None
+        assert peers.self_expires is None
+
+    async def test_publishing_is_opt_in_and_warns(self, live_daemon, client, in_thread, peers):
+        envelope = await call(
+            client,
+            in_thread,
+            "location.nearby.list",
+            {"lat": 52.52, "lon": 13.405, "publish": "1h"},
+        )
+        assert peers.called("GetLocatedRequest")[0].self_expires == 3600
+        assert envelope["result"]["published"] is True
+        assert envelope["meta"]["warnings"]
+
+    async def test_unpublishing_sends_zero(self, live_daemon, client, in_thread, peers):
+        await result(
+            client,
+            in_thread,
+            "location.nearby.list",
+            {"lat": 52.52, "lon": 13.405, "unpublish": True},
+        )
+        assert peers.called("GetLocatedRequest")[0].self_expires == 0
+
+    async def test_venue_search_is_an_inline_query_against_the_configured_bot(
+        self, live_daemon, client, in_thread, peers
+    ):
+        from fake_telethon import make_user
+        from telethon.tl import types
+
+        peers.add_user(make_user(7777, username="foursquare", first="Venues"))
+        peers.venues = [
+            types.BotInlineResult(
+                id="1",
+                type="venue",
+                send_message=types.BotInlineMessageMediaVenue(
+                    geo=types.GeoPoint(long=13.3777, lat=52.5163, access_hash=1),
+                    title="Brandenburg Gate",
+                    address="Pariser Platz",
+                    provider="foursquare",
+                    venue_id="4ac518",
+                    venue_type="landmark",
+                ),
+            )
+        ]
+        rows = await result(
+            client,
+            in_thread,
+            "location.search",
+            {"lat": 52.52, "lon": 13.405, "query": "gate"},
+        )
+        assert rows[0]["title"] == "Brandenburg Gate"
+        request = peers.called("GetInlineBotResultsRequest")[0]
+        assert request.query == "gate"
+        assert request.geo_point.lat == 52.52
+
+    async def test_no_configured_provider_is_not_supported(
+        self, live_daemon, client, in_thread, peers
+    ):
+        peers.venue_search_username = ""
+        error = await fails(client, in_thread, "location.search", {"lat": 52.52, "lon": 13.405})
+        assert error.exit_code == EXIT_INDETERMINATE
+
+
+class TestLocationPreview:
+    async def test_the_map_comes_from_the_webfile_dc(self, live_daemon, client, in_thread, peers):
+        sent = await result(
+            client,
+            in_thread,
+            "location.send",
+            {"chat": "@alice", "lat": 52.52, "lon": 13.405},
+        )
+        out = await result(
+            client,
+            in_thread,
+            "location.preview",
+            {"chat": "@alice", "msg_id": sent["id"]},
+        )
+        assert out["bytes"] == len(peers.web_file)
+        assert out["base64"]
+        borrowed = peers.called("borrow_exported_sender")
+        assert borrowed and borrowed[0]["dc_id"] == peers.webfile_dc_id
+        request = peers.called("GetWebFileRequest")[0]
+        assert request.location.access_hash == 12345
+        assert (request.location.w, request.location.h) == (512, 512)
+
+    async def test_the_image_can_be_written_to_a_file(
+        self, live_daemon, client, in_thread, peers, tmp_path
+    ):
+        sent = await result(
+            client,
+            in_thread,
+            "location.send",
+            {"chat": "@alice", "lat": 52.52, "lon": 13.405},
+        )
+        target = tmp_path / "map.png"
+        out = await result(
+            client,
+            in_thread,
+            "location.preview",
+            {"chat": "@alice", "msg_id": sent["id"], "out": str(target)},
+        )
+        assert out["path"] == str(target)
+        assert target.read_bytes() == peers.web_file
+
+    async def test_a_bad_size_is_a_usage_error(self, live_daemon, client, in_thread, peers):
+        sent = await result(
+            client,
+            in_thread,
+            "location.send",
+            {"chat": "@alice", "lat": 52.52, "lon": 13.405},
+        )
+        error = await fails(
+            client,
+            in_thread,
+            "location.preview",
+            {"chat": "@alice", "msg_id": sent["id"], "size": "4000x4000"},
+        )
+        assert error.exit_code == EXIT_USAGE
+
+    async def test_a_message_without_a_location_is_not_found(
+        self, live_daemon, client, in_thread, peers
+    ):
+        peers.add_message(ALICE, "text", message_id=500)
+        error = await fails(
+            client, in_thread, "location.preview", {"chat": "@alice", "msg_id": 500}
+        )
+        assert error.exit_code == EXIT_NOT_FOUND

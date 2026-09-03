@@ -7,31 +7,31 @@ Coverage against the Telegram feature catalog, computed from the registry: every
 `covered` is implemented today. `acct%` is covered **plus** waived — an id that belongs to a group a later PR owns, named in `tlgr/data/parity_waivers.toml` with the PR that closes it. Ids whose feasibility is `not-applicable` or `prohibited` are excluded from the denominator once and never counted again.
 
 ```
-catalog 2026-09-02 — 123 operations, 191 invocable paths
+catalog 2026-09-02 — 132 operations, 201 invocable paths
 
 domain                        covered    req       %   acct%  ops
 auth_sessions_security              0     89    0.0%  100.0%  0
 bots_inline_payments               12    175    6.9%  100.0%  4
 calls_voicechats                    3    133    2.3%  100.0%  3
-contacts_users                     11    121    9.1%  100.0%  8
+contacts_users                     13    121   10.7%  100.0%  9
 dialogs_chats                     110    146   75.3%  100.0%  52
 groups_channels_admin              26    162   16.0%  100.0%  15
 media_files                         5    143    3.5%  100.0%  4
 messages_core                     149    167   89.2%  100.0%  48
-polls_reactions_content           102    174   58.6%  100.0%  47
+polls_reactions_content           114    174   65.5%  100.0%  56
 profile_settings_privacy            6    178    3.4%  100.0%  5
 stories                             3    120    2.5%  100.0%  3
 updates_sync_network                3    189    1.6%  100.0%  2
 
 priority                      covered    req       %   acct%
 P0                                 63    178   35.4%  100.0%
-P1                                111    379   29.3%  100.0%
-P2                                127    610   20.8%  100.0%
-P3                                129    630   20.5%  100.0%
+P1                                115    379   30.3%  100.0%
+P2                                132    610   21.6%  100.0%
+P3                                134    630   21.3%  100.0%
 
-TOTAL                             430   1797   23.9%  100.0%
+TOTAL                             444   1797   24.7%  100.0%
 excluded: not-applicable 79, prohibited 40
-uncovered: 1367 (1367 waived with a PR number)
+uncovered: 1353 (1353 waived with a PR number)
 ```
 
 ## By domain
@@ -41,12 +41,12 @@ uncovered: 1367 (1367 waived with a PR number)
 | `auth_sessions_security` | 0 | 89 | 0.0% | 100.0% | 0 |
 | `bots_inline_payments` | 12 | 175 | 6.9% | 100.0% | 4 |
 | `calls_voicechats` | 3 | 133 | 2.3% | 100.0% | 3 |
-| `contacts_users` | 11 | 121 | 9.1% | 100.0% | 8 |
+| `contacts_users` | 13 | 121 | 10.7% | 100.0% | 9 |
 | `dialogs_chats` | 110 | 146 | 75.3% | 100.0% | 52 |
 | `groups_channels_admin` | 26 | 162 | 16.0% | 100.0% | 15 |
 | `media_files` | 5 | 143 | 3.5% | 100.0% | 4 |
 | `messages_core` | 149 | 167 | 89.2% | 100.0% | 48 |
-| `polls_reactions_content` | 102 | 174 | 58.6% | 100.0% | 47 |
+| `polls_reactions_content` | 114 | 174 | 65.5% | 100.0% | 56 |
 | `profile_settings_privacy` | 6 | 178 | 3.4% | 100.0% | 5 |
 | `stories` | 3 | 120 | 2.5% | 100.0% | 3 |
 | `updates_sync_network` | 3 | 189 | 1.6% | 100.0% | 2 |
@@ -56,9 +56,9 @@ uncovered: 1367 (1367 waived with a PR number)
 | Priority | Covered | Required | % | Accounted % |
 |---|---:|---:|---:|---:|
 | P0 | 63 | 178 | 35.4% | 100.0% |
-| P1 | 111 | 379 | 29.3% | 100.0% |
-| P2 | 127 | 610 | 20.8% | 100.0% |
-| P3 | 129 | 630 | 20.5% | 100.0% |
+| P1 | 115 | 379 | 30.3% | 100.0% |
+| P2 | 132 | 610 | 21.6% | 100.0% |
+| P3 | 134 | 630 | 21.3% | 100.0% |
 
 ## Partial coverage
 
@@ -94,10 +94,6 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `dialogs.block-stories` | P1 | Hide my stories from a user (story blocklist) | waived until PR-5: The story blocklist is a privacy surface on the user group (PR-5). |
 | `dialogs.dialog-exists` | P1 | Does a dialog with this peer exist | waived until PR-5: `user dialog-status` answers this and migrates with the user group (PR-5). |
 | `dialogs.notify-exceptions` | P1 | List notification exceptions | waived until PR-12: The exceptions *list* is `notify exceptions` (PR-12); one chat's exception is `chat notify`. |
-| `location.live-send` | P1 | Share live location | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `location.live-stop` | P1 | Stop sharing live location | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `location.live-update` | P1 | Update a live location | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `location.send-static` | P1 | Send a location | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
 | `messages-core.delete-call-history` | P1 | Delete call-log messages | waived until PR-3: The call log is a chat-level history (PR-3). |
 | `messages-core.message-watch-events` | P1 | Live stream of new / edited / deleted messages and read receipts | waived until PR-4: The live message stream is the event bus surface (PR-4). |
 | `messages-core.search-global-media-tabs` | P1 | Global media / links / files / music / voice tabs | waived until PR-3: The global media/links/files tabs are the global search surface (PR-3). |
@@ -133,11 +129,6 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `giveaway.gift-code-received` | P2 | Receive a giveaway gift code | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
 | `giveaway.info` | P2 | Giveaway status / did I win? | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
 | `giveaway.join-by-boosting` | P2 | Join a giveaway by boosting the channel | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `location.live-list-mine` | P2 | Chats where I am sharing live location | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `location.live-proximity` | P2 | Proximity alert radius | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `location.recent-in-chat` | P2 | Live locations shared in this chat | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `location.send-venue` | P2 | Send a venue / place | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `location.venue-search` | P2 | Search nearby places | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
 | `messages-core.message-statistics` | P2 | Post statistics and public forwards (channel admins) | waived until PR-4: Post statistics and public forwards are the `stats` surface (PR-4). |
 | `messages-core.quick-reply-list` | P2 | Quick replies (business shortcuts): list shortcuts and their messages | waived until PR-12: Business quick-reply shortcuts are a business setting (PR-12); `message send --quick-reply` uses one. |
 | `messages-core.quick-reply-manage` | P2 | Create/edit/reorder/delete quick reply shortcuts and their messages | waived until PR-12: Business quick-reply shortcuts are a business setting (PR-12). |
@@ -198,9 +189,6 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `location.business-address` | P3 | Business account location | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
 | `location.channel-geo` | P3 | Set a location for a geo-group | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
 | `location.geogroup-create` | P3 | Create a location-based group | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `location.live-heading` | P3 | Direction arrow on a live location | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `location.map-preview` | P3 | Map thumbnail for a location | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
-| `location.people-nearby` | P3 | People and groups nearby | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
 | `location.proximity-alert-event` | P3 | Proximity reached notification | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
 | `location.viewed-receipt` | P3 | Live location viewed receipt | waived until PR-9: poll, reaction, todo, location and link land in PR-9. |
 | `messages-core.chat-welcome-messages` | P3 | Chat welcome messages (empty-chat cards) | waived until PR-3: Empty-chat welcome cards are a chat setting (PR-3). |

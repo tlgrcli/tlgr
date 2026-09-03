@@ -17,10 +17,6 @@ final_pr = 12
 # Whole domains that no PR has migrated yet. Each becomes its own group PR.
 # ---------------------------------------------------------------------------
 
-[[domain]]
-name = "stories"
-pr = 8
-reason = "the story group lands in PR-8, after media."
 
 [[domain]]
 name = "bots_inline_payments"
@@ -64,16 +60,6 @@ reason = "`giveaway *` lands with gifts and Stars (PR-12); `boost get` reports t
 id = "groups-channels-admin.giveaway-prepaid-launch"
 pr = 12
 reason = "Launching a giveaway is `giveaway launch` (PR-12); `boost get` reports the prepaid slots it spends."
-
-[[id]]
-id = "groups-channels-admin.hide-peer-stories"
-pr = 8
-reason = "Hiding a peer's stories is `story hide` (PR-8); `user hide-stories` already does the user half."
-
-[[id]]
-id = "groups-channels-admin.stories-as-channel"
-pr = 8
-reason = "Posting as a channel is the story group (PR-8); the admin rights that gate it are `chat admin promote --rights post-stories`."
 
 [[id]]
 id = "groups-channels-admin.report-reaction"
@@ -276,11 +262,6 @@ reason = "Post statistics and public forwards are the `stats` surface (PR-4)."
 id = "messages-core.paid-messages-group-price"
 pr = 7
 reason = "The per-group Star price is a supergroup setting (PR-7)."
-
-[[id]]
-id = "messages-core.search-hashtag-stories"
-pr = 8
-reason = "Hashtag search over public stories is the story surface (PR-8)."
 
 [[id]]
 id = "messages-core.url-authorization"
@@ -595,11 +576,6 @@ pr = 4
 reason = "a live-location view receipt arrives as an update (PR-4)."
 
 [[id]]
-id = "reaction.story-list"
-pr = 8
-reason = "story reactions are the `story` surface (PR-8)."
-
-[[id]]
 id = "stars.balance"
 pr = 12
 reason = "the Star balance and top-up packages are the `stars` surface (PR-12)."
@@ -751,6 +727,89 @@ id = "theme.cloud-themes"
 pr = 12
 reason = "Cloud themes are the `settings` group (PR-12)."
 
+# ---------------------------------------------------------------------------
+# The stories ids PR-8 does not own. Each names the group that does.
+# ---------------------------------------------------------------------------
+
+[[id]]
+id = "stories.close-friends-list"
+pr = 5
+reason = "The close-friends list is `contact close-friends list` (PR-5)."
+
+[[id]]
+id = "stories.close-friends-set"
+pr = 5
+reason = "Editing close friends is `contact close-friends set` (PR-5)."
+
+[[id]]
+id = "stories.admin-rights"
+pr = 7
+reason = "post/edit/delete_stories are admin rights on `chat admin` (PR-7)."
+
+[[id]]
+id = "stories.boost-status"
+pr = 7
+reason = "Boost levels are the `boost` group (PR-7); `story can-post` reports the gate."
+
+[[id]]
+id = "stories.business-story"
+pr = 10
+reason = "Posting for a business account goes through a bot connection (PR-10)."
+
+[[id]]
+id = "stories.live-comments"
+pr = 11
+reason = "Commenting in a live story is a group-call message (PR-11)."
+
+[[id]]
+id = "stories.live-end"
+pr = 11
+reason = "Ending a live story discards its group call — `vc end` (PR-11)."
+
+[[id]]
+id = "stories.live-highlight-comment"
+pr = 11
+reason = "Highlighting a comment with Stars is a group-call action (PR-11)."
+
+[[id]]
+id = "stories.live-message-sender"
+pr = 11
+reason = "The send-as identity for call messages is `vc send-as` (PR-11)."
+
+[[id]]
+id = "stories.live-rtmp-url"
+pr = 11
+reason = "Getting or revoking an RTMP key is `vc rtmp` (PR-11); `story live start --rtmp` prints it once."
+
+[[id]]
+id = "stories.live-settings"
+pr = 11
+reason = "Live comment settings and price live on the call (PR-11)."
+
+[[id]]
+id = "stories.notify-exceptions"
+pr = 12
+reason = "Per-peer notification exceptions are the `notify` group (PR-12)."
+
+[[id]]
+id = "stories.notify-global"
+pr = 12
+reason = "Global story notification settings are `notify set` (PR-12)."
+
+[[id]]
+id = "stories.notify-peer"
+pr = 12
+reason = "Per-peer story notifications are `notify set --stories` (PR-12)."
+
+[[id]]
+id = "stories.notify-reactions"
+pr = 12
+reason = "Notifications for reactions to my stories are `notify set` (PR-12)."
+
+[[id]]
+id = "stories.story-music-save"
+pr = 12
+reason = "Saving a story's soundtrack to the profile is the profile group (PR-12)."
 
 # --- PR-11 (calls) ---------------------------------------------------------
 # The call domain is migrated; what is left inside it belongs to other groups
@@ -780,11 +839,6 @@ reason = "channels.getAdminLog is one command with one filter vocabulary; the vi
 id = "groupcall.admin-right-manage-call"
 pr = 7
 reason = "manage_call is one keyword in the admin-rights vocabulary owned by `chat admin promote` (PR-7)."
-
-[[id]]
-id = "livestory.start-rtmp"
-pr = 8
-reason = "Starting a live story is stories.startLive (PR-8); the RTMP credentials half is already covered here by `vc rtmp get --live-story`."
 
 [[id]]
 id = "calls.top-callers"
@@ -864,11 +918,6 @@ reason = "Revealing my own last-seen to see theirs is a privacy setting (PR-12);
 id = "contacts-users.user-business-greeting-away"
 pr = 12
 reason = "Business greeting and away messages are the `business` group (PR-12)."
-
-[[id]]
-id = "contacts-users.user-stories"
-pr = 8
-reason = "A user's stories are the `story` group (PR-8); hiding them is `user hide-stories`."
 
 [[id]]
 id = "contacts-users.people-you-may-know"

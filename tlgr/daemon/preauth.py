@@ -151,7 +151,8 @@ class PreAuthService:
     def state_path(self, alias: str) -> Path:
         from tlgr.core.paths import validate_alias
 
-        return self.sessions.paths.account_dir(validate_alias(alias)) / "login-state.json"
+        directory: Path = self.sessions.paths.account_dir(validate_alias(alias))
+        return directory / "login-state.json"
 
     def read_state(self, alias: str) -> dict[str, Any]:
         path = self.state_path(alias)

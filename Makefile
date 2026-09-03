@@ -7,6 +7,7 @@ STRICT := tlgr/models tlgr/ops tlgr/registry.py tlgr/schema.py tlgr/version.py \
           tlgr/core/logging.py tlgr/core/identity.py tlgr/core/media.py \
           tlgr/transport \
           tlgr/daemon/session.py tlgr/daemon/sessions.py tlgr/daemon/events.py \
+          tlgr/daemon/preauth.py tlgr/daemon/dispatch.py \
           tlgr/daemon/ratelimit.py tlgr/daemon/policy.py tlgr/daemon/idle.py \
           tlgr/daemon/singleton.py tlgr/daemon/peercred.py
 

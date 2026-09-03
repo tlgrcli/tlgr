@@ -152,12 +152,12 @@ def _peer_ref_fields(request: type[msgspec.Struct]) -> dict[str, bool]:
         while True:
             origin = typing.get_origin(node)
             if origin in (typing.Union, pytypes.UnionType):
-                args = [a for a in typing.get_args(node) if a is not type(None)]
-                node = args[0] if args else node
+                optional = [a for a in typing.get_args(node) if a is not type(None)]
+                node = optional[0] if optional else node
                 continue
             if origin in (list, tuple, set):
-                args = typing.get_args(node)
-                node = args[0] if args else node
+                inner = typing.get_args(node)
+                node = inner[0] if inner else node
                 repeated = True
                 continue
             break

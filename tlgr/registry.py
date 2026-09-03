@@ -197,6 +197,12 @@ VERBS: frozenset[str] = frozenset(
         # and has no way to know which nouns are verb-first.
         "global",
         "hashtag",
+        # PR-2. Each names a Telegram or tlgr operation with no synonym in the
+        # STYLE list: `switch` is not `set` (it changes which account later
+        # commands use, not a field on one) and `completion` is a v1 path
+        # §12.4 promises stays invocable.
+        "switch",
+        "completion",
     ]
 )
 

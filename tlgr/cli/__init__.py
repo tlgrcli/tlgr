@@ -230,10 +230,7 @@ def cli(
 # ---------------------------------------------------------------------------
 
 from tlgr.cli.gen import build_click_tree  # noqa: E402
-from tlgr.cli.legacy import agent as legacy_agent  # noqa: E402
-from tlgr.cli.legacy.account import account_group  # noqa: E402
 from tlgr.cli.legacy.chat import chat_create, chat_members  # noqa: E402
-from tlgr.cli.legacy.completion import completion_group  # noqa: E402
 from tlgr.cli.legacy.config_cmd import config_group  # noqa: E402
 from tlgr.cli.legacy.contact import contact_group  # noqa: E402
 from tlgr.cli.legacy.daemon_cmd import daemon_group  # noqa: E402
@@ -243,14 +240,12 @@ from tlgr.cli.legacy.profile import profile_group  # noqa: E402
 from tlgr.cli.legacy.user import user_group  # noqa: E402
 from tlgr.cli.legacy.watch import watch_command  # noqa: E402
 
-cli.add_command(account_group, "account")
 cli.add_command(contact_group, "contact")
 cli.add_command(profile_group, "profile")
 cli.add_command(media_group, "media")
 cli.add_command(daemon_group, "daemon")
 cli.add_command(job_group, "job")
 cli.add_command(config_group, "config")
-cli.add_command(completion_group, "completion")
 cli.add_command(user_group, "user")
 cli.add_command(watch_command, "watch")
 
@@ -258,23 +253,6 @@ cli.add_command(watch_command, "watch")
 # ---------------------------------------------------------------------------
 # Top-level action shortcuts (desire paths)
 # ---------------------------------------------------------------------------
-
-
-@cli.command("login")
-@click.argument("phone")
-@click.option("--alias", default=None, help="Alias for this account.")
-@click.pass_context
-def shortcut_login(ctx: click.Context, phone: str, alias: str | None) -> None:
-    """Add and authenticate a Telegram account (shortcut for 'account add')."""
-    ctx.invoke(account_group.commands["add"], phone=phone, alias=alias)
-
-
-@cli.command("logout")
-@click.argument("alias")
-@click.pass_context
-def shortcut_logout(ctx: click.Context, alias: str) -> None:
-    """Remove an account (shortcut for 'account remove')."""
-    ctx.invoke(account_group.commands["remove"], alias=alias)
 
 
 @cli.command("status")
@@ -329,10 +307,11 @@ def shortcut_upload(ctx: click.Context, chat: str, path: str, caption: str) -> N
 
 
 #: Commands that still live in `cli/legacy` *inside* a group the registry now
-#: generates. Each entry is a promise to delete: `agent whoami` needs the
-#: account manager, so it migrates with the account group (PR-2).
+#: generates. Each entry is a promise to delete. PR-2 took `agent whoami` out
+#: of it: the command needs the account manager, so it migrated with the
+#: account group. What is left is the sanctioned, enumerated overlap for the
+#: group PRs still to come.
 LEGACY_EXTRAS: dict[str, list[click.Command]] = {
-    "agent": [legacy_agent.agent_whoami],
     # `chat create` and `chat members` are member/admin operations and
     # migrate with the groups-and-channels group (PR-7).
     "chat": [chat_members, chat_create],

@@ -13,18 +13,21 @@ their phone. Here the pending login lives in the daemon, keyed by alias, with
 a ten-minute bound, and `auth send-code` / `auth verify-code` are two ordinary
 requests.
 
-`auth.signUp` is never called (§1.2). A number with no account is a USAGE
-error saying tlgr does not create accounts.
+`auth.signUp` is never called *from a login*: a number with no account stops
+with `signup_required` rather than quietly registering one. Registering is a
+separate, explicitly consented command (`tlgr auth sign-up --accept-tos`).
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from tlgr.core.errors import (
@@ -32,6 +35,7 @@ from tlgr.core.errors import (
     AuthPasswordRequiredError,
     UsageError,
 )
+from tlgr.core.paths import secure_session_files
 
 log = logging.getLogger("tlgr.daemon.preauth")
 
@@ -97,6 +101,93 @@ class PreAuthService:
         self._pending[alias] = PendingLogin(alias=alias, client=client, session=session)
         return client
 
+    # -- the primitives the `auth` operations drive -------------------------
+    #
+    # PR-2 moved the *protocol* into `ops/auth.py`, where the TL requests and
+    # their errors belong, and left the daemon with what only the daemon can
+    # do: hand out a pre-auth client on a session file it already locks, and
+    # promote that client into a supervised session once the login lands.
+
+    async def client_for(
+        self, alias: str, *, api_id: int | None = None, api_hash: str | None = None
+    ) -> Any:
+        """A connected, unauthorised client for *alias*, created once.
+
+        Credentials are written first when they are supplied, because the
+        client cannot be built without them and an `auth send-code` that
+        carried an `--api-id` should not fail on a missing one.
+        """
+        if api_id and api_hash:
+            self.sessions.accounts.save_credentials(int(api_id), str(api_hash), alias)
+        async with self._lock:
+            return await self._client_for(alias)
+
+    def pending(self, alias: str) -> PendingLogin | None:
+        """The in-progress login for *alias*, or None. Never creates one."""
+        self._sweep()
+        return self._pending.get(alias)
+
+    def require(self, alias: str) -> PendingLogin:
+        """The in-progress login for *alias*, or a USAGE error naming the fix."""
+        return self._require(alias)
+
+    def remember(self, alias: str, **fields: Any) -> None:
+        """Update the pending login and mirror it into `login-state.json`.
+
+        The file is what makes an *unattended* login work across a daemon
+        restart: `auth send-code` in one process and `auth verify-code` in
+        another, half an hour later, is the shape an agent actually runs.
+        """
+        pending = self._pending.get(alias)
+        if pending is not None:
+            for name, value in fields.items():
+                if hasattr(pending, name):
+                    setattr(pending, name, value)
+        state = self.read_state(alias)
+        state.update({k: v for k, v in fields.items() if isinstance(v, (str, int, float, bool))})
+        state["updated"] = time.time()
+        self.write_state(alias, state)
+
+    def state_path(self, alias: str) -> Path:
+        from tlgr.core.paths import validate_alias
+
+        directory: Path = self.sessions.paths.account_dir(validate_alias(alias))
+        return directory / "login-state.json"
+
+    def read_state(self, alias: str) -> dict[str, Any]:
+        path = self.state_path(alias)
+        if not path.exists():
+            return {}
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return loaded if isinstance(loaded, dict) else {}
+
+    def write_state(self, alias: str, data: dict[str, Any]) -> None:
+        """0600, always: a `phone_code_hash` is a login credential in flight."""
+        from tlgr.core.paths import write_private
+
+        self.sessions.paths.ensure_account_dir(alias)
+        write_private(self.state_path(alias), json.dumps(data, indent=2, sort_keys=True))
+
+    def clear_state(self, alias: str) -> None:
+        with contextlib.suppress(OSError):
+            self.state_path(alias).unlink(missing_ok=True)
+
+    async def finish(self, alias: str) -> dict[str, Any]:
+        """Record who we are and hand the session to the supervisor."""
+        self.clear_state(alias)
+        return await self._finish(alias)
+
+    def except_ids(self) -> list[int]:
+        """User ids already logged in here, so a QR login cannot re-add one."""
+        found: list[int] = []
+        for info in self.sessions.accounts.list_accounts():
+            if info.user_id:
+                found.append(int(info.user_id))
+        return found
+
     def _require(self, alias: str) -> PendingLogin:
         self._sweep()
         pending = self._pending.get(alias)
@@ -158,8 +249,8 @@ class PreAuthService:
                 ) from exc
             if type(exc).__name__ == "PhoneNumberUnoccupiedError":
                 raise UsageError(
-                    "that number has no Telegram account, and tlgr never creates one. "
-                    "Sign up in an official client first."
+                    "that number has no Telegram account. Registering one is a separate, "
+                    "explicit step: tlgr auth sign-up --first-name … --accept-tos"
                 ) from exc
             raise _auth_error(exc) from exc
         return await self._finish(alias)
@@ -208,6 +299,10 @@ class PreAuthService:
         me = await pending.client.get_me()
         with contextlib.suppress(Exception):
             await pending.client.disconnect()
+        # The session file is a complete account credential and Telethon
+        # writes it with whatever the umask allowed (SEC-07).
+        with contextlib.suppress(Exception):
+            secure_session_files(self.sessions.paths.session(alias))
         if pending.session is not None:
             pending.session.lock.release()
         self.sessions.accounts.update_account(

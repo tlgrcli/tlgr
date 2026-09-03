@@ -2,13 +2,35 @@
 
 # `tlgr agent`
 
-3 operations. Every one takes the global flags (`--json`, `--plain`, `-a/--account`, `--results-only`, `--select`, `--dry-run`, `--yes`, `--no-input`, `--flood-wait-max`, `-v`) anywhere on the line.
+5 operations. Every one takes the global flags (`--json`, `--plain`, `-a/--account`, `--results-only`, `--select`, `--dry-run`, `--yes`, `--no-input`, `--flood-wait-max`, `-v`) anywhere on the line.
 
 | Command | Summary |
 |---|---|
+| [`agent completion`](#tlgr-agent-completion) | Print the shell completion script for bash, zsh or fish |
 | [`agent exit-codes`](#tlgr-agent-exit-codes) | Print the stable exit codes for automation |
 | [`agent parity`](#tlgr-agent-parity) | Report feature-parity coverage against the Telegram catalog |
 | [`agent schema`](#tlgr-agent-schema) | Print the machine-readable schema of the CLI |
+| [`agent whoami`](#tlgr-agent-whoami) | Report the active account, daemon status and environment |
+
+### `agent completion`
+
+Print the shell completion script for bash, zsh or fish.
+
+```
+tlgr agent completion <SHELL> [OPTIONS]
+```
+
+**idempotent (reports `already`) · runs without an account · returns `CompletionScript`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `SHELL` | text | yes | bash, zsh or fish. |
+
+Also invocable as: `tlgr completion`
+
+```console
+$ tlgr completion bash --json
+```
 
 ### `agent exit-codes`
 
@@ -74,4 +96,20 @@ Also invocable as: `tlgr schema`
 
 ```console
 $ tlgr schema message --json
+```
+
+### `agent whoami`
+
+Report the active account, daemon status and environment.
+
+The orientation call. `output_schema_version` is 2 for this build; branch on it rather than probing for a renamed field.
+
+```
+tlgr agent whoami [OPTIONS]
+```
+
+**idempotent (reports `already`) · runs without an account · returns `Whoami`**
+
+```console
+$ tlgr agent whoami --json
 ```

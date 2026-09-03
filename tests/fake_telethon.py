@@ -39,13 +39,17 @@ from typing import Any
 from telethon.tl import types
 
 __all__ = [
+    "AuthWorld",
     "DialogState",
     "FakeTelegramClient",
     "World",
     "fake_client_factory",
+    "make_authorization",
     "make_channel",
+    "make_kdf",
     "make_message",
     "make_user",
+    "make_web_authorization",
 ]
 
 
@@ -109,6 +113,159 @@ def make_message(
     if sender_id is not None:
         message.from_id = types.PeerUser(user_id=sender_id)
     return message
+
+
+# ---------------------------------------------------------------------------
+# The auth world (PR-2)
+# ---------------------------------------------------------------------------
+#
+# Sessions, the cloud password, websites, passkeys and Passport values are all
+# *state the ops mutate*, so the fake stores them rather than answering with a
+# canned reply: `account session terminate` followed by `account session list`
+# has to show one fewer row, or the test is asserting against a lie.
+#
+# The SRP material is real. `telethon.password.compute_check` validates the
+# prime, so a made-up `account.Password` would raise inside the helper the ops
+# use — which would make every password test pass for the wrong reason.
+
+#: Telegram's public 2048-bit DH prime, the one `check_prime_and_good`
+#: fast-paths. Using it means the real SRP helpers run in tests.
+GOOD_PRIME = bytes.fromhex(
+    "c71caeb9c6b1c9048e6c522f70f13f73980d40238e3e21c14934d037563d930f"
+    "48198a0aa7c14058229493d22530f4dbfa336f6e0ac925139543aed44cce7c37"
+    "20fd51f69458705ac68cd4fe6b6b13abdc9746512969328454f18faf8c595f64"
+    "2477fe96bb2a941d5bcd1d4ac8cc49880708fa9b378e3c4f3a9060bee67cf9a4"
+    "a4a695811051907e162753b56b0f6b410dba74d8a84b2a14b3144e0ef1284754"
+    "fd17ed950d5965b4b9dd46582db1178d169c6bc465b0d6ff9ca3928fef5b9ae4"
+    "e418fc15e83ebea0f87fa9ff5eed70050ded2849f47bf959d956850ce929851f"
+    "0d8115f635b105ee2e4e15d04b2454bf6f4fadf034b10403119cd8e3b92fcc5b"
+)
+
+
+def make_kdf(salt1: bytes = b"salt1-salt1-salt", salt2: bytes = b"salt2-salt2-salt"):
+    """The KDF algo Telegram uses for cloud passwords."""
+    return types.PasswordKdfAlgoSHA256SHA256PBKDF2HMACSHA512iter100000SHA256ModPow(
+        salt1=salt1, salt2=salt2, g=3, p=GOOD_PRIME
+    )
+
+
+def make_authorization(
+    hash_: int,
+    *,
+    device: str = "Desktop",
+    app: str = "Telegram Desktop",
+    current: bool = False,
+    unconfirmed: bool = False,
+    password_pending: bool = False,
+    created: datetime | None = None,
+) -> types.Authorization:
+    now = created or datetime.now(timezone.utc)
+    return types.Authorization(
+        hash=hash_,
+        device_model=device,
+        platform="linux",
+        system_version="6.1",
+        api_id=12345,
+        app_name=app,
+        app_version="1.0",
+        date_created=now,
+        date_active=now,
+        ip="203.0.113.7",
+        country="NL",
+        region="North Holland",
+        current=current or None,
+        unconfirmed=unconfirmed or None,
+        password_pending=password_pending or None,
+    )
+
+
+def make_web_authorization(hash_: int, *, domain: str = "example.com", bot_id: int = 4242):
+    return types.WebAuthorization(
+        hash=hash_,
+        bot_id=bot_id,
+        domain=domain,
+        browser="Firefox",
+        platform="linux",
+        date_created=datetime.now(timezone.utc),
+        date_active=datetime.now(timezone.utc),
+        ip="203.0.113.7",
+        region="NL",
+    )
+
+
+@dataclass
+class AuthWorld:
+    """Everything the `auth`, `account` and `passport` groups read or write.
+
+    Held on `World.auth` rather than spread across it, so a test that cares
+    about sessions does not have to know what a Passport value looks like.
+    """
+
+    authorizations: list[Any] = field(default_factory=list)
+    web_authorizations: list[Any] = field(default_factory=list)
+    passkeys: list[Any] = field(default_factory=list)
+    secure_values: list[Any] = field(default_factory=list)
+    #: The plaintext of the cloud password, or "" for an account without one.
+    password: str = ""
+    hint: str = ""
+    recovery_email: str = ""
+    has_secure_values: bool = False
+    pending_reset_date: datetime | None = None
+    account_ttl_days: int = 365
+    authorization_ttl_days: int = 180
+    device_locked_for: int | None = None
+    app_config: dict[str, Any] = field(default_factory=dict)
+    pending_suggestions: list[str] = field(default_factory=list)
+    dismissed_suggestions: list[str] = field(default_factory=list)
+    promo_peer: Any = None
+    terms: Any = None
+    logged_out: bool = False
+    future_auth_token: bytes = b"future-token"
+    #: Login-code plumbing.
+    sent_code_type: Any = None
+    signup_required: bool = False
+    tmp_password: bytes = b"tmp-password"
+    #: What `account.getPassword` should claim; `srp_id` is echoed back.
+    srp_id: int = 1234567890
+    #: Make the next SRP call answer SRP_ID_INVALID once. That is the branch
+    #: `_auth.with_password` exists for: an srp_id is single-use, and a retry
+    #: with a stale one fails forever unless the challenge is refetched.
+    srp_id_invalid_once: bool = False
+
+    def password_state(self) -> Any:
+        algo = make_kdf()
+        return types.account.Password(
+            new_algo=algo,
+            new_secure_algo=types.SecurePasswordKdfAlgoSHA512(salt=b"secure-salt"),
+            secure_random=b"0" * 256,
+            has_recovery=bool(self.recovery_email) or None,
+            has_secure_values=self.has_secure_values or None,
+            has_password=bool(self.password) or None,
+            current_algo=algo if self.password else None,
+            srp_B=b"\x01" * 256 if self.password else None,
+            srp_id=self.srp_id if self.password else None,
+            hint=self.hint or None,
+            pending_reset_date=self.pending_reset_date,
+        )
+
+
+def _json_value(value: Any) -> Any:
+    """A python value as the `JSONValue` tree `help.getAppConfig` returns."""
+    if isinstance(value, dict):
+        return types.JsonObject(
+            value=[
+                types.JsonObjectValue(key=str(k), value=_json_value(v)) for k, v in value.items()
+            ]
+        )
+    if isinstance(value, (list, tuple)):
+        return types.JsonArray(value=[_json_value(v) for v in value])
+    if isinstance(value, bool):
+        return types.JsonBool(value=value)
+    if isinstance(value, (int, float)):
+        return types.JsonNumber(value=float(value))
+    if value is None:
+        return types.JsonNull()
+    return types.JsonString(value=str(value))
 
 
 # ---------------------------------------------------------------------------
@@ -205,6 +362,8 @@ class World:
     public_posts: list[Any] = field(default_factory=list)
     search_flood_remains: int = 3
     search_flood_stars: int = 10
+    #: Sessions, the cloud password, websites, passkeys and Passport values.
+    auth: AuthWorld = field(default_factory=AuthWorld)
 
     # -- behaviour knobs ---------------------------------------------------
 
@@ -405,8 +564,8 @@ class FakeTelegramClient:
         self.world.authorized = True
         return self.world.me
 
-    async def qr_login(self) -> Any:
-        self.world.calls.append(("qr_login", None))
+    async def qr_login(self, ignored_ids: Any = None) -> Any:
+        self.world.calls.append(("qr_login", {"ignored_ids": list(ignored_ids or [])}))
         return _QrLogin(self.world)
 
     async def log_out(self) -> bool:
@@ -932,24 +1091,6 @@ class FakeTelegramClient:
         return types.account.ChatThemes(
             hash=0, themes=[types.ChatTheme(emoticon="🌷")], chats=[], users=[]
         )
-
-    def _raw_GetPromoDataRequest(self, request: Any) -> Any:
-        return types.help.PromoData(
-            expires=None,
-            pending_suggestions=["VALIDATE_PHONE_NUMBER"],
-            dismissed_suggestions=[],
-            chats=[],
-            users=[],
-        )
-
-    def _raw_GetAppConfigRequest(self, request: Any) -> Any:
-        entries = [
-            types.JsonObjectValue(
-                key="dialogs_pinned_limit_default", value=types.JsonNumber(value=5)
-            ),
-            types.JsonObjectValue(key="channels_limit_default", value=types.JsonNumber(value=500)),
-        ]
-        return types.help.AppConfig(hash=0, config=types.JsonObject(value=entries))
 
     def _raw_GetCommonChatsRequest(self, request: Any) -> Any:
         return types.messages.Chats(chats=list(self.world.chats.values()))
@@ -1518,6 +1659,412 @@ class FakeTelegramClient:
     async def _return_exported_sender(self, sender: Any) -> None:
         self.world.calls.append(("return_exported_sender", {}))
 
+    # -- the auth world (PR-2) --------------------------------------------
+    #
+    # These model the *protocol*, not Telegram's cryptography: the fake
+    # cannot verify an SRP proof, so it accepts any `inputCheckPasswordSRP`
+    # carrying the current `srp_id` and rejects `inputCheckPasswordEmpty`
+    # when a password is set. That is the branch the operations actually
+    # have to get right; "was this the correct password" is tested by making
+    # the request fail (`world.fail_next(..., PasswordHashInvalidError)`),
+    # which is the only honest way to model a check we do not perform.
+
+    @property
+    def auth(self) -> AuthWorld:
+        return self.world.auth
+
+    def _check_password(self, given: Any) -> None:
+        from telethon.errors import RPCError
+
+        if not self.auth.password:
+            return
+        if type(given).__name__ == "InputCheckPasswordEmpty":
+            raise RPCError("request", "PASSWORD_HASH_INVALID", 400)
+        if self.auth.srp_id_invalid_once:
+            self.auth.srp_id_invalid_once = False
+            self.auth.srp_id += 1
+            raise RPCError("request", "SRP_ID_INVALID", 400)
+        if int(getattr(given, "srp_id", 0)) != self.auth.srp_id:
+            raise RPCError("request", "SRP_ID_INVALID", 400)
+
+    # sessions -------------------------------------------------------------
+
+    def _raw_GetAuthorizationsRequest(self, request: Any) -> Any:
+        return types.account.Authorizations(
+            authorization_ttl_days=self.auth.authorization_ttl_days,
+            authorizations=list(self.auth.authorizations),
+        )
+
+    def _raw_ResetAuthorizationRequest(self, request: Any) -> bool:
+        before = len(self.auth.authorizations)
+        self.auth.authorizations = [
+            a for a in self.auth.authorizations if int(a.hash) != int(request.hash)
+        ]
+        return before != len(self.auth.authorizations)
+
+    def _raw_ResetAuthorizationsRequest(self, request: Any) -> bool:
+        self.auth.authorizations = [
+            a for a in self.auth.authorizations if getattr(a, "current", False)
+        ]
+        return True
+
+    def _raw_ChangeAuthorizationSettingsRequest(self, request: Any) -> bool:
+        for auth in self.auth.authorizations:
+            if int(auth.hash) != int(request.hash):
+                continue
+            if request.confirmed:
+                auth.unconfirmed = None
+            if request.call_requests_disabled is not None:
+                auth.call_requests_disabled = request.call_requests_disabled
+            if request.encrypted_requests_disabled is not None:
+                auth.encrypted_requests_disabled = request.encrypted_requests_disabled
+        return True
+
+    def _raw_SetAuthorizationTTLRequest(self, request: Any) -> bool:
+        self.auth.authorization_ttl_days = int(request.authorization_ttl_days)
+        return True
+
+    def _raw_GetConnectedBotsRequest(self, request: Any) -> Any:
+        return types.account.ConnectedBots(connected_bots=[], users=[])
+
+    def _raw_AcceptLoginTokenRequest(self, request: Any) -> Any:
+        created = make_authorization(90210, device="Web", app="Telegram Web")
+        self.auth.authorizations.append(created)
+        return created
+
+    def _raw_ExportLoginTokenRequest(self, request: Any) -> Any:
+        return types.auth.LoginToken(expires=None, token=b"fake-token")
+
+    # websites -------------------------------------------------------------
+
+    def _raw_GetWebAuthorizationsRequest(self, request: Any) -> Any:
+        return types.account.WebAuthorizations(
+            authorizations=list(self.auth.web_authorizations),
+            users=[make_user(4242, username="examplebot")],
+        )
+
+    def _raw_ResetWebAuthorizationRequest(self, request: Any) -> bool:
+        self.auth.web_authorizations = [
+            a for a in self.auth.web_authorizations if int(a.hash) != int(request.hash)
+        ]
+        return True
+
+    def _raw_ResetWebAuthorizationsRequest(self, request: Any) -> bool:
+        self.auth.web_authorizations = []
+        return True
+
+    def _raw_BlockRequest(self, request: Any) -> bool:
+        return True
+
+    # passkeys -------------------------------------------------------------
+
+    def _raw_GetPasskeysRequest(self, request: Any) -> Any:
+        return types.account.Passkeys(passkeys=list(self.auth.passkeys))
+
+    def _raw_DeletePasskeyRequest(self, request: Any) -> bool:
+        self.auth.passkeys = [p for p in self.auth.passkeys if p.id != request.id]
+        return True
+
+    # the cloud password ---------------------------------------------------
+
+    def _raw_GetPasswordRequest(self, request: Any) -> Any:
+        return self.auth.password_state()
+
+    def _raw_GetPasswordSettingsRequest(self, request: Any) -> Any:
+        self._check_password(request.password)
+        return types.account.PasswordSettings(email=self.auth.recovery_email or None)
+
+    def _raw_UpdatePasswordSettingsRequest(self, request: Any) -> bool:
+        from telethon.errors import RPCError
+
+        self._check_password(request.password)
+        settings = request.new_settings
+        if settings.email and not self.auth.recovery_email:
+            self.auth.recovery_email = settings.email
+            raise RPCError("request", "EMAIL_UNCONFIRMED_6", 400)
+        if settings.new_password_hash == b"" and settings.new_algo is None:
+            self.auth.password = ""
+            self.auth.hint = ""
+            self.auth.has_secure_values = False
+        elif settings.new_password_hash:
+            self.auth.password = "set"
+        if settings.hint is not None:
+            self.auth.hint = settings.hint
+        return True
+
+    def _raw_ConfirmPasswordEmailRequest(self, request: Any) -> bool:
+        return True
+
+    def _raw_ResendPasswordEmailRequest(self, request: Any) -> bool:
+        return True
+
+    def _raw_CancelPasswordEmailRequest(self, request: Any) -> bool:
+        self.auth.recovery_email = ""
+        return True
+
+    def _raw_GetTmpPasswordRequest(self, request: Any) -> Any:
+        self._check_password(request.password)
+        return types.account.TmpPassword(
+            tmp_password=self.auth.tmp_password,
+            valid_until=datetime.now(timezone.utc),
+        )
+
+    def _raw_ResetPasswordRequest(self, request: Any) -> Any:
+        return types.account.ResetPasswordRequestedWait(until_date=datetime.now(timezone.utc))
+
+    def _raw_DeclinePasswordResetRequest(self, request: Any) -> bool:
+        self.auth.pending_reset_date = None
+        return True
+
+    def _raw_CheckPasswordRequest(self, request: Any) -> Any:
+        self._check_password(request.password)
+        self.world.authorized = True
+        return types.auth.Authorization(user=self.world.me)
+
+    def _raw_RequestPasswordRecoveryRequest(self, request: Any) -> Any:
+        return types.auth.PasswordRecovery(email_pattern="a**@e*****e.com")
+
+    def _raw_CheckRecoveryPasswordRequest(self, request: Any) -> bool:
+        return True
+
+    def _raw_RecoverPasswordRequest(self, request: Any) -> Any:
+        self.auth.password = ""
+        return types.auth.Authorization(user=self.world.me)
+
+    # account-level switches -----------------------------------------------
+
+    def _raw_GetAccountTTLRequest(self, request: Any) -> Any:
+        return types.AccountDaysTTL(days=self.auth.account_ttl_days)
+
+    def _raw_SetAccountTTLRequest(self, request: Any) -> bool:
+        self.auth.account_ttl_days = int(request.ttl.days)
+        return True
+
+    def _raw_UpdateDeviceLockedRequest(self, request: Any) -> bool:
+        self.auth.device_locked_for = int(request.period)
+        return True
+
+    def _raw_DeleteAccountRequest(self, request: Any) -> bool:
+        self.auth.logged_out = True
+        return True
+
+    def _raw_InvalidateSignInCodesRequest(self, request: Any) -> bool:
+        return True
+
+    # phone / email --------------------------------------------------------
+
+    def _sent_code(self, kind: Any = None) -> Any:
+        return types.auth.SentCode(
+            type=kind or self.auth.sent_code_type or types.auth.SentCodeTypeApp(length=5),
+            phone_code_hash="hash-abcd",
+            next_type=types.auth.CodeTypeSms(),
+            timeout=60,
+        )
+
+    def _raw_SendCodeRequest(self, request: Any) -> Any:
+        self.world.calls.append(("send_code_request", request.phone_number))
+        return self._sent_code()
+
+    def _raw_ResendCodeRequest(self, request: Any) -> Any:
+        return self._sent_code(types.auth.SentCodeTypeSms(length=5))
+
+    def _raw_CancelCodeRequest(self, request: Any) -> bool:
+        return True
+
+    def _raw_ReportMissingCodeRequest(self, request: Any) -> bool:
+        return True
+
+    def _raw_SignInRequest(self, request: Any) -> Any:
+        if self.auth.signup_required:
+            return types.auth.AuthorizationSignUpRequired(terms_of_service=self.auth.terms)
+        self.world.authorized = True
+        return types.auth.Authorization(
+            user=self.world.me, future_auth_token=self.auth.future_auth_token
+        )
+
+    def _raw_SignUpRequest(self, request: Any) -> Any:
+        self.world.authorized = True
+        return types.auth.Authorization(user=self.world.me)
+
+    def _raw_ImportBotAuthorizationRequest(self, request: Any) -> Any:
+        self.world.authorized = True
+        return types.auth.Authorization(user=self.world.me)
+
+    def _raw_LogOutRequest(self, request: Any) -> Any:
+        self.world.authorized = False
+        self.auth.logged_out = True
+        return types.auth.LoggedOut(future_auth_token=self.auth.future_auth_token)
+
+    def _raw_SendChangePhoneCodeRequest(self, request: Any) -> Any:
+        return self._sent_code()
+
+    def _raw_ChangePhoneRequest(self, request: Any) -> Any:
+        return self.world.me
+
+    def _raw_SendConfirmPhoneCodeRequest(self, request: Any) -> Any:
+        return self._sent_code()
+
+    def _raw_ConfirmPhoneRequest(self, request: Any) -> bool:
+        return True
+
+    def _raw_SendVerifyPhoneCodeRequest(self, request: Any) -> Any:
+        return self._sent_code()
+
+    def _raw_VerifyPhoneRequest(self, request: Any) -> bool:
+        return True
+
+    def _raw_SendVerifyEmailCodeRequest(self, request: Any) -> Any:
+        return types.account.SentEmailCode(email_pattern="a**@e*****e.com", length=6)
+
+    def _raw_VerifyEmailRequest(self, request: Any) -> Any:
+        return types.account.EmailVerified(email="ada@example.com")
+
+    def _raw_ResetLoginEmailRequest(self, request: Any) -> Any:
+        return self._sent_code(
+            types.auth.SentCodeTypeEmailCode(email_pattern="a**@e*****e.com", length=6)
+        )
+
+    # help.* ---------------------------------------------------------------
+
+    def _raw_GetAppConfigRequest(self, request: Any) -> Any:
+        """`help.getAppConfig`, for both the auth world and the chat limits.
+
+        The chat group reads its dialog and channel limits out of the same
+        call the auth group reads its suggestions out of, so the defaults for
+        both are seeded here and a test overrides either through
+        `world.auth.app_config`.
+        """
+        config = dict(self.auth.app_config)
+        config.setdefault("pending_suggestions", list(self.auth.pending_suggestions))
+        config.setdefault("dismissed_suggestions", list(self.auth.dismissed_suggestions))
+        config.setdefault("dialogs_pinned_limit_default", 5)
+        config.setdefault("channels_limit_default", 500)
+        return types.help.AppConfig(hash=1, config=_json_value(config))
+
+    def _raw_GetPromoDataRequest(self, request: Any) -> Any:
+        pending = list(self.auth.pending_suggestions) or ["VALIDATE_PHONE_NUMBER"]
+        if self.auth.promo_peer is None:
+            return types.help.PromoData(
+                expires=None,
+                pending_suggestions=pending,
+                dismissed_suggestions=list(self.auth.dismissed_suggestions),
+                chats=[],
+                users=[],
+            )
+        return types.help.PromoData(
+            expires=datetime.now(timezone.utc),
+            pending_suggestions=pending,
+            dismissed_suggestions=list(self.auth.dismissed_suggestions),
+            chats=[],
+            users=[],
+            peer=self.auth.promo_peer,
+            psa_type="covid",
+        )
+
+    def _raw_HidePromoDataRequest(self, request: Any) -> bool:
+        self.auth.promo_peer = None
+        return True
+
+    def _raw_DismissSuggestionRequest(self, request: Any) -> bool:
+        self.auth.dismissed_suggestions.append(request.suggestion)
+        return True
+
+    def _raw_GetTermsOfServiceUpdateRequest(self, request: Any) -> Any:
+        if self.auth.terms is None:
+            return types.help.TermsOfServiceUpdateEmpty(expires=datetime.now(timezone.utc))
+        return types.help.TermsOfServiceUpdate(
+            expires=datetime.now(timezone.utc), terms_of_service=self.auth.terms
+        )
+
+    def _raw_AcceptTermsOfServiceRequest(self, request: Any) -> bool:
+        self.auth.terms = None
+        return True
+
+    def _raw_GetSupportRequest(self, request: Any) -> Any:
+        return types.help.Support(phone_number="+42777", user=make_user(333000, first="Support"))
+
+    def _raw_GetSupportNameRequest(self, request: Any) -> Any:
+        return types.help.SupportName(name="Telegram Support")
+
+    def _raw_GetInviteTextRequest(self, request: Any) -> Any:
+        return types.help.InviteText(message="Join me on Telegram!")
+
+    def _raw_GetUserInfoRequest(self, request: Any) -> Any:
+        return types.help.UserInfo(
+            message="a note", entities=[], author="agent", date=datetime.now(timezone.utc)
+        )
+
+    def _raw_EditUserInfoRequest(self, request: Any) -> Any:
+        return types.help.UserInfo(
+            message=request.message, entities=[], author="agent", date=datetime.now(timezone.utc)
+        )
+
+    def _raw_GetPassportConfigRequest(self, request: Any) -> Any:
+        return types.help.PassportConfig(
+            hash=1, countries_langs=types.DataJSON(data='{"DE": "de", "RU": "ru"}')
+        )
+
+    # smsjobs --------------------------------------------------------------
+
+    def _raw_GetStatusRequest(self, request: Any) -> Any:
+        return types.smsjobs.Status(
+            recent_sent=0,
+            recent_since=None,
+            recent_remains=100,
+            total_sent=0,
+            total_since=None,
+            terms_url="https://telegram.org/tos/sms",
+            allow_international=None,
+        )
+
+    def _raw_IsEligibleToJoinRequest(self, request: Any) -> Any:
+        return types.smsjobs.EligibleToJoin(
+            terms_url="https://telegram.org/tos/sms", monthly_sent_sms=0
+        )
+
+    def _raw_JoinRequest(self, request: Any) -> bool:
+        return True
+
+    def _raw_LeaveRequest(self, request: Any) -> bool:
+        return True
+
+    def _raw_UpdateSettingsRequest(self, request: Any) -> bool:
+        return True
+
+    # passport -------------------------------------------------------------
+
+    def _raw_GetAllSecureValuesRequest(self, request: Any) -> Any:
+        return list(self.auth.secure_values)
+
+    def _raw_GetSecureValueRequest(self, request: Any) -> Any:
+        wanted = {type(t).__name__ for t in request.types}
+        return [v for v in self.auth.secure_values if type(v.type).__name__ in wanted]
+
+    def _raw_DeleteSecureValueRequest(self, request: Any) -> bool:
+        wanted = {type(t).__name__ for t in request.types}
+        self.auth.secure_values = [
+            v for v in self.auth.secure_values if type(v.type).__name__ not in wanted
+        ]
+        return True
+
+    def _raw_GetAuthorizationFormRequest(self, request: Any) -> Any:
+        return types.account.AuthorizationForm(
+            required_types=[
+                types.SecureRequiredType(type=types.SecureValueTypePassport(), selfie_required=True)
+            ],
+            values=list(self.auth.secure_values),
+            errors=[],
+            users=[],
+            privacy_policy_url="https://example.com/privacy",
+        )
+
+    # updates --------------------------------------------------------------
+
+    def _raw_GetStateRequest(self, request: Any) -> Any:
+        return types.updates.State(
+            pts=90210, qts=0, date=datetime.now(timezone.utc), seq=0, unread_count=0
+        )
+
     # -- entities ----------------------------------------------------------
 
     async def get_entity(self, ref: Any) -> Any:
@@ -1845,7 +2392,13 @@ class _QrLogin:
     def __init__(self, world: World) -> None:
         self.world = world
         self.url = "tg://login?token=ZmFrZQ"
+        self.token = b"fake"
         self.expires = None
+
+    async def recreate(self) -> str:
+        """A QR token lives ~30 s; a client that never re-exports shows a dead one."""
+        self.world.calls.append(("qr_recreate", None))
+        return self.url
 
     async def wait(self, timeout: float | None = None) -> Any:
         failure = self.world._fail_next.pop("qr_wait", None)
@@ -1856,8 +2409,21 @@ class _QrLogin:
 
 
 class _FakeSession:
+    """Enough of a Telethon session that `StringSession.save()` works on it.
+
+    `account export` reads the live session rather than the file on disk, so
+    a fake without an auth key would make that operation untestable.
+    """
+
     def __init__(self) -> None:
+        from telethon.crypto import AuthKey
+
         self.saved = 0
+        self.dc_id = 4
+        self.server_address = "149.154.167.51"
+        self.port = 443
+        self.auth_key = AuthKey(bytes(range(256)))
+        self.takeout_id = None
 
     def save(self) -> None:
         self.saved += 1

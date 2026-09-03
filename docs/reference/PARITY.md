@@ -7,63 +7,64 @@ Coverage against the Telegram feature catalog, computed from the registry: every
 `covered` is implemented today. `acct%` is covered **plus** waived — an id that belongs to a group a later PR owns, named in `tlgr/data/parity_waivers.toml` with the PR that closes it. Ids whose feasibility is `not-applicable` or `prohibited` are excluded from the denominator once and never counted again.
 
 ```
-catalog 2026-09-02 — 135 operations, 205 invocable paths
+catalog 2026-09-02 — 188 operations, 287 invocable paths
 
 domain                        covered    req       %   acct%  ops
-auth_sessions_security              0     89    0.0%  100.0%  0
-bots_inline_payments               12    175    6.9%  100.0%  4
-calls_voicechats                    3    133    2.3%  100.0%  3
-contacts_users                     15    121   12.4%  100.0%  11
-dialogs_chats                     110    146   75.3%  100.0%  52
+auth_sessions_security             85     89   95.5%  100.0%  43
+bots_inline_payments               13    175    7.4%  100.0%  5
+calls_voicechats                    4    133    3.0%  100.0%  4
+contacts_users                     17    121   14.0%  100.0%  12
+dialogs_chats                     111    146   76.0%  100.0%  53
 groups_channels_admin              26    162   16.0%  100.0%  15
 media_files                         5    143    3.5%  100.0%  4
-messages_core                     156    167   93.4%  100.0%  51
+messages_core                     157    167   94.0%  100.0%  52
 polls_reactions_content           114    174   65.5%  100.0%  56
-profile_settings_privacy            6    178    3.4%  100.0%  5
+profile_settings_privacy           20    178   11.2%  100.0%  19
 stories                             3    120    2.5%  100.0%  3
-updates_sync_network                3    189    1.6%  100.0%  2
+updates_sync_network                4    189    2.1%  100.0%  3
 
 priority                      covered    req       %   acct%
-P0                                 64    178   36.0%  100.0%
-P1                                117    379   30.9%  100.0%
-P2                                135    610   22.1%  100.0%
-P3                                137    630   21.7%  100.0%
+P0                                 72    178   40.4%  100.0%
+P1                                146    379   38.5%  100.0%
+P2                                171    610   28.0%  100.0%
+P3                                170    630   27.0%  100.0%
 
-TOTAL                             453   1797   25.2%  100.0%
+TOTAL                             559   1797   31.1%  100.0%
 excluded: not-applicable 79, prohibited 40
-uncovered: 1344 (1344 waived with a PR number)
+uncovered: 1238 (1238 waived with a PR number)
 ```
 
 ## By domain
 
 | Domain | Covered | Required | % | Accounted % | Ops |
 |---|---:|---:|---:|---:|---:|
-| `auth_sessions_security` | 0 | 89 | 0.0% | 100.0% | 0 |
-| `bots_inline_payments` | 12 | 175 | 6.9% | 100.0% | 4 |
-| `calls_voicechats` | 3 | 133 | 2.3% | 100.0% | 3 |
-| `contacts_users` | 15 | 121 | 12.4% | 100.0% | 11 |
-| `dialogs_chats` | 110 | 146 | 75.3% | 100.0% | 52 |
+| `auth_sessions_security` | 85 | 89 | 95.5% | 100.0% | 43 |
+| `bots_inline_payments` | 13 | 175 | 7.4% | 100.0% | 5 |
+| `calls_voicechats` | 4 | 133 | 3.0% | 100.0% | 4 |
+| `contacts_users` | 17 | 121 | 14.0% | 100.0% | 12 |
+| `dialogs_chats` | 111 | 146 | 76.0% | 100.0% | 53 |
 | `groups_channels_admin` | 26 | 162 | 16.0% | 100.0% | 15 |
 | `media_files` | 5 | 143 | 3.5% | 100.0% | 4 |
-| `messages_core` | 156 | 167 | 93.4% | 100.0% | 51 |
+| `messages_core` | 157 | 167 | 94.0% | 100.0% | 52 |
 | `polls_reactions_content` | 114 | 174 | 65.5% | 100.0% | 56 |
-| `profile_settings_privacy` | 6 | 178 | 3.4% | 100.0% | 5 |
+| `profile_settings_privacy` | 20 | 178 | 11.2% | 100.0% | 19 |
 | `stories` | 3 | 120 | 2.5% | 100.0% | 3 |
-| `updates_sync_network` | 3 | 189 | 1.6% | 100.0% | 2 |
+| `updates_sync_network` | 4 | 189 | 2.1% | 100.0% | 3 |
 
 ## By priority
 
 | Priority | Covered | Required | % | Accounted % |
 |---|---:|---:|---:|---:|
-| P0 | 64 | 178 | 36.0% | 100.0% |
-| P1 | 117 | 379 | 30.9% | 100.0% |
-| P2 | 135 | 610 | 22.1% | 100.0% |
-| P3 | 137 | 630 | 21.7% | 100.0% |
+| P0 | 72 | 178 | 40.4% | 100.0% |
+| P1 | 146 | 379 | 38.5% | 100.0% |
+| P2 | 171 | 610 | 28.0% | 100.0% |
+| P3 | 170 | 630 | 27.0% | 100.0% |
 
 ## Partial coverage
 
 | Catalog id | Operation | Why partial |
 |---|---|---|
+| `auth.passport-authorize` | `passport.form.get` | The request can be read in full; accepting it needs the Passport secure-value crypto Telethon does not provide (see `passport authorize`). |
 | `bots.rich-message-translate` | `message.translate` | Rich-body translation is layer 229 and refused with NOT_SUPPORTED. |
 | `bots.rich-message-view` | `message.get` | --rich is refused with NOT_SUPPORTED until Telethon carries layer 229. |
 | `contacts-users.contacts-sort` | `chat.list` | Peer search here is a substring match over the dialog list; the global one is `contact search`. `--sort` orders chats, not contacts. |
@@ -73,6 +74,7 @@ uncovered: 1344 (1344 waived with a PR number)
 | `groups-channels-admin.pending-suggestions` | `chat.get` | Pending suggestions are reported here; dismissing one is PR-7's. |
 | `messages-core.ephemeral-messages` | `message.delete` | --revert needs layer 229's ephemeral.* namespace and is refused. |
 | `messages-core.send-rich-message` | `message.send` | A layer-229 rich body is refused with NOT_SUPPORTED: the pinned Telethon speaks layer 227 and cannot serialise inputRichMessage*. |
+| `passport.authorization` | `passport.authorize` | The request is readable (`passport form get`); acceptance needs the Passport secure-value crypto and raises NOT_SUPPORTED. |
 | `richmsg.compose-ai` | `message.compose` | Composing a rich body needs layer 229 and is refused with NOT_SUPPORTED. |
 | `richmsg.get` | `message.get` | --rich is refused with NOT_SUPPORTED until Telethon carries layer 229. |
 | `richmsg.send` | `message.send` | A layer-229 rich body is refused with NOT_SUPPORTED: the pinned Telethon speaks layer 227 and cannot serialise inputRichMessage*. |
@@ -96,6 +98,7 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `messages-core.delete-call-history` | P1 | Delete call-log messages | waived until PR-3: The call log is a chat-level history (PR-3). |
 | `messages-core.message-watch-events` | P1 | Live stream of new / edited / deleted messages and read receipts | waived until PR-4: The live message stream is the event bus surface (PR-4). |
 | `stars.balance` | P1 | Telegram Stars balance | waived until PR-12: the Star balance and top-up packages are the `stars` surface (PR-12). |
+| `auth.url-auth-bot-button` | P2 | Log in to a website via a bot's login button (Seamless Telegram Login) | waived until PR-10: Seamless Telegram Login is a bot keyboard button (messages.requestUrlAuth / acceptUrlAuth); it lands with the bots group in PR-10. |
 | `contact.note` | P2 | Private note on a contact | waived until PR-5: contact cards, notes and birthdays are the `contact` surface (PR-5). |
 | `contact.share-token` | P2 | Share your contact via a link | waived until PR-5: contact cards, notes and birthdays are the `contact` surface (PR-5). |
 | `contact.suggest-birthday` | P2 | Suggest a birthday for a contact | waived until PR-5: contact cards, notes and birthdays are the `contact` surface (PR-5). |
@@ -105,7 +108,6 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `dialogs.business-bot-bar` | P2 | Manage connected business bot in a chat | waived until PR-12: The connected-business-bot bar is a business setting (PR-12). |
 | `dialogs.business-link-create` | P2 | Create a business 'link to chat' | waived until PR-12: Business chat links are a business setting (PR-12). |
 | `dialogs.business-link-list` | P2 | List business chat links (with view counters) | waived until PR-12: Business chat links are a business setting (PR-12). |
-| `dialogs.frozen-account` | P2 | Frozen account state | waived until PR-12: The frozen-account state is reported by the account surface (PR-12). |
 | `dialogs.hide-stories-peer` | P2 | Hide a peer's stories from the strip | waived until PR-8: Hiding a peer's stories is the story strip (PR-8). |
 | `dialogs.notify-scope-defaults` | P2 | Default notification settings per chat type | waived until PR-12: Scope-wide defaults are `notify set` (PR-12). |
 | `dialogs.presence-watch` | P2 | Peer online status / last seen | waived until PR-4: Online/last-seen is an update stream (PR-4). |
@@ -130,11 +132,13 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `messages-core.quick-reply-list` | P2 | Quick replies (business shortcuts): list shortcuts and their messages | waived until PR-12: Business quick-reply shortcuts are a business setting (PR-12); `message send --quick-reply` uses one. |
 | `messages-core.quick-reply-manage` | P2 | Create/edit/reorder/delete quick reply shortcuts and their messages | waived until PR-12: Business quick-reply shortcuts are a business setting (PR-12). |
 | `messages-core.translate-channel-autotranslation` | P2 | Automatic translation of a channel's posts | waived until PR-3: Channel auto-translation is a channel setting (PR-3). |
-| `messages-core.ttl-default-new-chats` | P2 | Default auto-delete timer for new chats | waived until PR-3: The default auto-delete timer is an account-wide chat setting (PR-3). |
 | `auction.acquired-gifts` | P3 | Gifts I won in an auction | waived until PR-12: collectible-gift auctions are the `gift` surface (PR-12). |
 | `auction.active-list` | P3 | Auctions I am bidding in | waived until PR-12: collectible-gift auctions are the `gift` surface (PR-12). |
 | `auction.position-estimate` | P3 | My position in the auction | waived until PR-12: collectible-gift auctions are the `gift` surface (PR-12). |
 | `auction.state` | P3 | Auction state and bid ladder | waived until PR-12: collectible-gift auctions are the `gift` surface (PR-12). |
+| `auth.countries-list` | P3 | Country code list and phone number patterns | waived until PR-4: help.getCountriesList is config/help plumbing shared with phone formatting; it lands with `config` in PR-4. |
+| `auth.oauth-deep-link` | P3 | Authorize an OAuth login request from a website/app (tg://oauth deep link) | waived until PR-10: A tg://oauth request is a bot authorization flow (messages.requestUrlAuth); it lands with the bots group in PR-10. |
+| `auth.prelogin-language` | P3 | Suggested interface language on the login screen | waived until PR-4: The suggested login-screen language comes from the language pack, which is the `config`/langpack surface in PR-4. |
 | `contact.birthday-accept` | P3 | Accept a suggested birthday | waived until PR-5: contact cards, notes and birthdays are the `contact` surface (PR-5). |
 | `contact.birthdays` | P3 | Contacts' birthdays (gift prompts) | waived until PR-5: contact cards, notes and birthdays are the `contact` surface (PR-5). |
 | `dialogs.blocked-set-bulk` | P3 | Replace the whole blocklist | waived until PR-5: Replacing the whole blocklist is `user block --from-file` (PR-5). |

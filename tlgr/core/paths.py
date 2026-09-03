@@ -16,6 +16,7 @@ each call site:
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import stat
@@ -31,6 +32,7 @@ __all__ = [
     "audit_permissions",
     "default_base",
     "refuse_production_home",
+    "secure_session_files",
     "validate_alias",
     "write_private",
 ]
@@ -120,6 +122,26 @@ def write_private(path: Path, data: bytes | str, *, mode: int = 0o600) -> None:
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+
+
+def secure_session_files(session_path: Path) -> None:
+    """chmod 600 the session db and every sqlite sibling Telethon creates.
+
+    A session file is a complete account credential. v1 chmod-ed the one
+    imported by `account import` and left the one written by `account add`
+    at whatever the umask allowed — 0644 on a default Ubuntu box, which is
+    every other user on the machine holding the account.
+
+    Telethon appends `.session` and creates `-journal`/`-wal`/`-shm`
+    siblings at runtime, so the glob is the point: securing only the file
+    whose name we know leaves the write-ahead log readable.
+    """
+    parent = session_path.parent
+    if not parent.exists():
+        return
+    for path in parent.glob(session_path.name + "*"):
+        with contextlib.suppress(OSError):
+            path.chmod(0o600)
 
 
 class TlgrPaths:

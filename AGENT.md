@@ -4,7 +4,82 @@ Compact reference for LLM agents. Use `--json` for all calls.
 
 ## Authentication
 
-**Authentication is interactive and requires a human.** Run `tlgr account add <phone>` manually, complete 2FA, then hand the CLI to your agent. Agents work with pre-authenticated accounts only.
+**Someone has to read the code; nothing else needs a human.** Logging in is a
+sequence of ordinary commands, not one process held open on a prompt — the
+pending login lives in the daemon and is mirrored to
+`<account>/login-state.json` at 0600, so the two steps can run minutes apart
+in different processes.
+
+```
+tlgr auth send-code +989123456789 --alias work --api-id 12345 --api-hash-env TLGR_API_HASH
+→ {"account": "work", "phone": "989…89", "type": "app", "code_hash": "5f2a…", "timeout": 60}
+
+tlgr auth verify-code 12345 --alias work --password-env TLGR_2FA_PASSWORD
+→ {"status": "authorized", "alias": "work", "user_id": 4242, "username": "me"}
+```
+
+`type` says where to look: `app` (another logged-in Telegram session — what a
+third-party api_id usually gets), `sms`, `sms_word`, `sms_phrase`, `call`,
+`missed_call`, `flash_call`, `fragment`, `email`, `setup_email_required`.
+
+Three terminal states, all reportable:
+
+| `status` | Exit | What to do |
+|---|---|---|
+| `authorized` | 0 | done |
+| *(password wanted)* | 4 | `AUTH_PASSWORD_REQUIRED`; add `--password-env TLGR_2FA_PASSWORD` and re-run the same line |
+| `signup_required` | 0 | the number has no account — `tlgr auth sign-up --first-name … --accept-tos`, deliberately a separate command |
+
+**Secrets never go in argv.** Every one takes `--x-env`, `--x-stdin` or
+`--x-file` and no value flag: `--password-env` (default `TLGR_2FA_PASSWORD`),
+`--new-password-env`, `--token-env` (default `TLGR_BOT_TOKEN`),
+`--api-hash-env` (default `TLGR_API_HASH`).
+
+Other ways in:
+
+```
+tlgr account add --bot --token-env TLGR_BOT_TOKEN --alias helper   # one call; records kind=bot
+tlgr auth qr --alias work                                         # streams tg://login tokens until approved
+tlgr account import ./work.session --alias work                   # stop the source client first
+tlgr auth code list                                               # the code Telegram sent *this* account (chat 777000)
+```
+
+`tlgr account add <phone>` is the wrapper: it starts the login and returns the
+`auth verify-code` line to run next. `auth code list` is what makes scripted
+multi-account onboarding possible — account B reads the code for account A's
+new login.
+
+## Account health
+
+`tlgr account check --json` answers the question `daemon status` cannot: a
+dropped connection and a revoked auth key look identical from outside.
+
+```
+tlgr account check                 # every configured account, one row each
+→ [{"alias": "work", "state": "authorized", "user_id": 4242}]
+```
+
+`state` is `authorized`, `revoked` (exit 4 territory — log in again),
+`banned` / `deactivated` (write to recover@telegram.org), `frozen` (carries
+Telegram's own `appeal_url`; the appeal is a web form) or `offline` — which is
+*not* a statement about the account, only about reaching it.
+
+Security housekeeping an agent can run on a schedule:
+
+```
+tlgr account session list --unconfirmed     # a new login nobody has confirmed yet
+→ [{"hash": "9021045", "device_model": "Unknown", "ip": "203.0.113.7",
+    "deny_deadline": "2026-09-10T09:14:07Z", "unconfirmed": true}]
+
+tlgr account session terminate 9021045 --deny --yes   # "it wasn't me"
+tlgr account session terminate --all-others --yes
+tlgr account website list                   # a different list from Devices
+tlgr account logout work --yes              # revokes it server-side; `account remove` does not
+```
+
+`deny_deadline` is `date_created + authorization_autoconfirm_period`: after it
+Telegram confirms the login for you, so a check that runs less often than that
+window will never see an unconfirmed session at all.
 
 ## Global Flags
 
@@ -557,8 +632,8 @@ tlgr agent exit-codes
 → {"exit_codes": {...}}
 
 tlgr agent parity [--uncovered] [--domain NAME]
-→ {"catalog_version": "...", "required": 1797, "covered": 200, "percent": 11.1,
-   "by_priority": {...}, "by_domain": {...}, "uncovered": [...], "waivers": 1597}
+→ {"catalog_version": "...", "required": 1797, "covered": 306, "percent": 17.0,
+   "by_priority": {...}, "by_domain": {...}, "uncovered": [...], "waivers": 1491}
 
 tlgr schema [command_path...]
 → {"schema_version": 2, "build": "2.0.0", "command": {...}}

@@ -42,7 +42,7 @@ tlgr v1 expresses every operation **five times** — a Click command, an aiohttp
 * **Not a TDLib port.** tlgr wraps Telethon 1.44 (layer 227). Layer-229-only features (communities, ephemeral/guest-chat messages, the new keyboard model, Firebase login) are out of scope; the escape hatch for calling them is documented (§6.14) but not used.
 * **No WebRTC.** `call`/`vc`/`conference` cover signalling, membership, invite links, recording toggles and metadata — never audio/video media.
 * **No bot-only surface.** tlgr is a *user account* client. Bot-only methods (`bot_only`, 31 methods in the error DB) are catalogued as `not-applicable`.
-* **No account creation.** `auth.signUp` is never called. Sign-up-required responses are a hard error with a human hint.
+* **No *silent* account creation.** A login never signs up: `auth.signIn` answering `authorizationSignUpRequired` stops with `{"status": "signup_required"}` and names the other command. Registering is its own explicitly consented step (`auth sign-up --first-name … --accept-tos`, PR-2); tlgr never accepts Terms of Service implicitly.
 * **No official-app impersonation.** Never borrow an official `api_id`/`api_hash`; never spoof `device_model`/`lang_pack` to obtain official-app behaviour (ToS violation, gets accounts banned).
 * **Not Windows-native in v2.0.** `fork`, `flock`, `AF_UNIX` and peer-credential checks are POSIX. Windows is a v2.x item (named pipes + a different singleton); the trove classifier is corrected to say so.
 * **No plaintext secret handling in argv.** Ever.

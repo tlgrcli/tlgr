@@ -9,7 +9,7 @@ Full Telegram account control from the terminal. Agent-friendly, daemon-based, w
 pip install tlgr
 ```
 
-> **For agents:** Authentication requires human interaction (phone code, 2FA). Run `tlgr account add` yourself first, then hand the CLI to your agent. See [AGENT.md](AGENT.md) for the full agent reference.
+> **For agents:** logging in is a sequence of ordinary commands — `tlgr auth send-code` then `tlgr auth verify-code` — so only *reading the code* needs a person. Secrets come from `--x-env`/`--x-stdin`/`--x-file`, never argv. See [AGENT.md](AGENT.md) for the full agent reference.
 
 ## Quickstart
 
@@ -221,19 +221,76 @@ tlgr profile update                    # --first-name, --last-name, --bio, --pho
 ### Accounts
 
 ```bash
-tlgr account add <phone>              # authenticate a new account
+tlgr account add <phone>              # starts the login; prints the verify-code line to run next
+tlgr account add --bot --token-env TLGR_BOT_TOKEN --alias helper
 tlgr account import <file.session>    # import an existing Telethon session (no re-auth); --alias
+tlgr account export <alias> --out ./work.string
 tlgr account list                     # (* = default)
 tlgr account switch <alias>
-tlgr account remove <alias>
+tlgr account logout <alias>           # revokes the authorization on the server
+tlgr account remove <alias>           # local only, unless --logout
 tlgr account rename <old> <new>
 tlgr account info [alias]
+tlgr account check [alias]            # authorized / revoked / banned / frozen / offline
 tlgr account sync [alias]             # refresh stored profile from live Telegram
 ```
 
-`info` and `sync` take the alias positionally, but also honor the global
-`-a/--account` flag; with neither, they fall back to the active account.
-Session files are stored `0600` — they are full account credentials.
+`info`, `check` and `sync` take the alias positionally, but also honor the
+global `-a/--account` flag; with neither, they fall back to the active
+account. Session files are stored `0600` — they are full account credentials,
+and so is anything `account export` produces, which is why it writes to a
+`0600` file unless `--stdout` says you meant to print it.
+
+**`logout` is not `remove`.** `logout` revokes the authorization server-side
+(v1 never did, so a removed account went on showing in every other client's
+Devices list) and keeps the alias so you can log back in; `remove` deletes the
+local record and says, in its answer, that the server-side session is still
+alive unless you passed `--logout`.
+
+### Logging in
+
+```bash
+tlgr auth send-code <phone> --alias work --api-id 12345 --api-hash-env TLGR_API_HASH
+tlgr auth verify-code <code> --alias work --password-env TLGR_2FA_PASSWORD
+tlgr auth qr --alias work             # streams tg://login tokens until one is approved
+tlgr auth recover                     # forgot the cloud password (recovery email)
+tlgr auth code list                   # the login code Telegram sent this account (chat 777000)
+tlgr auth tos                         # read the Terms of Service; --accept is a separate run
+```
+
+The pending login lives in the daemon — which owns the session file, so two
+processes never open it at once — and is mirrored to
+`<account>/login-state.json` at `0600`, which is what lets the two steps run
+minutes apart. `auth verify-code` exits 4 when the account has a cloud
+password and none was supplied: add `--password-env` and re-run the same line.
+
+### Sessions, passwords and connected websites
+
+```bash
+tlgr account session list [--unconfirmed] [--pending-password]
+tlgr account session terminate <hash>... | --all-others [--deny]
+tlgr account session confirm <hash>            # "yes, it's me"
+tlgr account session set <hash> --calls off    # --secret-chats, --auto-terminate 6m
+tlgr account session accept-qr 'tg://login?token=…'   # approve another device
+
+tlgr account password get [--verify]           # 2FA status; --password-env to reveal the recovery address
+tlgr account password set --new-password-env TLGR_2FA_NEW_PASSWORD --hint "…"
+tlgr account password change --password-env … --new-password-env …
+tlgr account password remove --password-env … --yes
+
+tlgr account website list                      # a *different* list from Devices
+tlgr account website revoke <hash>... [--block-bot]
+tlgr account passkey list                      # auditable; a CLI can never create one
+tlgr account ttl set 12m                       # delete my account if I am away this long
+```
+
+`account session list` derives two fields you cannot get by hand:
+`deny_deadline` (after it, Telegram auto-confirms an unrecognised login for
+you) and `sensitive_actions_eligible_at` (what `SESSION_TOO_FRESH_X` counts
+down to). `password change` refuses when the account stores Telegram Passport
+documents unless `--keep-passport` acknowledges that they will be lost — the
+secure secret is encrypted under the password and tlgr does not implement the
+KDF that would re-encrypt it.
 
 ### Daemon
 
@@ -525,10 +582,15 @@ log_level = "info"
 ## Multi-Account
 
 ```bash
-tlgr account add +15551234567 --alias personal
+tlgr account add +15551234567 --alias personal   # then: tlgr auth verify-code <code> --alias personal
 tlgr account add +15559876543 --alias work
 tlgr -a personal message send @friend "Hi"
 ```
+
+There is no cap on accounts (official apps stop at three). `tlgr auth code
+list -a personal` reads the login code Telegram delivered to *that* account's
+service chat, which is how a second account can be onboarded without anyone
+reading a phone.
 
 To eliminate wrong-account mistakes in scripts and agents, enable strict
 account selection — every command must then carry an explicit `-a <alias>`

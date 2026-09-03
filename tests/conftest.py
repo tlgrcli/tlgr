@@ -24,6 +24,26 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fake_telethon import World, fake_client_factory
 
 
+@pytest.fixture(autouse=True)
+def _never_the_real_home(monkeypatch, tmp_path_factory):
+    """No test ever reads or writes the developer's own `~/.tlgr`.
+
+    `TlgrPaths` falls back to `~/.tlgr` when `TLGR_HOME` is unset, so a test
+    that forgets the `tlgr_home` fixture silently operates on a real
+    installation — real accounts, a real session file, a real daemon socket.
+    That is not a hypothetical: a dev run against a live home is how you
+    revoke somebody's session in the middle of their work.
+
+    Autouse and unconditional-when-unset, so forgetting the fixture costs a
+    junk temp directory rather than a production account. A test that sets
+    `TLGR_HOME` itself (the `tlgr_home` fixture, or one testing the fallback)
+    still wins: this runs first and is overwritten.
+    """
+    if not os.environ.get("TLGR_HOME"):
+        monkeypatch.setenv("TLGR_HOME", str(tmp_path_factory.mktemp("tlgr-guard")))
+    yield
+
+
 @pytest.fixture
 def tlgr_home(monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     """An isolated tlgr home, pointed at by `TLGR_HOME`.

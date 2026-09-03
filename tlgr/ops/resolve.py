@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Any
 from urllib.parse import parse_qsl, urlsplit
 
-from tlgr.core.errors import IndeterminateError, NotFoundError, UsageError
+from tlgr.core.errors import NotFoundError, UsageError
 from tlgr.core.pagination import PageKind, build_page, decode_cursor
 from tlgr.core.timefmt import fmt_dt
 from tlgr.models.base import Request
@@ -301,6 +301,20 @@ def _match_country(number: str, table: list[dict[str, Any]]) -> dict[str, Any] |
     return best
 
 
+def _unknown(ctx: OpContext, out: ResolvedPhone, reason: str) -> ResolvedPhone:
+    """Report a lookup we could not settle, and make the process fail closed.
+
+    An exception would throw away `reason` and the formatting work already
+    done; `mark_indeterminate` keeps the body and still exits 13.
+    """
+    out.resolved = False
+    out.reason = reason
+    mark = getattr(ctx, "mark_indeterminate", None)
+    if callable(mark):
+        mark(reason)
+    return out
+
+
 async def phone(ctx: OpContext, req: PhoneReq) -> ResolvedPhone:
     """Resolve a phone number to a user, without adding a contact.
 
@@ -344,19 +358,21 @@ async def phone(ctx: OpContext, req: PhoneReq) -> ResolvedPhone:
         if name == "PhoneNumberInvalidError":
             raise UsageError(f"{number} is not a valid phone number", field="phone") from exc
         # Everything else — including PHONE_NOT_OCCUPIED — is "we could not
-        # establish it", and a caller must not read it as "no account".
-        out.reason = (
+        # establish it", and a caller must not read it as "no account". The
+        # body is still returned so `reason` survives; the exit code is 13.
+        return _unknown(
+            ctx,
+            out,
             f"{type(exc).__name__}: the number may have no Telegram account, OR its "
-            "owner may refuse lookups by phone. These are not distinguishable."
+            "owner may refuse lookups by phone. These are not distinguishable.",
         )
-        raise IndeterminateError(out.reason) from exc
 
     entities = list(getattr(result, "users", None) or []) + list(
         getattr(result, "chats", None) or []
     )
     if not entities:
-        raise IndeterminateError(
-            "the server answered with no peer: no account, or a privacy refusal"
+        return _unknown(
+            ctx, out, "the server answered with no peer: no account, or a privacy refusal"
         )
     out.peer = _peer_of(entities[0])
     out.resolved = True
@@ -493,7 +509,16 @@ async def peer(ctx: OpContext, req: PeerReq) -> Page[ResolvedRef]:
         row.resolved = row.marked_id is not None
         rows.append(row)
 
-    return Page(items=rows, has_more=False, total=len(rows))
+    limit = int(getattr(ctx, "limit", None) or 100)
+    return build_page(
+        rows[:limit],
+        op="resolve.peer",
+        kind=PageKind.LOCAL,
+        state={"offset": limit},
+        account=ctx.account,
+        has_more=len(rows) > limit,
+        total=len(rows),
+    )
 
 
 def _source_for(kind: str) -> str:
@@ -520,6 +545,7 @@ SPEC_PEER = OperationSpec(
         "is the trap `user dialog-status` was built around. Access hashes "
         "are per account and never printed."
     ),
+    paginated=PageKind.LOCAL,
     rate_class="resolve",
     columns=("ref", "id", "type", "title", "source"),
     headers=("Ref", "Id", "Kind", "Title", "How"),
@@ -571,7 +597,7 @@ def classify(url: str) -> ResolvedLink:
     link does not know which of the twenty kinds it is — that is the
     question. `unknown` is a real answer and keeps the raw path.
     """
-    out = ResolvedLink(raw_url=url)
+    out = ResolvedLink(kind="unknown", raw_url=url)
     scheme, segments, query = _split(url)
     out.scheme = scheme
     if not scheme:

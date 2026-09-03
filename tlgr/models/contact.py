@@ -35,6 +35,7 @@ __all__ = [
     "Contact",
     "ContactAdded",
     "ContactImport",
+    "ContactModel",
     "ContactNote",
     "ContactRemoved",
     "ContactRenamed",
@@ -64,7 +65,19 @@ __all__ = [
 StatusKind = Literal["online", "offline", "recently", "last_week", "last_month", "empty"]
 
 
-class UserStatus(Model):
+class ContactModel(Model, omit_defaults=False):
+    """A contact/user shape that emits every field, including the false ones.
+
+    `Model` drops defaults so that "absent" can mean "not applicable"; here
+    the opposite is true. `already: false`, `resolved: false`, `has_dialog:
+    null`, `added: false` and `hidden: false` are the *answer*, and AGENT.md
+    publishes them — a caller that reads a missing key as "not set" would
+    re-introduce exactly the three-valued confusion this group exists to
+    remove.
+    """
+
+
+class UserStatus(ContactModel):
     """Online / last-seen, with the honesty flag Telegram attaches to it.
 
     `by_me` is set on the coarse buckets (`recently`, `last_week`,
@@ -82,7 +95,7 @@ class UserStatus(Model):
     by_me: bool = False
 
 
-class Contact(Model):
+class Contact(ContactModel):
     """A row of the contact list.
 
     `phone` is present only where privacy allows it, which is why it is
@@ -116,7 +129,7 @@ class Contact(Model):
     saved_count: int | None = None
 
 
-class ContactAdded(Model):
+class ContactAdded(ContactModel):
     """The reply to `contact add`, keeping v1's `added`/`user_id` keys.
 
     `imported` empty with `retry` empty is the ambiguous case: the number has
@@ -137,7 +150,7 @@ class ContactAdded(Model):
     reason: str | None = None
 
 
-class ContactRenamed(Model):
+class ContactRenamed(ContactModel):
     """v1's shape, unchanged: this is only *our* view of their name."""
 
     saved: bool = True
@@ -146,19 +159,19 @@ class ContactRenamed(Model):
     last_name: str = ""
 
 
-class ContactRemoved(Model):
+class ContactRemoved(ContactModel):
     removed: bool = False
     user_ids: list[int] = []
     phones: list[str] = []
 
 
-class ContactNote(Model):
+class ContactNote(ContactModel):
     user_id: int = 0
     note: str | None = None
     cleared: bool = False
 
 
-class ImportedPhone(Model):
+class ImportedPhone(ContactModel):
     """One line of a phonebook import, and what the server made of it."""
 
     phone: str = ""
@@ -169,7 +182,7 @@ class ImportedPhone(Model):
     retry: bool = False
 
 
-class ContactImport(Model):
+class ContactImport(ContactModel):
     """`contact import`, reporting the retry list rather than swallowing it.
 
     `retry` is not an error list: the server asks for those numbers to be
@@ -185,7 +198,7 @@ class ContactImport(Model):
     dry_run: bool = False
 
 
-class ContactSync(Model):
+class ContactSync(ContactModel):
     """The diff between a local phonebook file and the server's list."""
 
     to_import: list[ImportedPhone] = []
@@ -195,7 +208,7 @@ class ContactSync(Model):
     deleted: int = 0
 
 
-class SavedPhoneContact(Model):
+class SavedPhoneContact(ContactModel):
     """A number this account once uploaded, whether or not it has an account."""
 
     phone: str = ""
@@ -207,14 +220,14 @@ class SavedPhoneContact(Model):
     invite_text: str | None = None
 
 
-class BlockedPeer(Model):
+class BlockedPeer(ContactModel):
     peer: Peer
     date: str | None = None
     date_unix: int | None = None
     kind: Literal["main", "stories"] = "main"
 
 
-class BlockResult(Model):
+class BlockResult(ContactModel):
     """`user block` / `user unblock`. `already` means no RPC was needed."""
 
     peer_id: int = 0
@@ -225,7 +238,7 @@ class BlockResult(Model):
     reported: bool = False
 
 
-class BlockedSet(Model):
+class BlockedSet(ContactModel):
     """`contact blocked set` — a replacement, so the diff is the answer."""
 
     count: int = 0
@@ -235,13 +248,13 @@ class BlockedSet(Model):
     applied: bool = False
 
 
-class CloseFriends(Model):
+class CloseFriends(ContactModel):
     user_ids: list[int] = []
     count: int = 0
     contacts: list[Contact] = []
 
 
-class SignUp(Model):
+class SignUp(ContactModel):
     """A contact who joined Telegram, found as a service message."""
 
     user_id: int = 0
@@ -256,20 +269,20 @@ class SignUp(Model):
     notify: bool | None = None
 
 
-class TopPeer(Model):
+class TopPeer(ContactModel):
     peer: Peer
     category: str = "correspondents"
     rating: float = 0.0
 
 
-class TopPeerState(Model):
+class TopPeerState(ContactModel):
     enabled: bool | None = None
     reset_peer: int | None = None
     category: str | None = None
     disabled_by_user: bool = False
 
 
-class FoundPeer(Model):
+class FoundPeer(ContactModel):
     """A `contacts.search` hit, labelled with where it came from.
 
     `source` is the whole point: `mine` is a contact or an already-known
@@ -285,7 +298,7 @@ class FoundPeer(Model):
     url: str | None = None
 
 
-class ContactRequirement(Model):
+class ContactRequirement(ContactModel):
     """Can I message this user, and at what price?"""
 
     user_id: int = 0
@@ -294,7 +307,7 @@ class ContactRequirement(Model):
     contact_require_premium: bool | None = None
 
 
-class DialogStatus(Model):
+class DialogStatus(ContactModel):
     """SEMANTICS FROZEN (AGENT.md). Three answers, never conflated.
 
     `resolved=true, has_dialog=true`  — a dialog exists; `message_count` is
@@ -319,14 +332,14 @@ class DialogStatus(Model):
     scanned_dialogs: int | None = None
 
 
-class StoriesHiddenPeer(Model):
+class StoriesHiddenPeer(ContactModel):
     user_id: int = 0
     username: str | None = None
     hidden: bool = False
     already: bool = False
 
 
-class StoriesHidden(Model):
+class StoriesHidden(ContactModel):
     """SEMANTICS FROZEN (AGENT.md): v1's four keys, plus a bulk tail.
 
     A single target answers exactly as v1 did. Extra targets appear in
@@ -342,7 +355,7 @@ class StoriesHidden(Model):
     all_hidden: bool | None = None
 
 
-class UserProfile(Model):
+class UserProfile(ContactModel):
     """`user get` — v1's keys, plus everything `users.getFullUser` carries.
 
     v1's `id`, `first_name`, `last_name`, `username`, `phone`, `bio`,
@@ -388,8 +401,9 @@ class UserProfile(Model):
     fallback_photo: Photo | None = None
     emoji_status_id: int | None = None
     colors: dict[str, Any] | None = None
-    #: True only when `users.getFullUser` ran; the fields below are absent
-    #: otherwise rather than defaulted, so "not asked" is distinguishable.
+    #: True only when `users.getFullUser` ran. Everything below it is null
+    #: until it does, and this flag is how "not asked" is told apart from
+    #: "asked, and the answer was nothing".
     full: bool = False
     blocked: bool | None = None
     blocked_my_stories_from: bool | None = None
@@ -414,20 +428,20 @@ class UserProfile(Model):
     min: bool = False
 
 
-class SuggestedBirthday(Model):
+class SuggestedBirthday(ContactModel):
     user_id: int = 0
     birthday: str = ""
     sent: bool = False
 
 
-class UserLink(Model):
+class UserLink(ContactModel):
     url: str = ""
     kind: str = "profile"
     expires: str | None = None
     expires_unix: int | None = None
 
 
-class MusicTrack(Model):
+class MusicTrack(ContactModel):
     id: int = 0
     title: str | None = None
     performer: str | None = None
@@ -437,7 +451,7 @@ class MusicTrack(Model):
     file: str | None = None
 
 
-class ProfilePhoto(Model):
+class ProfilePhoto(ContactModel):
     id: int = 0
     date: str | None = None
     date_unix: int | None = None
@@ -447,14 +461,14 @@ class ProfilePhoto(Model):
     file: str | None = None
 
 
-class PhotoResult(Model):
+class PhotoResult(ContactModel):
     user_id: int = 0
     photo_id: int | None = None
     suggested: bool = False
     reset: bool = False
 
 
-class PersonalChannel(Model):
+class PersonalChannel(ContactModel):
     """The channel a user pinned to their profile, with a post preview."""
 
     user_id: int = 0
@@ -463,12 +477,12 @@ class PersonalChannel(Model):
     posts: list[Message] = []
 
 
-class ContactShared(Model):
+class ContactShared(ContactModel):
     chat_id: int = 0
     msg_id: int = 0
     contact: Contact | None = None
 
 
-class PhoneShared(Model):
+class PhoneShared(ContactModel):
     user_id: int = 0
     shared: bool = False

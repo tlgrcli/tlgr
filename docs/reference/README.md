@@ -2,7 +2,7 @@
 
 # Command reference
 
-355 operations across 29 groups, generated from the operation registry. Groups still served by v1's hand-written commands are not listed here; they arrive with their own PR.
+393 operations across 32 groups, generated from the operation registry. Groups still served by v1's hand-written commands are not listed here; they arrive with their own PR.
 
 | Group | Operations | Reference |
 |---|---:|---|
@@ -13,6 +13,7 @@
 | `chat` | 34 | [chat.md](chat.md) |
 | `conference` | 9 | [conference.md](conference.md) |
 | `config` | 13 | [config.md](config.md) |
+| `contact` | 20 | [contact.md](contact.md) |
 | `daemon` | 14 | [daemon.md](daemon.md) |
 | `draft` | 3 | [draft.md](draft.md) |
 | `emoji` | 3 | [emoji.md](emoji.md) |
@@ -29,10 +30,12 @@
 | `poll` | 9 | [poll.md](poll.md) |
 | `proxy` | 6 | [proxy.md](proxy.md) |
 | `reaction` | 17 | [reaction.md](reaction.md) |
+| `resolve` | 5 | [resolve.md](resolve.md) |
 | `search` | 3 | [search.md](search.md) |
 | `sticker` | 20 | [sticker.md](sticker.md) |
 | `sync` | 5 | [sync.md](sync.md) |
 | `todo` | 5 | [todo.md](todo.md) |
+| `user` | 13 | [user.md](user.md) |
 | `vc` | 23 | [vc.md](vc.md) |
 | `webhook` | 3 | [webhook.md](webhook.md) |
 

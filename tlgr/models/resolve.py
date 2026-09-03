@@ -69,7 +69,7 @@ LinkKind = Literal[
 ]
 
 
-class ResolvedRef(Model):
+class ResolvedRef(Model, omit_defaults=False):
     """One `resolve peer` answer, with the strategy that produced it."""
 
     ref: str = ""
@@ -87,14 +87,14 @@ class ResolvedRef(Model):
     reason: str | None = None
 
 
-class ResolvedUsername(Model):
+class ResolvedUsername(Model, omit_defaults=False):
     kind: str = ""
     peer: Peer | None = None
     username: str = ""
     access_hash_cached: bool = False
 
 
-class ResolvedPhone(Model):
+class ResolvedPhone(Model, omit_defaults=False):
     """A phone lookup. `resolved=false` with a `reason` is exit 13, not 5."""
 
     phone: str = ""
@@ -116,7 +116,7 @@ class ResolvedLink(Model):
     precisely the question.
     """
 
-    kind: LinkKind = "unknown"
+    kind: LinkKind
     raw_url: str = ""
     scheme: str = ""
     peer: Peer | None = None
@@ -153,7 +153,7 @@ class ResolvedLink(Model):
     draft_saved: bool = False
 
 
-class CachedPeerRow(Model):
+class CachedPeerRow(Model, omit_defaults=False):
     """One entry of the per-account resolver cache.
 
     `min_context` is the `(chat, message)` where a `min` user was seen —

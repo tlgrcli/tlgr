@@ -56,6 +56,7 @@ from tlgr.ops.contact import (
     birthday_text,
     client_of,
     display_name,
+    e164,
     fetch_user,
     input_user,
     mark_already,
@@ -112,21 +113,6 @@ class GetReq(Request):
     full: Annotated[
         bool, opt("--full", help="Add users.getFullUser (bio, note, birthday, business, blocked).")
     ] = True
-    refresh: Annotated[bool, opt("--refresh", help="Ignore the 60 s userFull cache.")] = False
-    field: Annotated[
-        str | None,
-        choice(
-            "id",
-            "username",
-            "phone",
-            "bio",
-            "birthday",
-            "link",
-            "status",
-            "name",
-            help="Emit a single field for scripting.",
-        ),
-    ] = None
     translate_bio: Annotated[
         str | None, opt("--translate-bio", metavar="LANG", help="Translate the bio.")
     ] = None
@@ -192,7 +178,7 @@ def profile_model(user: Any, *, full: Any = None, has_hash: bool = False) -> Use
             for u in (getattr(user, "usernames", None) or [])
             if getattr(u, "username", None)
         ],
-        phone=getattr(user, "phone", None),
+        phone=e164(getattr(user, "phone", "") or "") or None,
         status=status_word(status),
         status_detail=status_model(raw_id, status) if status is not None else None,
         is_self=bool(getattr(user, "is_self", False)),
@@ -314,25 +300,6 @@ async def get(ctx: OpContext, req: GetReq) -> UserProfile:
         except Exception as exc:  # pragma: no cover - server-side feature gate
             ctx.warn(f"bio translation is unavailable: {exc}")
 
-    if req.field:
-        # `--field` is a projection, not a different response: the other keys
-        # are cleared rather than the shape changing, so a script that reads
-        # `.username` keeps working either way.
-        keep = {
-            "id": "id",
-            "username": "username",
-            "phone": "phone",
-            "bio": "bio",
-            "birthday": "birthday",
-            "status": "status",
-            "name": "name",
-        }.get(req.field)
-        if req.field == "link":
-            keep = "username"
-        if keep is not None:
-            blank = UserProfile(id=model.id)
-            setattr(blank, keep, getattr(model, keep))
-            return blank
     return model
 
 
@@ -349,7 +316,9 @@ SPEC_GET = OperationSpec(
         "`inputUserFromMessage` can be built. `userFull` is invalidated "
         "server-side after 60 s and whenever our own last-seen privacy "
         "changes. No photo plus an empty status is a signal, not a verdict: "
-        "this never claims 'they blocked you'."
+        "this never claims 'they blocked you'. To pull out one field, use "
+        "the global `--select bio --results-only` rather than a per-command "
+        "projection flag."
     ),
     legacy_paths=("user get",),
     columns=("id", "first_name", "username", "bio", "is_bot", "status", "stories_hidden"),
@@ -857,7 +826,18 @@ async def can_message(ctx: OpContext, req: CanMessageReq) -> Page[ContactRequire
                 contact_require_premium=kind == "premium" or None,
             )
         )
-    return Page(items=rows, has_more=False, total=len(rows))
+    limit, state = _window(ctx, "user.can-message", PageKind.LOCAL, default=100)
+    offset = int(state.get("offset", 0) or 0)
+    window = rows[offset : offset + limit]
+    return build_page(
+        window,
+        op="user.can-message",
+        kind=PageKind.LOCAL,
+        state={"offset": offset + len(window)},
+        account=ctx.account,
+        has_more=offset + len(window) < len(rows),
+        total=len(rows),
+    )
 
 
 SPEC_CAN_MESSAGE = OperationSpec(
@@ -870,6 +850,7 @@ SPEC_CAN_MESSAGE = OperationSpec(
         "`free` | `premium` | `paid` (with `stars_amount`). The send-time "
         "failure this predicts is PRIVACY_PREMIUM_REQUIRED (403)."
     ),
+    paginated=PageKind.LOCAL,
     columns=("user_id", "result", "stars_amount"),
     headers=("User", "Requirement", "Stars"),
     example={"items": [{"user_id": 777123, "result": "free"}], "has_more": False},

@@ -31,11 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Any
 
-from tlgr.core.errors import (
-    IndeterminateError,
-    NotFoundError,
-    UsageError,
-)
+from tlgr.core.errors import NotFoundError, UsageError
 from tlgr.core.pagination import PageKind, build_page, decode_cursor
 from tlgr.core.paths import write_private
 from tlgr.core.timefmt import fmt_dt, parse_dt, to_unix
@@ -274,7 +270,8 @@ def contact_model(user: Any, *, mutual: bool | None = None) -> Contact:
             for u in (getattr(user, "usernames", None) or [])
             if getattr(u, "username", None)
         ],
-        phone=getattr(user, "phone", None),
+        # Telegram sends a bare number; tlgr emits E.164 everywhere.
+        phone=e164(getattr(user, "phone", "") or "") or None,
         mutual=bool(getattr(user, "mutual_contact", False)) if mutual is None else bool(mutual),
         close_friend=bool(getattr(user, "close_friend", False)),
         premium=bool(getattr(user, "premium", False)),
@@ -1320,6 +1317,7 @@ SPEC_STATUS_LIST = OperationSpec(
         "theirs. Never report it as the peer hiding from you."
     ),
     aliases=("contact.statuses",),
+    paginated=PageKind.LOCAL,
     columns=("user_id", "kind", "was_online"),
     headers=("User", "State", "Last seen"),
     example={"items": [{"user_id": 777123, "kind": "online"}], "has_more": False},
@@ -1355,7 +1353,8 @@ async def birthday_list(ctx: OpContext, req: BirthdayListReq) -> Page[Contact]:
         if req.window and not _within(entry.birthday, today, req.window):
             continue
         rows.append(row)
-    return Page(items=rows, has_more=False, total=len(rows))
+    limit, state = _window(ctx, "contact.birthday.list", PageKind.LOCAL, default=100)
+    return _slice(rows, ctx, "contact.birthday.list", int(state.get("offset", 0) or 0), limit)
 
 
 def _within(birthday: Any, today: datetime, window: int) -> bool:
@@ -1382,6 +1381,7 @@ SPEC_BIRTHDAY_LIST = OperationSpec(
         "chat-list bar is `chat promo list --dismiss BIRTHDAY_CONTACTS_TODAY`."
     ),
     aliases=("contact.birthdays",),
+    paginated=PageKind.LOCAL,
     columns=("id", "name", "birthday", "age"),
     headers=("Id", "Name", "Birthday", "Age"),
     example={
@@ -1819,10 +1819,15 @@ async def top_list(ctx: OpContext, req: TopListReq) -> Page[TopPeer]:
         fn.GetTopPeersRequest(offset=offset, limit=limit, hash=0, **flags)
     )
     if type(result).__name__ == "TopPeersDisabled":
-        raise IndeterminateError(
+        reason = (
             "frequent-contact collection is turned off for this account, so there are "
             "no ratings to report; turn it back on with `tlgr contact top set on`"
         )
+        ctx.warn(reason)
+        mark = getattr(ctx, "mark_indeterminate", None)
+        if callable(mark):
+            mark(reason)
+        return Page(items=[], has_more=False, total=0)
     known = peers_by_id(getattr(result, "users", None), getattr(result, "chats", None))
     names = {value: key for key, value in _TOP_TYPES.items()}
     rows: list[TopPeer] = []

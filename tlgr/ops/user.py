@@ -79,6 +79,7 @@ _EXAMPLE_USER: dict[str, Any] = {
     "bio": "somewhere warm",
     "is_bot": False,
     "status": "offline",
+    "stories_hidden": False,
 }
 
 
@@ -671,6 +672,7 @@ SPEC_DIALOG_STATUS = OperationSpec(
         "has_dialog": True,
         "message_count": 12,
         "source": "peer_dialogs",
+        "reason": None,
     },
     example_args="user dialog-status @alice",
     covers=("contacts-users.user-dialog-exists", "dialogs.dialog-exists"),

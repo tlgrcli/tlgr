@@ -37,14 +37,23 @@ The update transport follows: `events`, `watch`, `daemon`, `sync`, `net`,
 operations, 114 event types, and the `updates_sync_network` domain fully
 accounted for.
 
+Then `contact`, `user` and `resolve`: 38 operations covering the address book,
+one person's profile, both blocklists, the phonebook and the reference
+resolver every other group already leans on. `tlgr/cli/legacy/contact.py` and
+`tlgr/cli/legacy/user.py` are deleted, along with their eight IPC routes and
+the eight `ClientWrapper` methods behind them. The two semantics AGENT.md
+freezes are unchanged: `user dialog-status` is still three-valued and still
+exits 13 for "could not establish", and `user hide-stories` still reports
+`already` and sends nothing when there is nothing to do.
+
 ### Breaking
 
 Every change below applies **only to commands generated from the operation
 registry** — in this release that is the `message`, `draft`, `chat`,
 `folder`, `auth`, `account`, `passport`, `media`, `sticker`, `gif`, `emoji`,
 `events`, `watch`, `daemon`, `sync`, `net`, `proxy`, `config`, `job`,
-`webhook` and `export` groups, `tlgr completion`, `tlgr status`,
-`tlgr schema` and the `agent` group. Commands still
+`webhook`, `export`, `contact`, `user` and `resolve` groups,
+`tlgr completion`, `tlgr status`, `tlgr schema` and the `agent` group. Commands still
 hand-written under `tlgr/cli/legacy/` behave exactly as they did in v1 until
 their own migration PR, at which point these rules apply to them too.
 
@@ -83,6 +92,14 @@ status envelopes:
 | 10 | `job.list` | `{jobs: [...]}` | `Page[JobState]` | `--results-only` yields `{items, has_more, next_cursor, total}` |
 | 11 | `config.list` | the raw TOML document | `Page[ConfigEntry]`, one row per key with `value`, `default` and `source`; secrets redacted | `--defaults` includes keys still at their default; `config get <key>` is the point lookup |
 | 12 | `config.keys` | `{keys: {name: {section, key, description}}}` | `Page[ConfigKey]` with `type`, `default`, `scope`, `requires_restart` and `help` | key names gained a section prefix (`idle_timeout` → `daemon.idle_timeout`); both spellings are accepted by `config get`/`set`/`unset` |
+
+Three more changed in the contact and user groups:
+
+| # | Change | v1 | v2 | Migration |
+|---|---|---|---|---|
+| 10 | `contact.list`, `contact.search` | `{"contacts":[…],"has_more":…}` | `Page[Contact]` | `--results-only` yields `{items, has_more, next_cursor, total}`; every v1 row key (`id`, `name`, `username`, `phone`) is still there, and `phone` is now normalised to E.164 |
+| 11 | `contact.add` | `{"added": true, "user_id": 123}` | the same two keys plus `imported`, `retry`, `popular_importers` and `reason` | additive. `reason` is filled when the import came back empty, because "no such account" and "the owner hides their number" are indistinguishable and v1 reported the first |
+| 12 | `user.get` | `{"id","first_name","username","bio","is_bot","status","stories_hidden",…}` | the same keys, plus everything `users.getFullUser` carries | additive; `--select` reaches any of it. `--field` is gone: the global `--select bio --results-only` does the same thing on every command |
 
 `tlgr agent whoami --json` reports `output_schema_version: 2`, so an agent can
 branch on the two sets without probing for each change.

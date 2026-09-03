@@ -28,7 +28,7 @@ ROOT = Path(__file__).resolve().parent.parent
 P0_FLOOR = 148
 
 #: The floor for total covered ids. Same rule, weaker guarantee.
-COVERED_FLOOR = 1132
+COVERED_FLOOR = 1285
 
 #: Every P0 catalog id PR-1's own operations cover, named rather than
 #: counted, so a swap (one dropped, one added) cannot pass a count check

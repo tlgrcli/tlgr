@@ -3416,6 +3416,66 @@ class FakeTelegramClient:
     def _raw_GetDeepLinkInfoRequest(self, request: Any) -> Any:
         return types.help.DeepLinkInfo(message=self.world.deep_link_message)
 
+    # -- the reads `resolve link --open` performs ---------------------------
+    #
+    # Every one of them is a *read*: `resolve link` classifies and reports,
+    # and the acting verb lives in another group. These exist so that the
+    # dispatcher's per-kind branch is exercised rather than assumed.
+
+    def _raw_CheckChatInviteRequest(self, request: Any) -> Any:
+        return types.ChatInvite(
+            title="Shared group",
+            photo=types.PhotoEmpty(id=0),
+            participants_count=12,
+            color=0,
+        )
+
+    def _raw_GetStickerSetRequest(self, request: Any) -> Any:
+        return types.messages.StickerSet(
+            set=types.StickerSet(
+                id=1,
+                access_hash=1,
+                title="Pack",
+                short_name="Pack",
+                count=0,
+                hash=0,
+            ),
+            packs=[],
+            keywords=[],
+            documents=[],
+        )
+
+    def _raw_GetBoostsStatusRequest(self, request: Any) -> Any:
+        return types.premium.BoostsStatus(
+            level=3,
+            current_level_boosts=10,
+            boosts=12,
+            boost_url="https://t.me/boost/news",
+        )
+
+    def _raw_CheckGiftCodeRequest(self, request: Any) -> Any:
+        return types.payments.CheckedGiftCode(
+            date=datetime.now(timezone.utc),
+            days=90,
+            chats=[],
+            users=[],
+            used_date=datetime.now(timezone.utc),
+        )
+
+    def _raw_GetStoriesByIDRequest(self, request: Any) -> Any:
+        return types.stories.Stories(count=0, stories=[], chats=[], users=[])
+
+    def _raw_GetThemeRequest(self, request: Any) -> Any:
+        return types.Theme(id=1, access_hash=1, slug="Slug", title="Midnight")
+
+    def _raw_GetWallPaperRequest(self, request: Any) -> Any:
+        return types.WallPaper(
+            id=77,
+            access_hash=1,
+            slug="Slug",
+            document=types.DocumentEmpty(id=0),
+        )
+
     # -- stories -----------------------------------------------------------
 
     def _raw_TogglePeerStoriesHiddenRequest(self, request: Any) -> bool:

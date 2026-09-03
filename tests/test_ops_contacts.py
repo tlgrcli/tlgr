@@ -65,7 +65,7 @@ def book(world):
     carol = make_user(CAROL, username="carol", first="Carol")
     world.add_user(carol)
 
-    world.add_channel(make_channel(NEWS, title="News"))
+    world.add_channel(make_channel(NEWS, title="News")).username = "newschan"
     world.add_channel(make_channel(OTHER, title="Other"))
     world.search_mine = [ALICE]
     world.search_global = [CAROL]
@@ -161,6 +161,15 @@ class TestContactList:
         with pytest.raises(Exception) as caught:
             await result(client, in_thread, "contact.list", {"export": "csv"})
         assert classify(caught.value).exit_code == EXIT_USAGE
+
+    async def test_with_stories_flags_unseen_ones(self, live_daemon, client, in_thread, book):
+        book.users[ALICE].stories_max_id = types.RecentStory(max_id=9)
+        book.stories_read[ALICE] = 4
+        book.users[BOB].stories_max_id = types.RecentStory(max_id=2)
+        book.stories_read[BOB] = 2
+        rows = await result(client, in_thread, "contact.list", {"with_stories": True})
+        unseen = {row["id"]: row["has_unseen_stories"] for row in rows}
+        assert unseen == {ALICE: True, BOB: False}
 
     async def test_unregistered_lists_numbers_with_no_account(
         self, live_daemon, client, in_thread, book
@@ -808,6 +817,33 @@ class TestUserGet:
         assert envelope["result"]["id"] == ALICE
         assert any("getFullUser" in w for w in envelope["meta"]["warnings"])
 
+    async def test_a_bio_can_be_translated(self, live_daemon, client, in_thread, book):
+        from telethon.tl import types as tl
+
+        book.user_full[ALICE] = {"about": "irgendwo warm"}
+        book.raw["TranslateTextRequest"] = tl.messages.TranslateResult(
+            result=[tl.TextWithEntities(text="somewhere warm", entities=[])]
+        )
+        profile = await result(
+            client, in_thread, "user.get", {"user": "@alice", "translate_bio": "en"}
+        )
+        assert profile["bio_translated"] == "somewhere warm"
+
+    async def test_a_min_user_is_addressed_through_the_message_it_was_seen_in(
+        self, live_daemon, client, in_thread, book
+    ):
+        """Telethon builds `inputUserFromMessage` for nobody; tlgr does."""
+        book.add_message(NEWS_ID, "posted", message_id=88)
+        envelope = await call(
+            client,
+            in_thread,
+            "user.get",
+            {"user": str(CAROL), "from_chat": str(NEWS_ID), "from_message": 88},
+        )
+        built = book.called("GetUsersRequest")[0].id[0]
+        assert type(built).__name__ == "InputUserFromMessage"
+        assert envelope["result"]["id"] == CAROL
+
     async def test_an_unknown_username_is_not_found(self, live_daemon, client, in_thread, book):
         with pytest.raises(Exception) as caught:
             await result(client, in_thread, "user.get", {"user": "@ghost"})
@@ -1322,6 +1358,46 @@ class TestResolveLink:
             client, in_thread, "resolve.link", {"url": "t.me/alice/12/34", "no_network": True}
         )
         assert (answer["thread_id"], answer["msg_id"]) == (12, 34)
+
+    @pytest.mark.parametrize(
+        ("url", "check"),
+        [
+            ("t.me/+AbCdEf", lambda a: a["title"] == "Shared group"),
+            ("t.me/addstickers/Pack", lambda a: a["title"] == "Pack"),
+            ("t.me/addtheme/Slug", lambda a: a["title"] == "Midnight"),
+            ("t.me/bg/Slug", lambda a: a["opened"]["id"] == 77),
+            ("t.me/boost/newschan", lambda a: a["opened"]["level"] == 3),
+            ("t.me/giftcode/AbC", lambda a: a["opened"]["used"] is True),
+            ("t.me/alice/s/12", lambda a: a["opened"]["stories"] == 0),
+            ("t.me/contact/Token", lambda a: a["peer"]["id"] in (ALICE, BOB, CAROL)),
+        ],
+    )
+    async def test_open_reads_but_never_acts(
+        self, live_daemon, client, in_thread, book, url, check
+    ):
+        answer = await result(client, in_thread, "resolve.link", {"url": url, "open": True})
+        assert check(answer)
+        # Nothing that *changes* the world may have been sent.
+        assert not book.called("ImportChatInviteRequest")
+        assert not book.called("InstallStickerSetRequest")
+
+    async def test_a_message_link_can_be_read(self, live_daemon, client, in_thread, book):
+        book.add_message(ALICE, "the post", message_id=4210)
+        answer = await result(
+            client, in_thread, "resolve.link", {"url": "t.me/alice/4210", "open": True}
+        )
+        assert answer["opened"]["text"] == "the post"
+
+    async def test_a_private_post_resolves_through_the_peer_cache(
+        self, live_daemon, client, in_thread, book
+    ):
+        """`t.me/c/<id>/<msg>` carries a bare channel id and nothing else."""
+        book.add_message(NEWS_ID, "private post", message_id=7)
+        answer = await result(
+            client, in_thread, "resolve.link", {"url": f"t.me/c/{NEWS}/7", "open": True}
+        )
+        assert answer["kind"] == "private-post"
+        assert answer["opened"]["text"] == "private post"
 
     async def test_a_shared_text_can_be_saved_as_a_draft(
         self, live_daemon, client, in_thread, book

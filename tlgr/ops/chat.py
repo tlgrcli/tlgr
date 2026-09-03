@@ -2348,7 +2348,9 @@ async def mention_list(ctx: OpContext, req: MentionListReq) -> Page[Message]:
         message_to_model(message, chat_id=chat_id)
         for message in (getattr(result, "messages", None) or [])
     ]
-    if req.read and items:
+    if req.read and items and ctx.dry_run:
+        ctx.warn(f"--dry-run: {len(items)} {req.kind}(s) would be marked read")
+    elif req.read and items:
         if req.kind == "reaction":
             await _affected_loop(ctx, lambda offset, p=peer: fn.ReadReactionsRequest(peer=p))
         elif req.kind == "poll-vote":
@@ -2374,10 +2376,13 @@ SPEC_MENTION_LIST = OperationSpec(
     response=Page[Message],
     impl=mention_list,
     summary="Unread mentions, reactions or poll votes of a chat",
+    description=(
+        "`--read` clears the queue it just listed, and honours --dry-run "
+        "itself so that listing stays available under it."
+    ),
     aliases=("chat.mentions", "chat.reactions", "chat.poll-votes"),
     paginated=PageKind.HISTORY,
-    mutating=True,
-    idempotent=True,
+    tags=frozenset({"mutating-checked"}),
     columns=("id", "date", "text"),
     headers=("ID", "Date", "Text"),
     example={
@@ -3228,7 +3233,9 @@ async def action_bar_get(ctx: OpContext, req: ActionBarGetReq) -> ActionBar:
     settings = getattr(result, "settings", result)
     model = action_bar(settings, chat_id=chat_id)
 
-    if req.hide:
+    if req.hide and ctx.dry_run:
+        ctx.warn("--dry-run: the action bar would be dismissed")
+    elif req.hide:
         await client(fn.HidePeerSettingsBarRequest(peer=peer))
         model.hidden = True
         ctx.emit("chat_action_bar", {"chat_id": chat_id, "hidden": True})
@@ -3244,10 +3251,9 @@ SPEC_ACTION_BAR_GET = OperationSpec(
     description=(
         "The bar's own buttons live elsewhere: `contact add`, "
         "`contact share-phone`, `user block`, `chat report --spam` and "
-        "`chat archive --undo`."
+        "`chat archive --undo`. `--hide` dismisses the bar and honours "
+        "--dry-run itself, so reading it stays available under one."
     ),
-    mutating=True,
-    idempotent=True,
     tags=frozenset({"mutating-checked"}),
     columns=("chat_id", "report_spam", "add_contact", "phone_country"),
     example={"chat_id": 777123, "report_spam": True, "phone_country": "DE"},

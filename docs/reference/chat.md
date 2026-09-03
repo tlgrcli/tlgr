@@ -45,13 +45,13 @@
 
 Read or dismiss the action bar of a chat (the anti-spam info box).
 
-The bar's own buttons live elsewhere: `contact add`, `contact share-phone`, `user block`, `chat report --spam` and `chat archive --undo`.
+The bar's own buttons live elsewhere: `contact add`, `contact share-phone`, `user block`, `chat report --spam` and `chat archive --undo`. `--hide` dismisses the bar and honours --dry-run itself, so reading it stays available under one.
 
 ```
 tlgr chat action-bar get <CHAT> [OPTIONS]
 ```
 
-**mutating · idempotent (reports `already`) · returns `ActionBar`**
+**returns `ActionBar`**
 
 | Argument | Type | Required | Meaning |
 |---|---|---|---|
@@ -423,11 +423,13 @@ Peer search here is a substring match over the dialog list; the global one is `c
 
 Unread mentions, reactions or poll votes of a chat.
 
+`--read` clears the queue it just listed, and honours --dry-run itself so that listing stays available under it.
+
 ```
 tlgr chat mention list <CHAT> [OPTIONS]
 ```
 
-**mutating · paginated (`HISTORY` cursor) · idempotent (reports `already`) · returns `Page[Message]`**
+**paginated (`HISTORY` cursor) · returns `Page[Message]`**
 
 | Argument | Type | Required | Meaning |
 |---|---|---|---|

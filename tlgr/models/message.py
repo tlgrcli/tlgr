@@ -144,11 +144,18 @@ class MessageEntity(Model):
 class Button(Model):
     text: str
     type: str
+    #: Flat row-major index across the whole markup. `bot press --button <n>`
+    #: takes exactly this number, which is why it is printed rather than left
+    #: for the caller to count.
+    n: int = 0
     data_b64: str | None = None
     url: str | None = None
     query: str | None = None
     user_id: int | None = None
     requires_password: bool = False
+    same_peer: bool = False
+    copy_text: str | None = None
+    button_id: int | None = None
 
 
 class ReplyMarkup(Model):

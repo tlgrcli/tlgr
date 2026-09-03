@@ -15,11 +15,13 @@ from typing import Any
 from tlgr.core.timefmt import fmt_dt, to_unix
 from tlgr.models.dialog import ActionBar, ChatTheme, ChatWallpaper, NotifySettings
 from tlgr.models.message import (
+    Button,
     MediaSummary,
     Message,
     MessageEntity,
     ReactionSummary,
     ReplyHeader,
+    ReplyMarkup,
     ServiceAction,
 )
 from tlgr.models.peer import Peer, Photo
@@ -36,6 +38,7 @@ __all__ = [
     "peer_id_of",
     "photo_summary",
     "reactions_summary",
+    "reply_markup",
     "service_action",
     "tl_snake",
     "wallpaper",
@@ -494,7 +497,64 @@ def message_to_model(
         views=getattr(message, "views", None),
         forwards=getattr(message, "forwards", None),
         edit_hide=bool(getattr(message, "edit_hide", False)),
+        reply_markup=reply_markup(getattr(message, "reply_markup", None)),
         link=link,
+    )
+
+
+def reply_markup(markup: Any) -> ReplyMarkup | None:
+    """A message's keyboard, in the schema `bot press` addresses buttons in.
+
+    PR-1 declared the shape and left it unfilled, which made the two P0 ids
+    about rendering a keyboard true only on paper: a caller could not see a
+    button, so a caller could not press one. The `n` on each button is the
+    flat row-major index `bot press --button <n>` takes, printed rather than
+    left to be counted.
+    """
+    from tlgr.ops._bots import BUTTON_TYPES
+
+    kinds = {
+        "ReplyInlineMarkup": "inline",
+        "ReplyKeyboardMarkup": "keyboard",
+        "ReplyKeyboardHide": "hide",
+        "ReplyKeyboardForceReply": "force_reply",
+    }
+    kind = kinds.get(type(markup).__name__)
+    if kind is None:
+        return None
+
+    rows: list[list[Button]] = []
+    index = 0
+    for row in getattr(markup, "rows", None) or []:
+        built: list[Button] = []
+        for button in getattr(row, "buttons", None) or []:
+            data = getattr(button, "data", None)
+            user_id = getattr(button, "user_id", None)
+            built.append(
+                Button(
+                    text=str(getattr(button, "text", "") or ""),
+                    type=BUTTON_TYPES.get(type(button).__name__, "unsupported"),
+                    n=index,
+                    data_b64=base64.b64encode(data).decode() if data else None,
+                    url=getattr(button, "url", None),
+                    query=getattr(button, "query", None),
+                    user_id=int(user_id) if isinstance(user_id, int) else None,
+                    requires_password=bool(getattr(button, "requires_password", False)),
+                    same_peer=bool(getattr(button, "same_peer", False)),
+                    copy_text=getattr(button, "copy_text", None),
+                    button_id=getattr(button, "button_id", None),
+                )
+            )
+            index += 1
+        rows.append(built)
+    return ReplyMarkup(
+        kind=kind,  # type: ignore[arg-type]
+        rows=rows,
+        resize=bool(getattr(markup, "resize", False)) or None,
+        single_use=bool(getattr(markup, "single_use", False)) or None,
+        selective=bool(getattr(markup, "selective", False)) or None,
+        persistent=bool(getattr(markup, "persistent", False)) or None,
+        placeholder=getattr(markup, "placeholder", None),
     )
 
 

@@ -380,7 +380,7 @@ class TestEditDeleteForward:
         assert classify(caught.value).exit_code == EXIT_USAGE
 
 
-class TestPinReadReact:
+class TestPinAndRead:
     async def test_pin_is_silent_by_default(self, live_daemon, client, in_thread, history):
         pinned = await result(client, in_thread, "message.pin", {"chat": "@alice", "msg_id": 103})
         assert pinned["pinned"] is True
@@ -414,24 +414,6 @@ class TestPinReadReact:
         history.read_inbox[ALICE] = 103
         page = await call(client, in_thread, "message.list", {"chat": "@alice", "unread": True})
         assert [item["id"] for item in page["result"]] == [105, 104]
-
-    async def test_a_reaction_reports_what_is_now_on_the_message(
-        self, live_daemon, client, in_thread, history
-    ):
-        out = await result(
-            client, in_thread, "message.react", {"chat": "@alice", "msg_id": 103, "emoji": "👍"}
-        )
-        assert out["reacted"] is True
-        assert out["reactions"]["mine"] == ["👍"]
-
-    async def test_a_duplicate_reaction_is_already(self, live_daemon, client, in_thread, history):
-        from telethon.errors import MessageNotModifiedError
-
-        history.fail_next("SendReactionRequest", MessageNotModifiedError(None))
-        envelope = await call(
-            client, in_thread, "message.react", {"chat": "@alice", "msg_id": 103, "emoji": "👍"}
-        )
-        assert envelope["result"]["already"] is True
 
 
 class TestSmallSurfaces:

@@ -49,8 +49,6 @@ from tlgr.models.message import (
     MessageEntity,
     PaidMessageSettings,
     PinResult,
-    ReactionSummary,
-    ReactResult,
     ReadReceipts,
     ReadResult,
     ReportResult,
@@ -2036,86 +2034,6 @@ SPEC_READ = OperationSpec(
         "messages-core.report-message-delivery",
         "messages-core.thread-read",
         "messages-core.unread-mentions-read-all",
-    ),
-)
-
-
-class ReactReq(Request):
-    chat: Annotated[PeerRef, arg(0, metavar="CHAT", kind="peer", help="Chat.")]
-    msg_id: Annotated[int, arg(1, metavar="MSG_ID", kind="msg_id", help="Message id or link.")]
-    emoji: Annotated[
-        str, arg(2, metavar="EMOJI", required=False, help="Reaction; omit to clear.")
-    ] = ""
-    big: Annotated[bool, opt("--big", help="Play the big animation.")] = False
-    add: Annotated[bool, opt("--add", help="Keep the reactions already there (Premium).")] = False
-
-
-async def react(ctx: OpContext, req: ReactReq) -> ReactResult:
-    """React to a message, or clear the reaction by passing no emoji.
-
-    Kept in the `message` group because that is the documented v1 path; the
-    `reaction` group of PR-9 owns the rest of the surface and will take this
-    over as an alias.
-    """
-    from telethon.tl import types
-    from telethon.tl.functions import messages as fn
-
-    peer = await _send.resolve(ctx, req.chat)
-    chat_id = _send.peer_id_of(peer)
-    reactions = [types.ReactionEmoji(emoticon=req.emoji)] if req.emoji else []
-    try:
-        result = await _client(ctx)(
-            fn.SendReactionRequest(
-                peer=peer,
-                msg_id=req.msg_id,
-                reaction=reactions or None,
-                big=req.big or None,
-                add_to_recent=req.add or None,
-            )
-        )
-    except Exception as exc:
-        if not _is_not_modified(exc):
-            raise
-        _already(ctx)
-        return ReactResult(
-            chat_id=chat_id, msg_id=req.msg_id, emoji=req.emoji, reacted=True, already=True
-        )
-    summary: ReactionSummary | None = None
-    produced = _send.messages_from_updates(result, chat_id=chat_id)
-    if produced:
-        summary = produced[0].reactions
-    return ReactResult(
-        chat_id=chat_id,
-        msg_id=req.msg_id,
-        emoji=req.emoji,
-        reacted=bool(req.emoji),
-        reactions=summary,
-    )
-
-
-SPEC_REACT = OperationSpec(
-    id="message.react",
-    request=ReactReq,
-    response=ReactResult,
-    impl=react,
-    summary="React to a message with an emoji",
-    description=(
-        "Passing no emoji clears the reaction. A duplicate reaction is "
-        "`already: true`, not an error — Telegram answers it with "
-        "MESSAGE_NOT_MODIFIED."
-    ),
-    aliases=("msg.react",),
-    legacy_paths=("message react", "msg react"),
-    mutating=True,
-    idempotent=True,
-    rate_class="send",
-    columns=("chat_id", "msg_id", "emoji", "reacted"),
-    example={"chat_id": 777123, "msg_id": 12345, "emoji": "👍", "reacted": True},
-    example_args="message react @alice 12345 👍",
-    covers=("messages-core.reaction-add-remove",),
-    coverage_note=(
-        "The v1 path, kept invocable. PR-9's `reaction` group owns the full "
-        "reaction surface and adopts this as an alias."
     ),
 )
 

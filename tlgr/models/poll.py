@@ -51,13 +51,16 @@ class Poll(Model):
     up learning the answer by sending a vote and reading the RPC error.
     """
 
+    #: First and required: `omit_defaults` would drop `"poll"` and `true`,
+    #: and an agent reading a missing `can_vote` as False would be wrong.
+    type: Literal["poll", "quiz"]
+    can_vote: bool
     chat_id: int = 0
     msg_id: int = 0
     poll_id: int | None = None
     question: str = ""
     entities: list[MessageEntity] = []
     description: str | None = None
-    type: Literal["poll", "quiz"] = "poll"
     closed: bool = False
     public_voters: bool = False
     multiple: bool = False
@@ -71,7 +74,6 @@ class Poll(Model):
     close_date: str | None = None
     close_date_unix: int | None = None
     total_voters: int = 0
-    can_vote: bool = True
     restriction: str | None = None
     my_votes: list[int] = []
     options: list[PollOption] = []

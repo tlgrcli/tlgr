@@ -1180,6 +1180,158 @@ class FakeTelegramClient:
             votes_graph=types.StatsGraph(json=types.DataJSON(data='{"columns":[]}'))
         )
 
+    # -- reaction policy, tags and paid reactions --------------------------
+
+    def _full_channel(self, chat_id: int) -> Any:
+        return types.ChannelFull(
+            id=abs(chat_id) - 1000000000000 if chat_id < -1000000000000 else abs(chat_id),
+            about="",
+            read_inbox_max_id=0,
+            read_outbox_max_id=0,
+            unread_count=0,
+            chat_photo=types.PhotoEmpty(id=0),
+            notify_settings=types.PeerNotifySettings(),
+            bot_info=[],
+            pts=1,
+            available_reactions=self.world.chat_reactions.get(chat_id) or types.ChatReactionsNone(),
+            reactions_limit=self.world.reactions_limit.get(chat_id),
+            paid_reactions_available=self.world.paid_enabled.get(chat_id),
+        )
+
+    def _raw_GetFullChannelRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.channel)
+        return types.messages.ChatFull(full_chat=self._full_channel(chat_id), chats=[], users=[])
+
+    def _raw_GetFullChatRequest(self, request: Any) -> Any:
+        chat_id = int(request.chat_id)
+        return types.messages.ChatFull(
+            full_chat=types.ChatFull(
+                id=chat_id,
+                about="",
+                participants=types.ChatParticipantsForbidden(chat_id=chat_id),
+                notify_settings=types.PeerNotifySettings(),
+                available_reactions=self.world.chat_reactions.get(-chat_id)
+                or types.ChatReactionsNone(),
+                reactions_limit=self.world.reactions_limit.get(-chat_id),
+            ),
+            chats=[],
+            users=[],
+        )
+
+    def _raw_SetChatAvailableReactionsRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.peer)
+        self.world.chat_reactions[chat_id] = request.available_reactions
+        if request.reactions_limit is not None:
+            self.world.reactions_limit[chat_id] = int(request.reactions_limit)
+        if request.paid_enabled is not None:
+            self.world.paid_enabled[chat_id] = bool(request.paid_enabled)
+        return self._updates()
+
+    def _raw_SetDefaultReactionRequest(self, request: Any) -> bool:
+        self.world.default_reaction = request.reaction
+        return True
+
+    def _raw_GetSavedReactionTagsRequest(self, request: Any) -> Any:
+        return types.messages.SavedReactionTags(
+            tags=[
+                types.SavedReactionTag(
+                    reaction=types.ReactionEmoji(emoticon=emoji), count=1, title=title
+                )
+                for emoji, title in self.world.saved_tags.items()
+            ],
+            hash=0,
+        )
+
+    def _raw_GetDefaultTagReactionsRequest(self, request: Any) -> Any:
+        return types.messages.Reactions(hash=0, reactions=[types.ReactionEmoji(emoticon="📌")])
+
+    def _raw_UpdateSavedReactionTagRequest(self, request: Any) -> bool:
+        emoji = getattr(request.reaction, "emoticon", None) or str(
+            getattr(request.reaction, "document_id", "")
+        )
+        self.world.saved_tags[emoji] = request.title
+        return True
+
+    def _raw_GetPaidReactionPrivacyRequest(self, request: Any) -> types.Updates:
+        mapping = {
+            "anonymous": types.PaidReactionPrivacyAnonymous(),
+            "default": types.PaidReactionPrivacyDefault(),
+        }
+        return types.Updates(
+            updates=[
+                types.UpdatePaidReactionPrivacy(
+                    private=mapping.get(self.world.paid_privacy, types.PaidReactionPrivacyDefault())
+                )
+            ],
+            users=[],
+            chats=[],
+            date=None,
+            seq=0,
+        )
+
+    def _raw_TogglePaidReactionPrivacyRequest(self, request: Any) -> bool:
+        name = type(request.private).__name__
+        self.world.paid_privacy = (
+            "anonymous"
+            if name.endswith("Anonymous")
+            else ("peer" if name.endswith("Peer") else "default")
+        )
+        return True
+
+    def _raw_SendPaidReactionRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.peer)
+        self.world.star_balance -= int(request.count)
+        return types.Updates(
+            updates=[
+                types.UpdateMessageReactions(
+                    peer=types.PeerChannel(channel_id=abs(chat_id)),
+                    msg_id=int(request.msg_id),
+                    reactions=types.MessageReactions(
+                        results=[
+                            types.ReactionCount(
+                                reaction=types.ReactionPaid(), count=int(request.count)
+                            )
+                        ],
+                        top_reactors=[
+                            types.MessageReactor(
+                                count=int(request.count),
+                                my=True,
+                                peer_id=types.PeerUser(user_id=self.world.me.id),
+                            )
+                        ],
+                    ),
+                )
+            ],
+            users=[],
+            chats=[],
+            date=None,
+            seq=0,
+        )
+
+    def _raw_GetSendAsRequest(self, request: Any) -> Any:
+        return types.channels.SendAsPeers(
+            peers=[types.SendAsPeer(peer=types.PeerUser(user_id=self.world.me.id))],
+            chats=[],
+            users=[],
+        )
+
+    def _raw_GetMessagesReactionsRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.peer)
+        updates = []
+        for message_id in request.id:
+            message = self.world.find(chat_id, int(message_id))
+            reactions = getattr(message, "reactions", None) if message is not None else None
+            if reactions is None:
+                reactions = types.MessageReactions(results=[], can_see_list=True)
+            updates.append(
+                types.UpdateMessageReactions(
+                    peer=types.PeerUser(user_id=abs(chat_id)),
+                    msg_id=int(message_id),
+                    reactions=reactions,
+                )
+            )
+        return types.Updates(updates=updates, users=[], chats=[], date=None, seq=0)
+
     # -- checklists --------------------------------------------------------
 
     def _todo_of(self, request: Any) -> tuple[int, Any, Any]:

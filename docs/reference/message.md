@@ -2,7 +2,7 @@
 
 # `tlgr message`
 
-40 operations. Every one takes the global flags (`--json`, `--plain`, `-a/--account`, `--results-only`, `--select`, `--dry-run`, `--yes`, `--no-input`, `--flood-wait-max`, `-v`) anywhere on the line.
+39 operations. Every one takes the global flags (`--json`, `--plain`, `-a/--account`, `--results-only`, `--select`, `--dry-run`, `--yes`, `--no-input`, `--flood-wait-max`, `-v`) anywhere on the line.
 
 | Command | Summary |
 |---|---|
@@ -22,7 +22,6 @@
 | [`message paid set`](#tlgr-message-paid-set) | Per-user paid-message settings and the Stars they earned |
 | [`message pin`](#tlgr-message-pin) | Pin a message in a chat |
 | [`message preview`](#tlgr-message-preview) | Fetch the link preview Telegram would attach to a URL |
-| [`message react`](#tlgr-message-react) | React to a message with an emoji |
 | [`message read`](#tlgr-message-read) | Mark a chat, thread, mentions or media contents as read |
 | [`message read-receipt list`](#tlgr-message-read-receipt-list) | Who read this message, and when |
 | [`message report`](#tlgr-message-report) | Report messages for abuse |
@@ -651,43 +650,6 @@ $ tlgr message preview https://telegram.org --json
 <details><summary>Catalog coverage (1 full, 0 partial)</summary>
 
 Full: `webpage.preview-fetch`
-
-</details>
-
-### `message react`
-
-React to a message with an emoji.
-
-Passing no emoji clears the reaction. A duplicate reaction is `already: true`, not an error — Telegram answers it with MESSAGE_NOT_MODIFIED.
-
-```
-tlgr message react <CHAT> <MSG_ID> [EMOJI] [OPTIONS]
-```
-
-**mutating · idempotent (reports `already`) · returns `ReactResult`**
-
-| Argument | Type | Required | Meaning |
-|---|---|---|---|
-| `CHAT` | chat | yes | Chat. |
-| `MSG_ID` | msg-id | yes | Message id or link. |
-| `EMOJI` | text | no | Reaction; omit to clear. |
-
-| Flag | Type | Default | Meaning |
-|---|---|---|---|
-| `--add` | flag |  | Keep the reactions already there (Premium). |
-| `--big` | flag |  | Play the big animation. |
-
-Also invocable as: `tlgr msg react`
-
-```console
-$ tlgr message react @alice 12345 👍 --json
-```
-
-<details><summary>Catalog coverage (1 full, 0 partial)</summary>
-
-Full: `messages-core.reaction-add-remove`
-
-The v1 path, kept invocable. PR-9's `reaction` group owns the full reaction surface and adopts this as an alias.
 
 </details>
 

@@ -151,6 +151,7 @@ def poll_model(media: Any, *, chat_id: int = 0, msg_id: int = 0) -> Poll:
         question=question,
         entities=entities,
         type="quiz" if getattr(raw, "quiz", False) else "poll",
+        can_vote=True,
         closed=bool(getattr(raw, "closed", False)),
         public_voters=bool(getattr(raw, "public_voters", False)),
         multiple=bool(getattr(raw, "multiple_choice", False)),

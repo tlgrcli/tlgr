@@ -88,10 +88,10 @@ class AvailableReaction(Model):
     """
 
     emoticon: str
+    source: Literal["available", "top", "recent"]
     title: str = ""
     premium: bool = False
     inactive: bool = False
-    source: Literal["available", "top", "recent"] = "available"
     static_icon_id: int | None = None
     select_animation_id: int | None = None
 
@@ -104,9 +104,9 @@ class ChatReactions(Model):
     caller changing only `reactions_limit` still has to resend the mode.
     """
 
+    mode: Literal["all", "some", "none"]
     chat_id: int = 0
     msg_id: int | None = None
-    mode: Literal["all", "some", "none"] = "none"
     reactions: list[str] = []
     allow_custom: bool = False
     reactions_limit: int | None = None
@@ -125,7 +125,7 @@ class ReactionTag(Model):
 class ReactionPrivacy(Model):
     """How my paid reactions are attributed."""
 
-    privacy: Literal["default", "anonymous", "peer"] = "default"
+    privacy: Literal["default", "anonymous", "peer"]
     peer_id: int | None = None
     msg_id: int | None = None
 
@@ -147,9 +147,9 @@ class ReactionPurge(Model):
 
     chat_id: int
     user_id: int
+    scope: Literal["message", "chat"]
     msg_id: int | None = None
     deleted: bool = False
-    scope: Literal["message", "chat"] = "message"
 
 
 class ReactionReport(Model):

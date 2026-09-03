@@ -414,3 +414,571 @@ class TestPollStats:
         assert stats["dc_id"] == 4
         assert peers.called("borrow_exported_sender")
         assert '"columns"' in stats["graph"]
+
+
+# ---------------------------------------------------------------------------
+# reaction
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def history(peers, world):
+    for index in range(1, 6):
+        world.add_message(ALICE, f"message {index}", message_id=100 + index)
+    world.add_message(CHANNEL_ID, "post", message_id=900)
+    return world
+
+
+class TestReactionAdd:
+    async def test_a_reaction_reports_what_is_now_on_the_message(
+        self, live_daemon, client, in_thread, history
+    ):
+        """v1's `message react`, unchanged in what it answers."""
+        out = await result(
+            client, in_thread, "reaction.add", {"chat": "@alice", "msg_id": 103, "emoji": ["👍"]}
+        )
+        assert out["reacted"] is True
+        assert out["mine"] == ["👍"]
+        assert out["reactions"]["mine"] == ["👍"]
+
+    async def test_the_v1_path_still_works(self, live_daemon, client, in_thread, history):
+        out = await result(
+            client, in_thread, "message.react", {"chat": "@alice", "msg_id": 103, "emoji": ["👍"]}
+        )
+        assert out["emoji"] == "👍"
+        assert out["msg_id"] == 103
+        assert out["reacted"] is True
+
+    async def test_a_second_reaction_keeps_the_first(self, live_daemon, client, in_thread, history):
+        """sendReaction carries the whole state; a delta would drop the 👍."""
+        await result(
+            client, in_thread, "reaction.add", {"chat": "@alice", "msg_id": 103, "emoji": ["👍"]}
+        )
+        await result(
+            client, in_thread, "reaction.add", {"chat": "@alice", "msg_id": 103, "emoji": ["🎉"]}
+        )
+        request = history.called("SendReactionRequest")[-1]
+        assert [item.emoticon for item in request.reaction] == ["👍", "🎉"]
+
+    async def test_replace_sends_exactly_what_was_asked_for(
+        self, live_daemon, client, in_thread, history
+    ):
+        await result(
+            client, in_thread, "reaction.add", {"chat": "@alice", "msg_id": 103, "emoji": ["👍"]}
+        )
+        await result(
+            client,
+            in_thread,
+            "reaction.add",
+            {"chat": "@alice", "msg_id": 103, "emoji": ["🎉"], "replace": True},
+        )
+        request = history.called("SendReactionRequest")[-1]
+        assert [item.emoticon for item in request.reaction] == ["🎉"]
+
+    async def test_a_custom_emoji_is_spelled_the_same_way_in_and_out(
+        self, live_daemon, client, in_thread, history
+    ):
+        out = await result(
+            client, in_thread, "reaction.add", {"chat": "@alice", "msg_id": 103, "custom": [55]}
+        )
+        request = history.called("SendReactionRequest")[-1]
+        assert request.reaction[0].document_id == 55
+        assert out["mine"] == ["custom:55"]
+
+    async def test_a_duplicate_reaction_is_already(self, live_daemon, client, in_thread, history):
+        from telethon.errors import MessageNotModifiedError
+
+        history.fail_next("SendReactionRequest", MessageNotModifiedError(None))
+        envelope = await call(
+            client, in_thread, "reaction.add", {"chat": "@alice", "msg_id": 103, "emoji": ["👍"]}
+        )
+        assert envelope["result"]["already"] is True
+
+    async def test_send_as_points_at_the_command_that_can_pay(
+        self, live_daemon, client, in_thread, history
+    ):
+        error = await fails(
+            client,
+            in_thread,
+            "reaction.add",
+            {"chat": "@alice", "msg_id": 103, "emoji": ["👍"], "send_as": "@alice"},
+        )
+        assert error.exit_code == EXIT_USAGE
+        assert "reaction pay" in str(error)
+
+    async def test_the_big_and_recent_flags_reach_the_request(
+        self, live_daemon, client, in_thread, history
+    ):
+        await result(
+            client,
+            in_thread,
+            "reaction.add",
+            {"chat": "@alice", "msg_id": 103, "emoji": ["👍"], "big": True, "recent": True},
+        )
+        request = history.called("SendReactionRequest")[-1]
+        assert request.big is True and request.add_to_recent is True
+
+
+class TestReactionRemove:
+    async def test_removing_one_resends_the_others(self, live_daemon, client, in_thread, history):
+        await result(
+            client,
+            in_thread,
+            "reaction.add",
+            {"chat": "@alice", "msg_id": 103, "emoji": ["👍", "🎉"]},
+        )
+        await result(
+            client, in_thread, "reaction.remove", {"chat": "@alice", "msg_id": 103, "emoji": "👍"}
+        )
+        request = history.called("SendReactionRequest")[-1]
+        assert [item.emoticon for item in request.reaction] == ["🎉"]
+
+    async def test_removing_everything_sends_an_empty_vector(
+        self, live_daemon, client, in_thread, history
+    ):
+        await result(
+            client, in_thread, "reaction.add", {"chat": "@alice", "msg_id": 103, "emoji": ["👍"]}
+        )
+        await result(client, in_thread, "reaction.remove", {"chat": "@alice", "msg_id": 103})
+        assert history.called("SendReactionRequest")[-1].reaction is None
+
+    async def test_removing_one_that_is_not_there_is_already(
+        self, live_daemon, client, in_thread, history
+    ):
+        envelope = await call(
+            client, in_thread, "reaction.remove", {"chat": "@alice", "msg_id": 103, "emoji": "👍"}
+        )
+        assert envelope["result"]["already"] is True
+        assert history.called("SendReactionRequest") == []
+
+    async def test_a_message_that_does_not_exist_is_not_found(
+        self, live_daemon, client, in_thread, history
+    ):
+        error = await fails(client, in_thread, "reaction.remove", {"chat": "@alice", "msg_id": 999})
+        assert error.exit_code == EXIT_NOT_FOUND
+
+
+class TestReactionRead:
+    async def test_counts_are_refreshed_for_several_messages_at_once(
+        self, live_daemon, client, in_thread, history
+    ):
+        page = await result(
+            client, in_thread, "reaction.list", {"chat": "@alice", "msg_id": ["101-103"]}
+        )
+        assert [row["msg_id"] for row in page["items"]] == [101, 102, 103]
+        assert history.called("GetMessagesReactionsRequest")[0].id == [101, 102, 103]
+
+    async def test_no_message_id_is_a_usage_error(self, live_daemon, client, in_thread, history):
+        error = await fails(client, in_thread, "reaction.list", {"chat": "@alice"})
+        assert error.exit_code == EXIT_USAGE
+
+    async def test_who_reacted_is_listed_with_a_string_cursor(
+        self, live_daemon, client, in_thread, history
+    ):
+        from telethon.tl import types
+
+        history.raw["GetMessageReactionsListRequest"] = lambda request: (
+            types.messages.MessageReactionsList(
+                count=2,
+                reactions=[
+                    types.MessagePeerReaction(
+                        peer_id=types.PeerUser(user_id=ALICE),
+                        date=None,
+                        reaction=types.ReactionEmoji(emoticon="👍"),
+                    )
+                ],
+                chats=[],
+                users=[],
+                next_offset="page2",
+            )
+        )
+        envelope = await call(
+            client, in_thread, "reaction.user.list", {"chat": "@alice", "msg_id": 103}
+        )
+        assert envelope["result"][0]["user_id"] == ALICE
+        assert envelope["result"][0]["reaction"] == "👍"
+        assert envelope["page"]["has_more"] is True
+        assert envelope["page"]["next_cursor"]
+
+    async def test_the_cursor_carries_the_opaque_offset_back(
+        self, live_daemon, client, in_thread, history
+    ):
+        from tlgr.core.pagination import PageKind, decode_cursor, encode_cursor
+
+        token = encode_cursor(
+            op="reaction.user.list",
+            kind=PageKind.PARTICIPANTS,
+            state={"offset": "page2"},
+            account="work",
+        )
+        await call(
+            client,
+            in_thread,
+            "reaction.user.list",
+            {"chat": "@alice", "msg_id": 103},
+            cursor=token,
+        )
+        assert history.called("GetMessageReactionsListRequest")[0].offset == "page2"
+        assert decode_cursor(token, op="reaction.user.list", account="work") == {"offset": "page2"}
+
+    async def test_a_cursor_from_another_op_is_rejected(
+        self, live_daemon, client, in_thread, history
+    ):
+        from tlgr.core.pagination import PageKind, encode_cursor
+
+        token = encode_cursor(
+            op="poll.voter.list", kind=PageKind.PARTICIPANTS, state={}, account="work"
+        )
+        error = await fails(
+            client,
+            in_thread,
+            "reaction.user.list",
+            {"chat": "@alice", "msg_id": 103},
+            cursor=token,
+        )
+        assert error.exit_code == EXIT_USAGE
+
+    async def test_unread_reactions_can_be_listed_and_cleared(
+        self, live_daemon, client, in_thread, history
+    ):
+        from telethon.tl import types
+
+        history.raw["GetUnreadReactionsRequest"] = lambda request: types.messages.Messages(
+            messages=[history.find(ALICE, 103)], topics=[], chats=[], users=[]
+        )
+        rows = await result(
+            client, in_thread, "reaction.unread.list", {"chat": "@alice", "read_all": True}
+        )
+        assert [row["id"] for row in rows] == [103]
+        assert history.called("ReadReactionsRequest")
+
+
+class TestReactionCatalog:
+    def _catalogue(self, world):
+        from telethon.tl import types
+
+        def handler(request):
+            document = types.DocumentEmpty(id=1)
+            return types.messages.AvailableReactions(
+                hash=0,
+                reactions=[
+                    types.AvailableReaction(
+                        reaction=emoji,
+                        title=title,
+                        static_icon=document,
+                        appear_animation=document,
+                        select_animation=document,
+                        activate_animation=document,
+                        effect_animation=document,
+                        premium=premium or None,
+                    )
+                    for emoji, title, premium in (
+                        ("👍", "Thumbs Up", False),
+                        ("❤", "Heart", False),
+                        ("🎉", "Party", True),
+                    )
+                ],
+            )
+
+        world.raw["GetAvailableReactionsRequest"] = handler
+
+    async def test_the_standard_catalogue_is_paged_locally(
+        self, live_daemon, client, in_thread, peers
+    ):
+        self._catalogue(peers)
+        envelope = await call(client, in_thread, "reaction.catalog", {}, limit=2)
+        assert [row["emoticon"] for row in envelope["result"]] == ["👍", "❤"]
+        assert envelope["page"]["has_more"] is True
+        assert envelope["page"]["total"] == 3
+
+        second = await call(
+            client, in_thread, "reaction.catalog", {}, cursor=envelope["page"]["next_cursor"]
+        )
+        assert [row["emoticon"] for row in second["result"]] == ["🎉"]
+        assert second["result"][0]["premium"] is True
+
+    async def test_forget_clears_the_recent_list_first(self, live_daemon, client, in_thread, peers):
+        self._catalogue(peers)
+        await result(client, in_thread, "reaction.catalog", {"forget": True})
+        assert peers.called("ClearRecentReactionsRequest")
+
+    async def test_the_recent_list_is_its_own_source(self, live_daemon, client, in_thread, peers):
+        from telethon.tl import types
+
+        peers.raw["GetRecentReactionsRequest"] = lambda request: types.messages.Reactions(
+            hash=0, reactions=[types.ReactionEmoji(emoticon="🔥")]
+        )
+        rows = await result(client, in_thread, "reaction.catalog", {"recent": True})
+        assert rows[0] == {"emoticon": "🔥", "source": "recent"}
+
+
+class TestReactionPolicy:
+    async def test_reading_a_chats_policy(self, live_daemon, client, in_thread, history):
+        from telethon.tl import types
+
+        history.chat_reactions[CHANNEL_ID] = types.ChatReactionsSome(
+            reactions=[types.ReactionEmoji(emoticon="👍")]
+        )
+        history.reactions_limit[CHANNEL_ID] = 3
+        policy = await result(client, in_thread, "reaction.chat.get", {"chat": str(CHANNEL_ID)})
+        assert policy["mode"] == "some"
+        assert policy["reactions"] == ["👍"]
+        assert policy["reactions_limit"] == 3
+
+    async def test_a_private_chat_has_no_reaction_policy(
+        self, live_daemon, client, in_thread, history
+    ):
+        error = await fails(client, in_thread, "reaction.chat.get", {"chat": "@alice"})
+        assert error.exit_code == EXIT_USAGE
+
+    async def test_setting_only_the_cap_resends_the_existing_policy(
+        self, live_daemon, client, in_thread, history
+    ):
+        """`available_reactions` is mandatory on the wire: a blind write would wipe it."""
+        from telethon.tl import types
+
+        history.chat_reactions[CHANNEL_ID] = types.ChatReactionsSome(
+            reactions=[types.ReactionEmoji(emoticon="👍")]
+        )
+        out = await result(
+            client,
+            in_thread,
+            "reaction.chat.set",
+            {"chat": str(CHANNEL_ID), "max_unique": 2},
+        )
+        request = history.called("SetChatAvailableReactionsRequest")[0]
+        assert [item.emoticon for item in request.available_reactions.reactions] == ["👍"]
+        assert out["reactions_limit"] == 2
+
+    async def test_the_three_modes_are_one_question(self, live_daemon, client, in_thread, history):
+        error = await fails(
+            client,
+            in_thread,
+            "reaction.chat.set",
+            {"chat": str(CHANNEL_ID), "every": True, "none": True},
+        )
+        assert error.exit_code == EXIT_USAGE
+
+    async def test_star_reactions_can_be_switched_on(self, live_daemon, client, in_thread, history):
+        out = await result(
+            client,
+            in_thread,
+            "reaction.chat.set",
+            {"chat": str(CHANNEL_ID), "every": True, "paid": "on"},
+        )
+        assert out["mode"] == "all"
+        assert out["paid_enabled"] is True
+
+    async def test_a_message_narrows_an_all_policy_to_the_live_catalogue(
+        self, live_daemon, client, in_thread, history
+    ):
+        from telethon.tl import types
+
+        history.chat_reactions[CHANNEL_ID] = types.ChatReactionsAll(allow_custom=True)
+        document = types.DocumentEmpty(id=1)
+        history.raw["GetAvailableReactionsRequest"] = lambda request: (
+            types.messages.AvailableReactions(
+                hash=0,
+                reactions=[
+                    types.AvailableReaction(
+                        reaction="👍",
+                        title="Thumbs Up",
+                        static_icon=document,
+                        appear_animation=document,
+                        select_animation=document,
+                        activate_animation=document,
+                        effect_animation=document,
+                    )
+                ],
+            )
+        )
+        policy = await result(
+            client,
+            in_thread,
+            "reaction.chat.get",
+            {"chat": str(CHANNEL_ID), "msg_id": 900},
+        )
+        assert policy["reactions"] == ["👍"]
+        assert policy["msg_id"] == 900
+
+
+class TestReactionDefaultsAndTags:
+    async def test_the_quick_reaction_round_trips(self, live_daemon, client, in_thread, peers):
+        await result(client, in_thread, "reaction.default.set", {"emoji": "❤"})
+        assert peers.default_reaction.emoticon == "❤"
+        assert await result(client, in_thread, "reaction.default.get", {}) == {"reaction": "❤"}
+
+    async def test_setting_no_reaction_is_a_usage_error(
+        self, live_daemon, client, in_thread, peers
+    ):
+        error = await fails(client, in_thread, "reaction.default.set", {})
+        assert error.exit_code == EXIT_USAGE
+
+    async def test_a_tag_can_be_named_and_read_back(self, live_daemon, client, in_thread, peers):
+        await result(client, in_thread, "reaction.tag.set", {"emoji": "📌", "title": "invoices"})
+        page = await result(client, in_thread, "reaction.tag.list", {})
+        assert page["items"][0] == {"reaction": "📌", "title": "invoices", "count": 1}
+
+    async def test_clearing_a_tag_name_sends_no_title(self, live_daemon, client, in_thread, peers):
+        await result(client, in_thread, "reaction.tag.set", {"emoji": "📌", "clear": True})
+        assert peers.called("UpdateSavedReactionTagRequest")[-1].title is None
+
+    async def test_renaming_through_the_list_command(self, live_daemon, client, in_thread, peers):
+        await result(client, in_thread, "reaction.tag.list", {"rename": "📌=receipts"})
+        assert peers.saved_tags["📌"] == "receipts"
+
+    async def test_a_rename_without_a_title_separator_is_a_usage_error(
+        self, live_daemon, client, in_thread, peers
+    ):
+        error = await fails(client, in_thread, "reaction.tag.list", {"rename": "📌"})
+        assert error.exit_code == EXIT_USAGE
+
+    async def test_the_suggested_tags_are_their_own_list(
+        self, live_daemon, client, in_thread, peers
+    ):
+        page = await result(client, in_thread, "reaction.tag.list", {"suggested": True})
+        assert page["items"][0]["suggested"] is True
+
+
+class TestReactionPaid:
+    async def test_paying_spends_the_amount_that_was_asked_for(
+        self, live_daemon, client, in_thread, history
+    ):
+        out = await result(
+            client,
+            in_thread,
+            "reaction.pay",
+            {"chat": str(CHANNEL_ID), "msg_id": 900, "stars": 50},
+        )
+        assert out["stars_sent"] == 50
+        assert history.star_balance == 950
+        assert out["top_reactors"][0]["stars"] == 50
+
+    async def test_the_random_id_is_the_documented_timestamp_form(
+        self, live_daemon, client, in_thread, history
+    ):
+        """`(unixtime << 32) | random_uint32` — unlike every other send."""
+        import time
+
+        await result(
+            client,
+            in_thread,
+            "reaction.pay",
+            {"chat": str(CHANNEL_ID), "msg_id": 900, "stars": 1},
+        )
+        request = history.called("SendPaidReactionRequest")[0]
+        assert abs((request.random_id >> 32) - int(time.time())) < 60
+
+    async def test_there_is_no_default_amount(self, live_daemon, client, in_thread, history):
+        error = await fails(
+            client, in_thread, "reaction.pay", {"chat": str(CHANNEL_ID), "msg_id": 900}
+        )
+        assert error.exit_code == EXIT_USAGE
+        assert history.called("SendPaidReactionRequest") == []
+
+    async def test_listing_the_senders_never_pays(self, live_daemon, client, in_thread, history):
+        out = await result(
+            client,
+            in_thread,
+            "reaction.pay",
+            {"chat": str(CHANNEL_ID), "msg_id": 900, "senders": True},
+        )
+        assert out["senders"] == [history.me.id]
+        assert history.called("SendPaidReactionRequest") == []
+
+    async def test_a_private_chat_fails_before_anything_is_spent(
+        self, live_daemon, client, in_thread, history
+    ):
+        error = await fails(
+            client,
+            in_thread,
+            "reaction.pay",
+            {"chat": "@alice", "msg_id": 103, "stars": 10},
+        )
+        assert error.exit_code == EXIT_USAGE
+        assert history.called("SendPaidReactionRequest") == []
+
+    async def test_privacy_round_trips(self, live_daemon, client, in_thread, history):
+        await result(
+            client,
+            in_thread,
+            "reaction.privacy.set",
+            {"mode": "anonymous", "chat": str(CHANNEL_ID), "msg_id": 900},
+        )
+        assert await result(client, in_thread, "reaction.privacy.get", {}) == {
+            "privacy": "anonymous"
+        }
+
+    async def test_privacy_set_needs_the_post_it_rewrites(
+        self, live_daemon, client, in_thread, history
+    ):
+        error = await fails(client, in_thread, "reaction.privacy.set", {"mode": "anonymous"})
+        assert error.exit_code == EXIT_USAGE
+
+    async def test_an_unknown_privacy_mode_is_a_usage_error(
+        self, live_daemon, client, in_thread, history
+    ):
+        error = await fails(
+            client,
+            in_thread,
+            "reaction.privacy.set",
+            {"mode": "secret", "chat": str(CHANNEL_ID), "msg_id": 900},
+        )
+        assert error.exit_code == EXIT_USAGE
+
+
+class TestReactionModeration:
+    async def test_purging_one_message_uses_the_singular_method(
+        self, live_daemon, client, in_thread, history
+    ):
+        out = await result(
+            client,
+            in_thread,
+            "reaction.purge",
+            {"chat": str(CHANNEL_ID), "user": "@alice", "msg": 900},
+        )
+        assert out["scope"] == "message" and out["deleted"] is True
+        assert history.called("DeleteParticipantReactionRequest")
+
+    async def test_purging_the_whole_chat_uses_the_plural_method(
+        self, live_daemon, client, in_thread, history
+    ):
+        out = await result(
+            client,
+            in_thread,
+            "reaction.purge",
+            {"chat": str(CHANNEL_ID), "user": "@alice", "every": True},
+        )
+        assert out["scope"] == "chat"
+        assert history.called("DeleteParticipantReactionsRequest")
+
+    async def test_naming_neither_scope_is_a_usage_error(
+        self, live_daemon, client, in_thread, history
+    ):
+        error = await fails(
+            client, in_thread, "reaction.purge", {"chat": str(CHANNEL_ID), "user": "@alice"}
+        )
+        assert error.exit_code == EXIT_USAGE
+
+    async def test_reporting_can_also_block_the_sender(
+        self, live_daemon, client, in_thread, history
+    ):
+        out = await result(
+            client,
+            in_thread,
+            "reaction.report",
+            {"chat": str(CHANNEL_ID), "msg_id": 900, "user": "@alice", "ban": True},
+        )
+        assert out["ok"] is True and out["banned"] is True
+        assert history.called("ReportReactionRequest")
+        assert history.called("BlockFromRepliesRequest")
+
+    async def test_reporting_alone_does_not_ban(self, live_daemon, client, in_thread, history):
+        out = await result(
+            client,
+            in_thread,
+            "reaction.report",
+            {"chat": str(CHANNEL_ID), "msg_id": 900, "user": "@alice"},
+        )
+        assert out.get("banned", False) is False
+        assert history.called("BlockFromRepliesRequest") == []

@@ -44,7 +44,13 @@ if TYPE_CHECKING:  # pragma: no cover
 
 log = logging.getLogger("tlgr.daemon.dispatch")
 
-__all__ = ["DaemonContext", "decode_request", "dispatch", "resolve_spec"]
+__all__ = [
+    "DaemonContext",
+    "decode_request",
+    "dispatch",
+    "normalise_peer_refs",
+    "resolve_spec",
+]
 
 
 @dataclass
@@ -132,6 +138,66 @@ def resolve_spec(op_id: str) -> OperationSpec:
     return spec
 
 
+def _peer_ref_fields(request: type[msgspec.Struct]) -> dict[str, bool]:
+    """`{field name: is a list}` for every field typed as a `PeerRef`."""
+    import types as pytypes
+    import typing
+
+    from tlgr.models.peer import PeerRef
+
+    out: dict[str, bool] = {}
+    for name, annotation in typing.get_type_hints(request, include_extras=False).items():
+        node = annotation
+        repeated = False
+        while True:
+            origin = typing.get_origin(node)
+            if origin in (typing.Union, pytypes.UnionType):
+                args = [a for a in typing.get_args(node) if a is not type(None)]
+                node = args[0] if args else node
+                continue
+            if origin in (list, tuple, set):
+                args = typing.get_args(node)
+                node = args[0] if args else node
+                repeated = True
+                continue
+            break
+        if node is PeerRef:
+            out[name] = repeated
+    return out
+
+
+def normalise_peer_refs(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, Any]:
+    """Let the wire accept `"@alice"` where the struct wants a `PeerRef`.
+
+    A `PeerRef` is a parsed shape, and the CLI parses it before the request
+    leaves. Anything else talking to `/v1/op` — an agent, a script, a test —
+    would otherwise have to reimplement `parse_peer_ref` to say "@alice",
+    which is exactly the kind of duplication that ends up disagreeing about
+    what a `-100…` id means. Parsing here keeps one parser.
+    """
+    from tlgr.models.peer import parse_peer_ref
+
+    fields = _peer_ref_fields(spec.request)
+    if not fields:
+        return payload
+
+    def parse(value: Any) -> Any:
+        if not isinstance(value, (str, int)):
+            return value
+        try:
+            return to_builtins(parse_peer_ref(str(value)))
+        except ValueError as exc:
+            raise UsageError(str(exc)) from exc
+
+    out = dict(payload)
+    for name, repeated in fields.items():
+        if name not in out or out[name] is None:
+            continue
+        value = out[name]
+        out[name] = [parse(item) for item in value] if repeated else parse(value)
+    return out
+
+
 def decode_payload(spec: OperationSpec, payload: dict[str, Any]) -> Any:
     """Decode the op's request struct, turning a mismatch into a field error.
 
@@ -139,6 +205,7 @@ def decode_payload(spec: OperationSpec, payload: dict[str, Any]) -> Any:
     what makes the error actionable, and `classify()` lifts it into
     `error.field` for us.
     """
+    payload = normalise_peer_refs(spec, payload)
     try:
         return msgspec.convert(payload, type=spec.request, strict=False)
     except msgspec.ValidationError as exc:

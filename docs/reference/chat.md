@@ -2,44 +2,127 @@
 
 # `tlgr chat`
 
-34 operations. Every one takes the global flags (`--json`, `--plain`, `-a/--account`, `--results-only`, `--select`, `--dry-run`, `--yes`, `--no-input`, `--flood-wait-max`, `-v`) anywhere on the line.
+117 operations. Every one takes the global flags (`--json`, `--plain`, `-a/--account`, `--results-only`, `--select`, `--dry-run`, `--yes`, `--no-input`, `--flood-wait-max`, `-v`) anywhere on the line.
 
 | Command | Summary |
 |---|---|
 | [`chat action-bar get`](#tlgr-chat-action-bar-get) | Read or dismiss the action bar of a chat (the anti-spam info box) |
+| [`chat admin-log list`](#tlgr-chat-admin-log-list) | Recent actions (the admin log) |
+| [`chat admin-log report`](#tlgr-chat-admin-log-report) | Report an anti-spam deletion as a false positive |
+| [`chat admin demote`](#tlgr-chat-admin-demote) | Dismiss an administrator |
+| [`chat admin list`](#tlgr-chat-admin-list) | List administrators with their rights and ranks |
+| [`chat admin promote`](#tlgr-chat-admin-promote) | Promote a member to admin, or change an existing admin's rights and rank |
+| [`chat affiliate list`](#tlgr-chat-affiliate-list) | Affiliate (Star referral) bots connected to a channel, plus suggestions |
+| [`chat affiliate set`](#tlgr-chat-affiliate-set) | Connect or disconnect an affiliate bot for a channel |
 | [`chat archive`](#tlgr-chat-archive) | Move chats to the archive, or back out of it |
 | [`chat autoarchive set`](#tlgr-chat-autoarchive-set) | Chat-list archive rules for new and archived chats |
 | [`chat badge get`](#tlgr-chat-badge-get) | Aggregate unread badge and the chat-list limits behind it |
 | [`chat catchup`](#tlgr-chat-catchup) | What did I miss: every unread chat with its recent messages |
 | [`chat clear`](#tlgr-chat-clear) | Clear a chat's history — for me, for both sides, or a date range |
+| [`chat community ban`](#tlgr-chat-community-ban) | Ban a member from a whole community |
+| [`chat community create`](#tlgr-chat-community-create) | Create a Community (a hub grouping several chats) |
+| [`chat community list`](#tlgr-chat-community-list) | List my communities, a community's chats, or its pending link requests |
+| [`chat community set`](#tlgr-chat-community-set) | Add, hide, remove a chat in a community, or answer a link request |
+| [`chat convert`](#tlgr-chat-convert) | Convert a basic group to a supergroup, or a supergroup to a gigagroup |
+| [`chat create`](#tlgr-chat-create) | Create a basic group, supergroup, broadcast channel or forum |
 | [`chat delete`](#tlgr-chat-delete) | Delete a chat: for me, for both sides, or for everyone |
+| [`chat direct ban`](#tlgr-chat-direct-ban) | Ban a user from a channel's direct messages |
+| [`chat direct list`](#tlgr-chat-direct-list) | Browse a channel's direct-message conversations |
+| [`chat direct unban`](#tlgr-chat-direct-unban) | Unban a user from a channel's direct messages |
+| [`chat discussion list`](#tlgr-chat-discussion-list) | Groups eligible to become a channel's discussion group |
+| [`chat discussion set`](#tlgr-chat-discussion-set) | Link a discussion group to a channel |
+| [`chat discussion unset`](#tlgr-chat-discussion-unset) | Unlink a channel's discussion group |
+| [`chat edit`](#tlgr-chat-edit) | Edit a group/channel profile: title, about, location, colors, emoji status, tab |
 | [`chat get`](#tlgr-chat-get) | Full info for one chat: dialog record, settings, notify, ttl, theme |
 | [`chat import`](#tlgr-chat-import) | Import a chat history exported from another messenger |
+| [`chat invite create`](#tlgr-chat-invite-create) | Create an invite link (expiring, limited, approval-gated or paid) |
+| [`chat invite delete`](#tlgr-chat-invite-delete) | Delete a revoked invite link, or every revoked link of an admin |
+| [`chat invite edit`](#tlgr-chat-invite-edit) | Edit an invite link |
+| [`chat invite get`](#tlgr-chat-invite-get) | Inspect one invite link, the primary link, or preview a link you were given |
+| [`chat invite list`](#tlgr-chat-invite-list) | List a chat's invite links (active, revoked, or grouped by admin) |
+| [`chat invite open`](#tlgr-chat-invite-open) | Read a private channel through an invite peek, without joining |
+| [`chat invite revoke`](#tlgr-chat-invite-revoke) | Revoke an invite link |
+| [`chat join`](#tlgr-chat-join) | Join a public group/channel, or a private one by invite link |
 | [`chat leave`](#tlgr-chat-leave) | Leave groups and channels |
 | [`chat list`](#tlgr-chat-list) | List dialogs with folder, type, unread, pinned and search filters |
+| [`chat member add`](#tlgr-chat-member-add) | Add members to a group or channel |
+| [`chat member ban`](#tlgr-chat-member-ban) | Ban a member, optionally purging and reporting them in one step |
+| [`chat member delete-history`](#tlgr-chat-member-delete-history) | Delete every message one member ever sent |
+| [`chat member edit`](#tlgr-chat-member-edit) | Edit a member's custom rank and paid-message exception |
+| [`chat member get`](#tlgr-chat-member-get) | One member's status, rights, rank, join date and inviter |
+| [`chat member list`](#tlgr-chat-member-list) | List members with the participant filters the API offers |
+| [`chat member remove`](#tlgr-chat-member-remove) | Remove (kick) a member; they can rejoin |
+| [`chat member report`](#tlgr-chat-member-report) | Report a member (and optionally their messages) as spam |
+| [`chat member restrict`](#tlgr-chat-member-restrict) | Restrict what one member may do, with an expiry |
+| [`chat member unban`](#tlgr-chat-member-unban) | Lift a ban or a restriction |
 | [`chat mention list`](#tlgr-chat-mention-list) | Unread mentions, reactions or poll votes of a chat |
 | [`chat mute`](#tlgr-chat-mute) | Mute or unmute chats, for a duration or forever |
 | [`chat notify get`](#tlgr-chat-notify-get) | Show a chat's notification settings, exception and effective value |
 | [`chat notify set`](#tlgr-chat-notify-set) | Set one chat's notification exception |
 | [`chat open`](#tlgr-chat-open) | Open a chat like a human: recent history AND a read receipt |
+| [`chat permission get`](#tlgr-chat-permission-get) | Show the chat-wide default permissions (what every member may do) |
+| [`chat permission list`](#tlgr-chat-permission-list) | Print the canonical right vocabulary (admin mask, member mask, layer support) |
+| [`chat permission set`](#tlgr-chat-permission-set) | Set the chat-wide default permissions |
+| [`chat photo delete`](#tlgr-chat-photo-delete) | Remove the group/channel photo |
+| [`chat photo set`](#tlgr-chat-photo-set) | Set the group/channel photo (still, video or emoji avatar) |
 | [`chat pin`](#tlgr-chat-pin) | Pin or unpin dialogs, or rewrite the whole pinned order |
 | [`chat poster list`](#tlgr-chat-poster-list) | Harvest the senders that posted in a chat over a message window |
 | [`chat promo list`](#tlgr-chat-promo-list) | Chat-list top rows: pending suggestions, birthday bar, PSA promo |
 | [`chat read`](#tlgr-chat-read) | Send a read receipt for chats, a thread, or a whole folder |
 | [`chat report`](#tlgr-chat-report) | Report a chat, a user or specific messages |
+| [`chat request approve`](#tlgr-chat-request-approve) | Approve join requests |
+| [`chat request deny`](#tlgr-chat-request-deny) | Decline join requests |
+| [`chat request list`](#tlgr-chat-request-list) | List pending join requests |
+| [`chat revenue get`](#tlgr-chat-revenue-get) | Stars / TON revenue of a channel (and per-user paid-message revenue) |
+| [`chat revenue list`](#tlgr-chat-revenue-list) | Stars / TON transaction history of a channel |
 | [`chat saved list`](#tlgr-chat-saved-list) | Saved-Messages sublists and channel direct-message topics |
 | [`chat secret discard`](#tlgr-chat-secret-discard) | Discard a secret chat, optionally deleting it or reporting spam |
 | [`chat secret list`](#tlgr-chat-secret-list) | Secret chats this session holds, with state and key fingerprint |
 | [`chat secret send`](#tlgr-chat-secret-send) | Send into a secret chat, set its timer, ack or show typing |
 | [`chat secret start`](#tlgr-chat-secret-start) | Start a secret chat with a user, or accept an incoming request |
+| [`chat send-as list`](#tlgr-chat-send-as-list) | Peers I may post as in this chat |
+| [`chat send-as set`](#tlgr-chat-send-as-set) | Set the default peer I post as in this chat |
 | [`chat set`](#tlgr-chat-set) | Per-dialog switches: content sharing, forum view mode, send-as |
+| [`chat setting get`](#tlgr-chat-setting-get) | Print every administrable policy toggle with its current value |
+| [`chat setting set`](#tlgr-chat-setting-set) | Change group/channel policy toggles (the Manage screen) |
+| [`chat similar list`](#tlgr-chat-similar-list) | Channels similar to this one (or global recommendations) |
+| [`chat sponsored list`](#tlgr-chat-sponsored-list) | Sponsored messages the server wants shown in this channel |
+| [`chat sponsored report`](#tlgr-chat-sponsored-report) | Report a sponsored message |
+| [`chat stats get`](#tlgr-chat-stats-get) | Channel, supergroup, post, story or poll statistics |
+| [`chat stats list`](#tlgr-chat-stats-list) | Public forwards (reposts) of a post or a story |
+| [`chat suggested-post approve`](#tlgr-chat-suggested-post-approve) | Approve a post suggested to a channel |
+| [`chat suggested-post deny`](#tlgr-chat-suggested-post-deny) | Reject a post suggested to a channel |
+| [`chat suggestion delete`](#tlgr-chat-suggestion-delete) | Dismiss a server-suggested admin action |
 | [`chat theme list`](#tlgr-chat-theme-list) | List the chat themes available |
 | [`chat theme set`](#tlgr-chat-theme-set) | Set or remove the theme of one chat |
+| [`chat topic close`](#tlgr-chat-topic-close) | Close a topic |
+| [`chat topic create`](#tlgr-chat-topic-create) | Create a topic |
+| [`chat topic delete`](#tlgr-chat-topic-delete) | Delete a topic and all its messages |
+| [`chat topic edit`](#tlgr-chat-topic-edit) | Rename a topic or change its icon |
+| [`chat topic get`](#tlgr-chat-topic-get) | Get one or more topics by id |
+| [`chat topic hide`](#tlgr-chat-topic-hide) | Hide the General topic |
+| [`chat topic list`](#tlgr-chat-topic-list) | List or search a forum's topics |
+| [`chat topic mute`](#tlgr-chat-topic-mute) | Mute a topic |
+| [`chat topic pin`](#tlgr-chat-topic-pin) | Pin topics (pass several ids to set the pinned order) |
+| [`chat topic read`](#tlgr-chat-topic-read) | Mark a topic read, including its mentions and reactions |
+| [`chat topic reopen`](#tlgr-chat-topic-reopen) | Reopen a closed topic |
+| [`chat topic unhide`](#tlgr-chat-topic-unhide) | Show the General topic again |
+| [`chat topic unmute`](#tlgr-chat-topic-unmute) | Unmute a topic |
+| [`chat topic unpin`](#tlgr-chat-topic-unpin) | Unpin a topic |
+| [`chat transfer`](#tlgr-chat-transfer) | Transfer ownership of a group or channel (2FA) |
 | [`chat translate`](#tlgr-chat-translate) | Turn Telegram's translation bar on or off for a chat |
 | [`chat ttl set`](#tlgr-chat-ttl-set) | Set or show a chat's auto-delete timer |
 | [`chat typing`](#tlgr-chat-typing) | Send or cancel a chat action (typing, recording, uploading) |
 | [`chat unread`](#tlgr-chat-unread) | Mark a chat unread again — the undo for an accidental read receipt |
+| [`chat username get`](#tlgr-chat-username-get) | Check a username: availability, owner, and Fragment collectible info |
+| [`chat username set`](#tlgr-chat-username-set) | Set the public link, or the display order of the additional usernames |
+| [`chat username toggle`](#tlgr-chat-username-toggle) | Activate or deactivate one additional username |
+| [`chat username unset`](#tlgr-chat-username-unset) | Make a group/channel private by clearing its username(s) |
+| [`chat verification set`](#tlgr-chat-verification-set) | Attach or remove a third-party (bot) verification badge |
 | [`chat wallpaper set`](#tlgr-chat-wallpaper-set) | Set, apply, revert or remove the wallpaper of one chat |
+| [`chat welcome delete`](#tlgr-chat-welcome-delete) | Delete one or all welcome messages |
+| [`chat welcome list`](#tlgr-chat-welcome-list) | List a group/channel's welcome messages |
+| [`chat welcome set`](#tlgr-chat-welcome-set) | Add or edit a welcome message |
 
 ### `chat action-bar get`
 
@@ -68,6 +151,238 @@ $ tlgr chat action-bar get @alice --json
 <details><summary>Catalog coverage (5 full, 0 partial)</summary>
 
 Full: `contacts-users.nearby-geo-distance`, `contacts-users.user-action-bar`, `contacts-users.user-action-bar-hide`, `dialogs.actionbar-invite-members`, `dialogs.peer-settings-get`
+
+</details>
+
+### `chat admin-log list`
+
+Recent actions (the admin log).
+
+The filter is built here rather than through Telethon's `iter_admin_log`, which shifts four names (restrict→ban, unrestrict→unban, ban→kick, unban→unkick) and has no flag at all for invites, send, forums, sub-extend or edit-rank. tlgr's `--filter` names are the API's. Retention is about 48 hours for most classes, and the endpoint is aggressively flood-limited.
+
+```
+tlgr chat admin-log list <CHAT> [OPTIONS]
+```
+
+**paginated (`PARTICIPANTS` cursor) · returns `Page[AdminLogEvent]`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--admin` | user |  | Only these admins. |
+| `--filter` | text |  | Comma-separated event classes; default all. |
+| `--min-id` | int |  | Stop at this event id. |
+| `--search`, `-s` | text |  | Free-text query. |
+
+Pagination is transport-level: `--limit/-n`, `--cursor TOKEN`, `--all` (walked inside the daemon, paced by the account's own rate limiter).
+
+```console
+$ tlgr chat admin-log list @mygroup --filter ban,kick --json
+```
+
+<details><summary>Catalog coverage (2 full, 0 partial)</summary>
+
+Full: `groupcall.admin-log`, `groups-channels-admin.admin-log`
+
+</details>
+
+### `chat admin-log report`
+
+Report an anti-spam deletion as a false positive.
+
+The candidate ids come from `chat admin-log list --filter delete`, where the anti-spam bot's deletions appear.
+
+```
+tlgr chat admin-log report <CHAT> <MSG_ID> [OPTIONS]
+```
+
+**mutating · returns `AntiSpamReport`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Supergroup. |
+| `MSG_ID` | msg-id | yes | The wrongly deleted message. |
+
+```console
+$ tlgr chat admin-log report @mygroup 918 --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.antispam-false-positive`
+
+</details>
+
+### `chat admin demote`
+
+Dismiss an administrator.
+
+Sends an empty `ChatAdminRights`; the person keeps their membership. You need `add-admins` and — for somebody another admin promoted — `channelParticipantAdmin.can_edit`.
+
+```
+tlgr chat admin demote <CHAT> <USER> [OPTIONS]
+```
+
+**mutating · destructive (needs `--yes` off a TTY) · returns `AdminResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+| `USER` | user | yes | Who to dismiss. |
+
+```console
+$ tlgr chat admin demote @mygroup @alice --yes --json
+```
+
+<details><summary>Catalog coverage (1 full, 1 partial)</summary>
+
+Full: `groups-channels-admin.demote-admin`
+
+Partial: `groups-channels-admin.basic-group-admin`
+
+`is_admin=false` in a basic group; `chat admin list` owns the id.
+
+</details>
+
+### `chat admin list`
+
+List administrators with their rights and ranks.
+
+The creator is reported as `status: creator`. When the chat has Telegram's aggressive anti-spam turned on, its bot is appended locally exactly as the GUI does — the server never lists it, and its deletions do show up in the admin log.
+
+```
+tlgr chat admin list <CHAT> [OPTIONS]
+```
+
+**paginated (`PARTICIPANTS` cursor) · returns `Page[Participant]`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--rights/--no-rights` | flag | `True` | Expand each admin's mask into right names. |
+
+Pagination is transport-level: `--limit/-n`, `--cursor TOKEN`, `--all` (walked inside the daemon, paced by the account's own rate limiter).
+
+```console
+$ tlgr chat admin list @mygroup --json
+```
+
+<details><summary>Catalog coverage (2 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.admin-list`, `groups-channels-admin.basic-group-admin`
+
+</details>
+
+### `chat admin promote`
+
+Promote a member to admin, or change an existing admin's rights and rank.
+
+`--rights` sets the mask absolutely; `--grant`/`--revoke` patch the one the member already has, which is read first. `--all` grants every right *you* hold, because the server refuses to let you give away more. A basic group has no granular rights: the request collapses to `messages.editChatAdmin` and the dropped names are reported in `dropped` rather than silently lost.
+
+```
+tlgr chat admin promote <CHAT> <USER> [OPTIONS]
+```
+
+**mutating · returns `AdminResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+| `USER` | user | yes | Who to promote. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--anonymous/--no-anonymous` | flag |  | Shorthand for the `anonymous` right. |
+| `--all` | flag |  | Grant every right you hold yourself. |
+| `--except` | text |  | With --all: withhold these. |
+| `--grant` | text |  | Add these to the current mask. |
+| `--none` | flag |  | Empty mask (the same as `chat admin demote`). |
+| `--rank` | text |  | Custom title, max 16 chars. |
+| `--revoke` | text |  | Remove these from the current mask. |
+| `--rights` | text |  | The whole mask, comma-separated. |
+
+Also invocable as: `tlgr chat admin edit`
+
+```console
+$ tlgr chat admin promote @mygroup @alice --rights ban-users,delete-messages --json
+```
+
+<details><summary>Catalog coverage (4 full, 1 partial)</summary>
+
+Full: `groupcall.admin-right-manage-call`, `groups-channels-admin.member-tag-rank`, `groups-channels-admin.promote-admin`, `stories.admin-rights`
+
+Partial: `groups-channels-admin.basic-group-admin`
+
+Basic groups get the one all-or-nothing bit; `chat admin list` owns the id.
+
+</details>
+
+### `chat affiliate list`
+
+Affiliate (Star referral) bots connected to a channel, plus suggestions.
+
+```
+tlgr chat affiliate list <CHAT> [OPTIONS]
+```
+
+**paginated (`PARTICIPANTS` cursor) · returns `Page[AffiliateBot]`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | The channel. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--suggested` | flag |  | Suggested affiliate bots instead of the connected ones. |
+
+Pagination is transport-level: `--limit/-n`, `--cursor TOKEN`, `--all` (walked inside the daemon, paced by the account's own rate limiter).
+
+```console
+$ tlgr chat affiliate list @mychannel --json
+```
+
+<details><summary>Catalog coverage (0 full, 1 partial)</summary>
+
+Partial: `groups-channels-admin.affiliate-program`
+
+Listing; `chat affiliate set` connects one and owns the id.
+
+</details>
+
+### `chat affiliate set`
+
+Connect or disconnect an affiliate bot for a channel.
+
+Connecting is free; the Stars commission comes out of the bot's revenue.
+
+```
+tlgr chat affiliate set <CHAT> <BOT> [OPTIONS]
+```
+
+**mutating · returns `AffiliateResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | The channel. |
+| `BOT` | user | yes | The affiliate bot. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--off` | flag |  | Revoke the affiliate link instead. |
+
+```console
+$ tlgr chat affiliate set @mychannel @refbot --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.affiliate-program`
 
 </details>
 
@@ -230,6 +545,218 @@ Full: `dialogs.clear-history-both`, `dialogs.clear-history-by-date`, `dialogs.cl
 
 </details>
 
+### `chat community ban`
+
+Ban a member from a whole community.
+
+Registered and refusing with NOT_SUPPORTED (exit 13): layer 229.
+
+```
+tlgr chat community ban <COMMUNITY> <USER> [OPTIONS]
+```
+
+**mutating · destructive (needs `--yes` off a TTY) · returns `CommunityResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `COMMUNITY` | chat | yes | The community. |
+| `USER` | user | yes | Who to ban. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--off` | flag |  | Unban instead. |
+
+```console
+$ tlgr chat community ban @myhub @spammer --yes --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.community-link-requests`
+
+</details>
+
+### `chat community create`
+
+Create a Community (a hub grouping several chats).
+
+Registered and refusing with NOT_SUPPORTED (exit 13): the whole Community surface arrived in MTProto layer 229 and Telethon 1.44 speaks 227, so there is no request class to send. The command shape is settled and will start working with the layer uplift.
+
+```
+tlgr chat community create <TITLE> [OPTIONS]
+```
+
+**mutating · returns `CommunityResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `TITLE` | text | yes | The community's title. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--about` | text |  | Description. |
+| `--hidden` | flag |  | Do not show the community publicly. |
+| `--peer` | chat |  | Seed it with this chat. |
+
+```console
+$ tlgr chat community create 'Release hub' --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.community-create`
+
+</details>
+
+### `chat community list`
+
+List my communities, a community's chats, or its pending link requests.
+
+Registered and refusing with NOT_SUPPORTED (exit 13): layer 229.
+
+```
+tlgr chat community list [COMMUNITY] [OPTIONS]
+```
+
+**paginated (`PARTICIPANTS` cursor) · returns `Page[CommunityRow]`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `COMMUNITY` | chat | no | One community. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--collapse` | text |  | Collapse it in the chat list. |
+| `--mute` | text |  | Community-wide notify settings. |
+| `--requests` | flag |  | Pending link requests instead of chats. |
+| `--user` | user |  | Which of its chats this member joined. |
+
+Pagination is transport-level: `--limit/-n`, `--cursor TOKEN`, `--all` (walked inside the daemon, paced by the account's own rate limiter).
+
+```console
+$ tlgr chat community list --json
+```
+
+<details><summary>Catalog coverage (2 full, 2 partial)</summary>
+
+Full: `dialogs.community-collapse`, `dialogs.notify-community`
+
+Partial: `groups-channels-admin.community-link-requests`, `groups-channels-admin.community-manage-links`
+
+The whole Community surface is layer-229 and refuses with a reason; `chat community set` and `chat community ban` own the two ids.
+
+</details>
+
+### `chat community set`
+
+Add, hide, remove a chat in a community, or answer a link request.
+
+Registered and refusing with NOT_SUPPORTED (exit 13): layer 229.
+
+```
+tlgr chat community set <COMMUNITY> <CHAT> [STATE] [OPTIONS]
+```
+
+**mutating · returns `CommunityResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `COMMUNITY` | chat | yes | The community. |
+| `CHAT` | chat | yes | The chat to link. |
+| `STATE` | text | no | visible | hidden | removed. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--approve` | flag |  | Approve this chat's link request. |
+| `--collapsed` | text |  | Collapse it in my dialog list. |
+| `--deny` | flag |  | Reject this chat's link request. |
+| `--all` | flag |  | Answer every pending request. |
+
+```console
+$ tlgr chat community set @myhub @mygroup visible --json
+```
+
+<details><summary>Catalog coverage (1 full, 1 partial)</summary>
+
+Full: `groups-channels-admin.community-manage-links`
+
+Partial: `groups-channels-admin.community-link-requests`
+
+Layer-229 surface; `chat community ban` owns the link-requests id.
+
+</details>
+
+### `chat convert`
+
+Convert a basic group to a supergroup, or a supergroup to a gigagroup.
+
+Both conversions are one-way. Both ids are reported, because the history stays in the old peer (`chat.migrated_to` points at the new one). Supergroup-only commands offer `--upgrade` rather than migrating a chat out from under its owner.
+
+```
+tlgr chat convert <CHAT> <TARGET> [OPTIONS]
+```
+
+**mutating · destructive (needs `--yes` off a TTY) · returns `MigrateResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | The chat to convert. |
+| `TARGET` | text | yes | supergroup (from a basic group) or gigagroup. |
+
+```console
+$ tlgr chat convert @mygroup supergroup --yes --json
+```
+
+<details><summary>Catalog coverage (2 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.convert-to-gigagroup`, `groups-channels-admin.upgrade-basic-to-supergroup`
+
+</details>
+
+### `chat create`
+
+Create a basic group, supergroup, broadcast channel or forum.
+
+`--type supergroup` is what the GUI creates today; `group` is the legacy basic group, which cannot have a username or a location. `missing` carries `messages.invitedUsers.missing_invitees` verbatim, and the command exits 1 when any seed member was refused.
+
+```
+tlgr chat create <TITLE> [OPTIONS]
+```
+
+**mutating · returns `CreatedChat`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `TITLE` | text | yes | The chat's title. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--about` | text |  | Description. |
+| `--address` | text |  | Street address that goes with --geo. |
+| `--for-import` | flag |  | Destination for a history import (see `chat import`). |
+| `--forward-history` | int |  | Basic groups: history new members see. |
+| `--geo` | text |  | Create a location-based group. |
+| `--members` | user |  | Seed members. |
+| `--photo` | path |  | Set the photo afterwards. |
+| `--tabs` | flag |  | With --type forum: the tabbed topic UI. |
+| `--ttl` | text |  | Auto-delete timer at creation. |
+| `--type` | group|supergroup|channel|forum | `supergroup` | Peer shape. `group` is the legacy basic group. |
+| `--username` | text |  | Claim a public username afterwards. |
+
+```console
+$ tlgr chat create 'Release team' --type supergroup --members @alice --json
+```
+
+<details><summary>Catalog coverage (7 full, 2 partial)</summary>
+
+Full: `groups-channels-admin.create-basic-group`, `groups-channels-admin.create-channel`, `groups-channels-admin.create-forum`, `groups-channels-admin.create-geo-group`, `groups-channels-admin.create-supergroup`, `groups-channels-admin.create-with-autodelete`, `location.geogroup-create`
+
+Partial: `groups-channels-admin.add-members`, `groups-channels-admin.add-members-failure-report`
+
+Seed members go in at creation; `chat member add` owns adding them later.
+
+</details>
+
 ### `chat delete`
 
 Delete a chat: for me, for both sides, or for everyone.
@@ -259,6 +786,214 @@ $ tlgr chat delete @alice --yes --json
 <details><summary>Catalog coverage (7 full, 0 partial)</summary>
 
 Full: `dialogs.delete-chat-private`, `dialogs.delete-group-for-all`, `groups-channels-admin.delete-basic-group`, `groups-channels-admin.delete-channel`, `groups-channels-admin.delete-for-all-members`, `messages-core.history-delete-conversation`, `messages-core.saved-dialog-delete`
+
+</details>
+
+### `chat direct ban`
+
+Ban a user from a channel's direct messages.
+
+Acts on `channel.linked_monoforum_id`, not on the channel: banning somebody from your DMs and banning them from your channel are different decisions.
+
+```
+tlgr chat direct ban <CHANNEL> <USER> [OPTIONS]
+```
+
+**mutating · destructive (needs `--yes` off a TTY) · returns `DirectBanResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHANNEL` | chat | yes | The channel. |
+| `USER` | user | yes | Who to ban from the DMs. |
+
+Also invocable as: `tlgr chat monoforum ban`
+
+```console
+$ tlgr chat direct ban @mychannel @spammer --yes --json
+```
+
+<details><summary>Catalog coverage (0 full, 1 partial)</summary>
+
+Partial: `groups-channels-admin.monoforum-ban`
+
+Banning; `chat direct unban` lifts it and owns the id.
+
+</details>
+
+### `chat direct list`
+
+Browse a channel's direct-message conversations.
+
+Each conversation is a `monoForumDialog` keyed by `saved_peer_id` (the user). Reading and replying inside one is `message list/send --direct <user>`.
+
+```
+tlgr chat direct list <CHANNEL> [OPTIONS]
+```
+
+**paginated (`PARTICIPANTS` cursor) · returns `Page[DirectDialog]`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHANNEL` | chat | yes | The channel. |
+
+Pagination is transport-level: `--limit/-n`, `--cursor TOKEN`, `--all` (walked inside the daemon, paced by the account's own rate limiter).
+
+Also invocable as: `tlgr chat monoforum list`
+
+```console
+$ tlgr chat direct list @mychannel --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.monoforum-topic-list`
+
+</details>
+
+### `chat direct unban`
+
+Unban a user from a channel's direct messages.
+
+`chat member edit --free-messages on` waives the Stars price for one user without touching the ban.
+
+```
+tlgr chat direct unban <CHANNEL> <USER> [OPTIONS]
+```
+
+**mutating · returns `DirectBanResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHANNEL` | chat | yes | The channel. |
+| `USER` | user | yes | Who to ban from the DMs. |
+
+Also invocable as: `tlgr chat monoforum unban`
+
+```console
+$ tlgr chat direct unban @mychannel @alice --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.monoforum-ban`
+
+</details>
+
+### `chat discussion list`
+
+Groups eligible to become a channel's discussion group.
+
+A basic group in this list must be converted first (`chat convert <chat> supergroup`); `needs_migration` says which.
+
+```
+tlgr chat discussion list [OPTIONS]
+```
+
+**returns `list[DiscussionCandidate]`**
+
+```console
+$ tlgr chat discussion list --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.discussion-candidates`
+
+</details>
+
+### `chat discussion set`
+
+Link a discussion group to a channel.
+
+The server refuses a group whose prehistory is hidden; `--unhide-prehistory` makes it visible first, and says so rather than doing it silently. LINK_NOT_MODIFIED reports `already: true`.
+
+```
+tlgr chat discussion set <CHANNEL> <GROUP> [OPTIONS]
+```
+
+**mutating · returns `DiscussionResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHANNEL` | chat | yes | The broadcast. |
+| `GROUP` | chat | yes | The discussion group. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--unhide-prehistory` | flag |  | Make the group's prehistory visible first. |
+
+```console
+$ tlgr chat discussion set @mychannel @mygroup --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.discussion-link`
+
+</details>
+
+### `chat discussion unset`
+
+Unlink a channel's discussion group.
+
+```
+tlgr chat discussion unset <CHANNEL> [OPTIONS]
+```
+
+**mutating · returns `DiscussionResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHANNEL` | chat | yes | The broadcast. |
+
+```console
+$ tlgr chat discussion unset @mychannel --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.discussion-unlink`
+
+</details>
+
+### `chat edit`
+
+Edit a group/channel profile: title, about, location, colors, emoji status, tab.
+
+One request per changed field, applied in a fixed order and reported in `changed`. Colours, emoji statuses and emoji packs are boost-gated: `--palettes` prints every option with the level it needs, without editing anything. A basic group accepts only `--title` and `--about`.
+
+```
+tlgr chat edit <CHAT> [OPTIONS]
+```
+
+**mutating · returns `ChatEditResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--about` | text |  | New description, max 255 chars. |
+| `--address` | text |  | Street address. |
+| `--color` | text |  | Message accent palette id, or `off`. |
+| `--color-emoji` | text |  | Background emoji for --color. |
+| `--emoji-status` | text |  | Emoji status, or `off`. |
+| `--emoji-status-until` | text |  | Expiry for --emoji-status. |
+| `--geo` | text |  | Geogroup location; `off` clears it. |
+| `--main-tab` | posts|gifts|media|files|music|voice|links|gifs |  | Default profile tab (channels.setMainProfileTab). |
+| `--palettes` | flag |  | Do not edit: print the palettes and the level each needs. |
+| `--profile-color` | text |  | Profile palette id, or `off`. |
+| `--profile-color-emoji` | text |  | Background emoji for --profile-color. |
+| `--title` | text |  | New title. |
+
+```console
+$ tlgr chat edit @mygroup --title 'Release team' --about 'Ship it' --json
+```
+
+<details><summary>Catalog coverage (8 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.channel-emoji-status`, `groups-channels-admin.edit-about`, `groups-channels-admin.edit-title`, `groups-channels-admin.main-profile-tab`, `groups-channels-admin.peer-color-message`, `groups-channels-admin.peer-color-profile`, `groups-channels-admin.set-location`, `location.channel-geo`
 
 </details>
 
@@ -328,6 +1063,256 @@ $ tlgr chat import @alice ./whatsapp.txt --check --json
 <details><summary>Catalog coverage (2 full, 0 partial)</summary>
 
 Full: `dialogs.history-import`, `groups-channels-admin.import-chat-history`
+
+</details>
+
+### `chat invite create`
+
+Create an invite link (expiring, limited, approval-gated or paid).
+
+`--limit` and `--request-approval` are mutually exclusive, which is the server's rule and not ours. The subscription period is fixed at 30 days; creating a paid link costs nothing, only joining does. `--replace-primary` invalidates the old permanent link for everyone who holds it.
+
+```
+tlgr chat invite create <CHAT> [OPTIONS]
+```
+
+**mutating · returns `Invite`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--expires` | text |  | Expiry, as a duration or a timestamp. |
+| `--replace-primary` | flag |  | Revoke and replace the permanent link. |
+| `--request-approval` | flag |  | Joins land in the approval queue instead. |
+| `--subscription-stars` | int |  | Paid link: Stars per 30-day period. |
+| `--title` | text |  | Label shown to admins. |
+| `--limit` | int |  | Maximum joins; excludes --request-approval. |
+
+```console
+$ tlgr chat invite create @mygroup --title 'Launch week' --limit 25 --expires 7d --json
+```
+
+<details><summary>Catalog coverage (3 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.invite-link-create`, `groups-channels-admin.invite-link-primary`, `groups-channels-admin.invite-link-subscription`
+
+</details>
+
+### `chat invite delete`
+
+Delete a revoked invite link, or every revoked link of an admin.
+
+Only revoked links can be deleted; revoke an active one first. `--revoked` reports `deleted: -1`, because `messages.deleteRevokedExportedChatInvites` answers with a bare `true` and inventing a count would be inventing data.
+
+```
+tlgr chat invite delete <CHAT> [LINK] [OPTIONS]
+```
+
+**mutating · destructive (needs `--yes` off a TTY) · returns `InviteDeleted`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+| `LINK` | text | no | The revoked link to delete. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--admin` | user |  | With --revoked: whose links to purge. |
+| `--revoked` | flag |  | Delete every revoked link instead. |
+
+```console
+$ tlgr chat invite delete @mygroup --revoked --yes --json
+```
+
+<details><summary>Catalog coverage (2 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.invite-link-delete`, `groups-channels-admin.invite-link-delete-all-revoked`
+
+</details>
+
+### `chat invite edit`
+
+Edit an invite link.
+
+May answer with `messages.exportedChatInviteReplaced`; both links are reported, the new one in `link` and the old one in `replaced_link`. A paid subscription link accepts only `--title`.
+
+```
+tlgr chat invite edit <CHAT> <LINK> [OPTIONS]
+```
+
+**mutating · returns `Invite`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+| `LINK` | text | yes | The invite link to edit. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--expires` | text |  | New expiry; `off` clears it. |
+| `--request-approval/--no-request-approval` | flag |  | Turn the approval queue on or off. |
+| `--title` | text |  | New label. |
+| `--limit` | int |  | New usage limit; 0 clears it. |
+
+```console
+$ tlgr chat invite edit @mygroup https://t.me/+AbCdEf --limit 50 --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.invite-link-edit`
+
+</details>
+
+### `chat invite get`
+
+Inspect one invite link, the primary link, or preview a link you were given.
+
+One argument that is a `t.me/+…` or `joinchat` link previews it with `messages.checkChatInvite` and needs no rights; a chat plus a link inspects your own with `messages.getExportedChatInvite` and needs `invite-users`. A peek answers with `peek_expires`, which is the window `chat invite open` reads inside.
+
+```
+tlgr chat invite get <CHAT|LINK> [LINK] [OPTIONS]
+```
+
+**returns `InviteInfo`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT|LINK` | chat | yes | A chat, or an invite link. |
+| `LINK` | text | no | With a chat: which link. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--png` | path |  | Write the QR code to a PNG. |
+| `--qr` | flag |  | Also render the link as an ASCII QR code. |
+
+```console
+$ tlgr chat invite get https://t.me/+AbCdEf --json
+```
+
+<details><summary>Catalog coverage (3 full, 1 partial)</summary>
+
+Full: `groups-channels-admin.check-invite`, `groups-channels-admin.invite-link-get`, `groups-channels-admin.invite-link-qr`
+
+Partial: `groups-channels-admin.invite-link-primary`
+
+The QR is rendered locally and needs the optional `tlgr[qr]` extra; without it the link is still reported and a warning says so. Minting the primary link is `chat invite create`.
+
+</details>
+
+### `chat invite list`
+
+List a chat's invite links (active, revoked, or grouped by admin).
+
+`admin_id` is mandatory in the request, so it defaults to you; only the owner may name somebody else. The cursor packs the `(date, link)` pair of the last row. `--by-admin` swaps the rows for one per admin, with their active and revoked counts in `usage` and `requested`.
+
+```
+tlgr chat invite list <CHAT> [OPTIONS]
+```
+
+**paginated (`PARTICIPANTS` cursor) · returns `Page[Invite]`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--admin` | user |  | Whose links to list; defaults to me. |
+| `--by-admin` | flag |  | One row per admin with their link counts instead. |
+| `--revoked` | flag |  | Revoked links instead of active ones. |
+
+Pagination is transport-level: `--limit/-n`, `--cursor TOKEN`, `--all` (walked inside the daemon, paced by the account's own rate limiter).
+
+```console
+$ tlgr chat invite list @mygroup --revoked --json
+```
+
+<details><summary>Catalog coverage (2 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.invite-link-admins`, `groups-channels-admin.invite-link-list`
+
+</details>
+
+### `chat invite open`
+
+Read a private channel through an invite peek, without joining.
+
+A peek is the server's offer, not ours: when it answers anything other than `chatInvitePeek` this exits 6 rather than joining on your behalf.
+
+```
+tlgr chat invite open <LINK> [OPTIONS]
+```
+
+**returns `InvitePeek`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `LINK` | chat | yes | The invite link. |
+
+```console
+$ tlgr chat invite open https://t.me/+AbCdEf --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.invite-peek`
+
+</details>
+
+### `chat invite revoke`
+
+Revoke an invite link.
+
+Revoked links stay listable with `chat invite list --revoked` until `chat invite delete` removes them.
+
+```
+tlgr chat invite revoke <CHAT> <LINK> [OPTIONS]
+```
+
+**mutating · destructive (needs `--yes` off a TTY) · returns `InviteRevoked`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+| `LINK` | text | yes | The invite link to revoke. |
+
+```console
+$ tlgr chat invite revoke @mygroup https://t.me/+AbCdEf --yes --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.invite-link-revoke`
+
+</details>
+
+### `chat join`
+
+Join a public group/channel, or a private one by invite link.
+
+`INVITE_REQUEST_SENT` is success-with-pending (exit 0, `pending_approval: true`) and `USER_ALREADY_PARTICIPANT` is `already: true` (exit 0); an expired hash exits 5. A layer-229 join that needs a web view is reported in `needs_web_view` rather than claimed as a join.
+
+```
+tlgr chat join <CHAT|LINK> [OPTIONS]
+```
+
+**mutating · returns `JoinResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT|LINK` | chat | yes | A public chat, or an invite link. |
+
+```console
+$ tlgr chat join @somechannel --json
+```
+
+<details><summary>Catalog coverage (2 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.join-by-invite`, `groups-channels-admin.join-by-username`
 
 </details>
 
@@ -416,6 +1401,346 @@ Full: `dialogs.folder-chat-count`, `dialogs.inactive-chats`, `dialogs.join-reque
 Partial: `contacts-users.contacts-sort`, `dialogs.search-peers`
 
 Peer search here is a substring match over the dialog list; the global one is `contact search`. `--sort` orders chats, not contacts.
+
+</details>
+
+### `chat member add`
+
+Add members to a group or channel.
+
+`missing` carries `messages.invitedUsers.missing_invitees` verbatim — one `{user_id, reason}` per refusal, with reason in privacy-restricted, premium-would-allow-invite or premium-required-for-pm. `--invite-link-fallback` DMs the link to them, and is opt-in because it sends a message on your behalf.
+
+```
+tlgr chat member add <CHAT> [USER]... [OPTIONS]
+```
+
+**mutating · returns `MembersAdded`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+| `USER` | user | one or more | Who to add. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--forward-history` | int |  | Basic groups: past messages the member sees. |
+| `--invite-link-fallback` | flag |  | DM the invite link to anyone who could not be added. |
+
+```console
+$ tlgr chat member add @mygroup @alice @carol --json
+```
+
+<details><summary>Catalog coverage (2 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.add-members`, `groups-channels-admin.add-members-failure-report`
+
+</details>
+
+### `chat member ban`
+
+Ban a member, optionally purging and reporting them in one step.
+
+`participant` is an `InputPeer`, so a channel posting in the group — or an anonymous admin's channel — can be banned as well as a user. `--until` follows Telegram's own rounding: 0, under 30 seconds and over 366 days all mean forever.
+
+```
+tlgr chat member ban <CHAT> [USER]... [OPTIONS]
+```
+
+**mutating · destructive (needs `--yes` off a TTY) · returns `list[MemberResult]`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+| `USER` | user | one or more | Who to ban. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--messages` | int |  | Also delete these message ids. |
+| `--purge` | flag |  | Delete everything they ever sent here. |
+| `--report` | flag |  | Report the messages as spam too. |
+| `--until` | text |  | Ban expiry; 0, under 30s or over 366d = forever. |
+
+Also invocable as: `tlgr chat ban`
+
+```console
+$ tlgr chat member ban @mygroup @spammer --purge --report --yes --json
+```
+
+<details><summary>Catalog coverage (2 full, 2 partial)</summary>
+
+Full: `groups-channels-admin.ban-member`, `groups-channels-admin.moderate-member`
+
+Partial: `groups-channels-admin.delete-member-history`, `groups-channels-admin.report-member`
+
+The moderate box bundles them; `chat member delete-history` and `chat member report` own the standalone ids.
+
+</details>
+
+### `chat member delete-history`
+
+Delete every message one member ever sent.
+
+`channels.deleteParticipantHistory` answers with `messages.affectedHistory` and an offset to resume from; the loop runs in the daemon until the offset is 0, because deleting the first hundred messages and reporting success is not deleting a history.
+
+```
+tlgr chat member delete-history <CHAT> <USER> [OPTIONS]
+```
+
+**mutating · destructive (needs `--yes` off a TTY) · returns `MemberResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Supergroup or channel. |
+| `USER` | user | yes | Whose messages to delete. |
+
+Also invocable as: `tlgr chat member purge`
+
+```console
+$ tlgr chat member delete-history @mygroup @spammer --yes --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.delete-member-history`
+
+</details>
+
+### `chat member edit`
+
+Edit a member's custom rank and paid-message exception.
+
+The rank shows up as `message.from_rank` in supergroups and `chatParticipant.rank` in basic groups; `chat admin promote --rank` writes the same field for admins.
+
+```
+tlgr chat member edit <CHAT> <USER> [OPTIONS]
+```
+
+**mutating · returns `MemberResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+| `USER` | user | yes | The member. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--free-messages/--no-free-messages` | flag |  | Let this user message the channel without paying Stars. |
+| `--rank` | text |  | Custom title, max 16 chars. |
+| `--refund` | flag |  | With --free-messages: refund the Stars already paid. |
+
+```console
+$ tlgr chat member edit @mygroup @alice --rank moderator --json
+```
+
+<details><summary>Catalog coverage (1 full, 1 partial)</summary>
+
+Full: `groups-channels-admin.paid-messages-price`
+
+Partial: `groups-channels-admin.member-tag-rank`
+
+Ranks for plain members; `chat admin promote --rank` owns the admin half.
+
+</details>
+
+### `chat member get`
+
+One member's status, rights, rank, join date and inviter.
+
+`effective_permissions` is the chat's defaults patched with this member's own mask, in the same allow-polarity vocabulary `chat permission get` prints — which is the answer to “what may this person actually do” rather than “what did an admin type”.
+
+```
+tlgr chat member get <CHAT> <USER> [OPTIONS]
+```
+
+**returns `Participant`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+| `USER` | user | yes | The member. |
+
+```console
+$ tlgr chat member get @mygroup @alice --json
+```
+
+<details><summary>Catalog coverage (3 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.member-get`, `groups-channels-admin.member-invited-by`, `groups-channels-admin.member-permissions-view`
+
+</details>
+
+### `chat member list`
+
+List members with the participant filters the API offers.
+
+Every row keeps its `ChannelParticipant*` wrapper: status, rank, join date, inviter, promoter and both rights masks. `--filter kicked` is people who were removed; `--filter restricted` is people still in the chat with a mask on them. A chat with `participants_hidden` answers PERMISSION_DENIED rather than an empty page, because “nobody is in this group” would be a lie.
+
+```
+tlgr chat member list <CHAT> [OPTIONS]
+```
+
+**paginated (`PARTICIPANTS` cursor) · returns `Page[Participant]`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--admins` | flag |  | Shorthand for --filter admins (v1). |
+| `--bots` | flag |  | Shorthand for --filter bots. |
+| `--filter` | recent|admins|bots|contacts|kicked|banned|restricted|mentions | `recent` | Which participant list. kicked = removed, restricted = still in the chat. |
+| `--search`, `-s` | text |  | Server-side name query. |
+| `--subscription-expired` | flag |  | With --via-link: lapsed paid subscribers. |
+| `--topic` | msg-id |  | With --filter mentions: one topic. |
+| `--via-link` | text |  | Only people who joined through this invite link. |
+
+Pagination is transport-level: `--limit/-n`, `--cursor TOKEN`, `--all` (walked inside the daemon, paced by the account's own rate limiter).
+
+Also invocable as: `tlgr chat members`
+
+```console
+$ tlgr chat member list @mygroup --filter admins --json
+```
+
+<details><summary>Catalog coverage (5 full, 1 partial)</summary>
+
+Full: `groups-channels-admin.banned-list`, `groups-channels-admin.channel-subscriptions-admin`, `groups-channels-admin.invite-link-importers`, `groups-channels-admin.member-mention-autocomplete`, `groups-channels-admin.members-list`
+
+Partial: `groups-channels-admin.admin-list`
+
+`--filter admins` lists them; `chat admin list` is the primary owner.
+
+</details>
+
+### `chat member remove`
+
+Remove (kick) a member; they can rejoin.
+
+A kick is `editBanned(view_messages)` followed by an empty mask, so the person may come back. Use `chat member ban` to keep them out. `--purge` drains `messages.affectedHistory` until the server stops handing back an offset.
+
+```
+tlgr chat member remove <CHAT> [USER]... [OPTIONS]
+```
+
+**mutating · destructive (needs `--yes` off a TTY) · returns `list[MemberResult]`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+| `USER` | user | one or more | Who to remove. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--messages` | int |  | Also delete these message ids. |
+| `--purge` | flag |  | Delete everything they ever sent here. |
+| `--report` | flag |  | Report the messages as spam too. |
+
+```console
+$ tlgr chat member remove @mygroup @spammer --purge --yes --json
+```
+
+<details><summary>Catalog coverage (1 full, 2 partial)</summary>
+
+Full: `groups-channels-admin.remove-member`
+
+Partial: `groups-channels-admin.delete-member-history`, `groups-channels-admin.report-member`
+
+`--purge`/`--report` are the moderate box; the standalone commands are `chat member delete-history` and `chat member report`.
+
+</details>
+
+### `chat member report`
+
+Report a member (and optionally their messages) as spam.
+
+```
+tlgr chat member report <CHAT> <USER> [OPTIONS]
+```
+
+**mutating · returns `MemberResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Supergroup or channel. |
+| `USER` | user | yes | Who to report. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--messages` | int |  | Message ids to attach to the report. |
+
+```console
+$ tlgr chat member report @mygroup @spammer --messages 918 --yes --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.report-member`
+
+</details>
+
+### `chat member restrict`
+
+Restrict what one member may do, with an expiry.
+
+Read-modify-write of the member's current mask: `--deny` and `--allow` patch it, `--replace` supplies it whole, `--none` is read-only and `--clear` drops it back to the chat default. Names come from `chat permission list --mask member`.
+
+```
+tlgr chat member restrict <CHAT> <USER> [OPTIONS]
+```
+
+**mutating · returns `MemberResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Supergroup. |
+| `USER` | user | yes | The member. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--allow` | text |  | Rights to give back, comma-separated. |
+| `--clear` | flag |  | Drop the mask; fall back to the chat default. |
+| `--deny` | text |  | Rights to take away, comma-separated. |
+| `--all` | flag |  | Allow everything. |
+| `--none` | flag |  | Read-only: deny everything but view-messages. |
+| `--purge` | flag |  | Also delete everything they sent. |
+| `--replace` | flag |  | Treat --deny/--allow as the whole mask, not a patch. |
+| `--until` | text |  | When the restriction lapses. |
+
+```console
+$ tlgr chat member restrict @mygroup @alice --deny send-media --until 7d --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.restrict-member`
+
+</details>
+
+### `chat member unban`
+
+Lift a ban or a restriction.
+
+Sends an all-clear mask, which takes the user off the Removed and Restricted lists. It does not put them back in the chat.
+
+```
+tlgr chat member unban <CHAT> [USER]... [OPTIONS]
+```
+
+**mutating · returns `list[MemberResult]`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+| `USER` | user | one or more | Who to unban. |
+
+```console
+$ tlgr chat member unban @mygroup @alice --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.unban-member`
 
 </details>
 
@@ -588,6 +1913,155 @@ $ tlgr chat open @alice --json
 <details><summary>Catalog coverage (2 full, 0 partial)</summary>
 
 Full: `dialogs.open-chat`, `dialogs.peek-chat`
+
+</details>
+
+### `chat permission get`
+
+Show the chat-wide default permissions (what every member may do).
+
+Allow-polarity, using the same names `chat permission set --allow/--deny` accepts, so the output round-trips back into the input.
+
+```
+tlgr chat permission get <CHAT> [OPTIONS]
+```
+
+**returns `PermissionView`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+
+```console
+$ tlgr chat permission get @mygroup --json
+```
+
+<details><summary>Catalog coverage (0 full, 1 partial)</summary>
+
+Partial: `groups-channels-admin.default-permissions`
+
+Reading half; `chat permission set` writes them and owns the id.
+
+</details>
+
+### `chat permission list`
+
+Print the canonical right vocabulary (admin mask, member mask, layer support).
+
+The one place the names come from: `chat admin promote --rights`, `chat member restrict --deny`, `chat permission set --allow` and `bot default-rights set` all read this table. `manage-linked-peers` and `manage-welcome-messages` are layer-229 flags Telethon 1.44 cannot express and are marked `supported: false` rather than omitted.
+
+```
+tlgr chat permission list [OPTIONS]
+```
+
+**returns `list[RightInfo]`**
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--chat` | chat |  | Also mark what you may grant here. |
+| `--mask` | admin|member|all | `all` | Which vocabulary to print. |
+
+```console
+$ tlgr chat permission list --mask member --json
+```
+
+<details><summary>Catalog coverage (0 full, 3 partial)</summary>
+
+Partial: `groups-channels-admin.default-permissions`, `groups-channels-admin.promote-admin`, `groups-channels-admin.restrict-member`
+
+The vocabulary the three writing commands share; each of them owns its own catalog id.
+
+</details>
+
+### `chat permission set`
+
+Set the chat-wide default permissions.
+
+Read-modify-write: the current `default_banned_rights` are fetched and patched, because a fresh mask resets every flag you did not mention. `view-messages` is not settable here — a chat nobody may read is `chat member ban`, not a permission — and `until_date` is ignored. Works for basic groups too.
+
+```
+tlgr chat permission set <CHAT> [OPTIONS]
+```
+
+**mutating · returns `PermissionResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--allow` | text |  | Rights every member may use. |
+| `--deny` | text |  | Rights no member may use. |
+| `--all` | flag |  | Allow everything (empty banned mask). |
+| `--none` | flag |  | Deny everything except view-messages. |
+| `--replace` | flag |  | Treat --allow/--deny as the whole mask, not a patch. |
+
+```console
+$ tlgr chat permission set @mygroup --deny send-media,send-stickers --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.default-permissions`
+
+</details>
+
+### `chat photo delete`
+
+Remove the group/channel photo.
+
+```
+tlgr chat photo delete <CHAT> [OPTIONS]
+```
+
+**mutating · returns `ChatPhotoResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+
+```console
+$ tlgr chat photo delete @mygroup --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.remove-photo`
+
+</details>
+
+### `chat photo set`
+
+Set the group/channel photo (still, video or emoji avatar).
+
+Exactly one of `<file>`, `--video` and `--emoji-markup` is required.
+
+```
+tlgr chat photo set <CHAT> [FILE] [OPTIONS]
+```
+
+**mutating · returns `ChatPhotoResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+| `FILE` | path | no | The still image. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--emoji-bg` | text |  | Background palette for --emoji-markup. |
+| `--emoji-markup` | int |  | Build the avatar from an emoji. |
+| `--video` | path |  | Animated avatar. |
+| `--video-start` | number |  | Still frame from --video. |
+
+```console
+$ tlgr chat photo set @mygroup ./logo.png --json
+```
+
+<details><summary>Catalog coverage (2 full, 0 partial)</summary>
+
+Full: `chat.photo-set`, `groups-channels-admin.edit-photo`
 
 </details>
 
@@ -765,6 +2239,188 @@ Full: `contacts-users.user-report-messages`, `contacts-users.user-report-spam`, 
 
 </details>
 
+### `chat request approve`
+
+Approve join requests.
+
+Per-user failures are collected in `failed` rather than aborting the batch.
+
+```
+tlgr chat request approve <CHAT> [USER]... [OPTIONS]
+```
+
+**mutating · returns `RequestResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+| `USER` | user | one or more | Which requesters. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--all` | flag |  | Answer every pending request. |
+| `--link` | text |  | With --all: only this invite link. |
+
+```console
+$ tlgr chat request approve @mygroup @alice --json
+```
+
+<details><summary>Catalog coverage (1 full, 1 partial)</summary>
+
+Full: `groups-channels-admin.join-request-approve-all`
+
+Partial: `groups-channels-admin.join-request-approve-one`
+
+Approving one is here; declining one is `chat request deny`.
+
+</details>
+
+### `chat request deny`
+
+Decline join requests.
+
+```
+tlgr chat request deny <CHAT> [USER]... [OPTIONS]
+```
+
+**mutating · destructive (needs `--yes` off a TTY) · returns `RequestResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+| `USER` | user | one or more | Which requesters. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--all` | flag |  | Answer every pending request. |
+| `--link` | text |  | With --all: only this invite link. |
+
+```console
+$ tlgr chat request deny @mygroup --all --yes --json
+```
+
+<details><summary>Catalog coverage (1 full, 1 partial)</summary>
+
+Full: `groups-channels-admin.join-request-approve-one`
+
+Partial: `groups-channels-admin.join-request-approve-all`
+
+Declining the whole queue is here too; `chat request approve` owns the other id.
+
+</details>
+
+### `chat request list`
+
+List pending join requests.
+
+The answer flags (`--approve`, `--decline`, `--approve-all`, `--decline-all`) run before the listing and honour `--dry-run` themselves, so listing keeps working under a dry run instead of printing a stub.
+
+```
+tlgr chat request list <CHAT> [OPTIONS]
+```
+
+**paginated (`PARTICIPANTS` cursor) · returns `Page[JoinRequest]`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--approve` | user |  | Approve one requester. |
+| `--approve-all` | flag |  | Approve every pending request. |
+| `--community` | flag |  | Target a layer-229 community's peer-link requests. |
+| `--decline` | user |  | Decline one requester. |
+| `--decline-all` | flag |  | Decline every pending request. |
+| `--link` | text |  | Only requests from this invite link. |
+| `--search`, `-s` | text |  | Filter by name. |
+
+Pagination is transport-level: `--limit/-n`, `--cursor TOKEN`, `--all` (walked inside the daemon, paced by the account's own rate limiter).
+
+Also invocable as: `tlgr chat join-requests`
+
+```console
+$ tlgr chat request list @mygroup --json
+```
+
+<details><summary>Catalog coverage (2 full, 1 partial)</summary>
+
+Full: `dialogs.community-join-requests`, `groups-channels-admin.join-request-list`
+
+Partial: `dialogs.join-requests-badge`
+
+The badge itself is `chat list --with-join-requests`; this is the queue.
+
+</details>
+
+### `chat revenue get`
+
+Stars / TON revenue of a channel (and per-user paid-message revenue).
+
+Read-only by design: when `withdrawal_enabled` is true the command says so and points at an official client, because `payments.getStarsRevenueWithdrawalUrl` moves money and wants the 2FA password. Needs `can_view_revenue` / `can_view_stars_revenue`.
+
+```
+tlgr chat revenue get <CHAT> [OPTIONS]
+```
+
+**returns `RevenueSummary`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Channel. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--dark` | flag |  | Dark colour set in the graph specs. |
+| `--since` | user |  | Stars earned from this user's messages. |
+| `--ton` | flag |  | TON (ad) revenue instead of Stars. |
+
+```console
+$ tlgr chat revenue get @mychannel --json
+```
+
+<details><summary>Catalog coverage (2 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.paid-message-revenue`, `groups-channels-admin.stars-revenue-stats`
+
+</details>
+
+### `chat revenue list`
+
+Stars / TON transaction history of a channel.
+
+The cursor is the opaque `next_offset` string the server hands back.
+
+```
+tlgr chat revenue list <CHAT> [OPTIONS]
+```
+
+**paginated (`PARTICIPANTS` cursor) · returns `Page[RevenueTransaction]`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Channel. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--ascending` | flag |  | Oldest first. |
+| `--in` | flag |  | Incoming only. |
+| `--out` | flag |  | Outgoing only. |
+| `--subscription` | text |  | Only this subscription's rows. |
+| `--ton` | flag |  | TON transactions instead of Stars. |
+
+Pagination is transport-level: `--limit/-n`, `--cursor TOKEN`, `--all` (walked inside the daemon, paced by the account's own rate limiter).
+
+```console
+$ tlgr chat revenue list @mychannel --in --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.stars-transactions`
+
+</details>
+
 ### `chat saved list`
 
 Saved-Messages sublists and channel direct-message topics.
@@ -920,6 +2576,59 @@ Registered and refused with NOT_SUPPORTED (exit 13) until the E2E module exists.
 
 </details>
 
+### `chat send-as list`
+
+Peers I may post as in this chat.
+
+```
+tlgr chat send-as list <CHAT> [OPTIONS]
+```
+
+**returns `list[SendAsPeer]`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+
+```console
+$ tlgr chat send-as list @mygroup --json
+```
+
+<details><summary>Catalog coverage (0 full, 1 partial)</summary>
+
+Partial: `groups-channels-admin.send-as`
+
+Listing half; `chat send-as set` writes the default and owns the id.
+
+</details>
+
+### `chat send-as set`
+
+Set the default peer I post as in this chat.
+
+Applies to reactions as well as messages. Every send command still takes a one-off `--send-as`. The `anonymous` admin right forces the group itself.
+
+```
+tlgr chat send-as set <CHAT> <PEER> [OPTIONS]
+```
+
+**mutating · returns `SendAsResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+| `PEER` | chat | yes | Who to post as. |
+
+```console
+$ tlgr chat send-as set @mygroup @mychannel --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.send-as`
+
+</details>
+
 ### `chat set`
 
 Per-dialog switches: content sharing, forum view mode, send-as.
@@ -951,6 +2660,355 @@ $ tlgr chat set @alice --sharing off --json
 <details><summary>Catalog coverage (3 full, 0 partial)</summary>
 
 Full: `dialogs.no-forwards-private`, `dialogs.send-as-default`, `dialogs.view-as-topics`
+
+</details>
+
+### `chat setting get`
+
+Print every administrable policy toggle with its current value.
+
+The key names are exactly `chat setting set`'s flag names without the leading dashes, so the output round-trips into the input. `available` says whether *you* may change each key, and `gated_by` names the capability flag or boost level that blocks it.
+
+```
+tlgr chat setting get <CHAT> [OPTIONS]
+```
+
+**returns `SettingsView`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+
+Also invocable as: `tlgr chat settings`
+
+```console
+$ tlgr chat setting get @mygroup --json
+```
+
+<details><summary>Catalog coverage (12 full, 6 partial)</summary>
+
+Full: `groups-channels-admin.antispam`, `groups-channels-admin.autotranslation`, `groups-channels-admin.content-protection`, `groups-channels-admin.forum-toggle`, `groups-channels-admin.gift-notifications`, `groups-channels-admin.group-emoji-set`, `groups-channels-admin.hidden-members`, `groups-channels-admin.prehistory-visibility`, `groups-channels-admin.reactions-settings`, `groups-channels-admin.signatures`, `groups-channels-admin.slow-mode`, `groups-channels-admin.toggle-join-to-send`
+
+Partial: `groups-channels-admin.channel-direct-messages`, `groups-channels-admin.group-sticker-set`, `groups-channels-admin.paid-messages-price`, `groups-channels-admin.restrict-sponsored`, `groups-channels-admin.toggle-join-request`, `groups-channels-admin.view-forum-as-messages`
+
+Reading half of the Manage screen; `chat setting set` writes each key.
+
+</details>
+
+### `chat setting set`
+
+Change group/channel policy toggles (the Manage screen).
+
+Idempotent: a toggle already in the requested state is reported in `already` and never sent. Failures are reported per key in `failed` and do not stop the rest, because a boost-gated refusal must not hide the changes that did land. `--direct-messages` and `--paid-messages` are the same call.
+
+```
+tlgr chat setting set <CHAT> [OPTIONS]
+```
+
+**mutating · returns `SettingResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--ads` | text |  | `off` disables sponsored messages. |
+| `--allow-custom-reactions` | text |  | With --reactions all. |
+| `--antispam` | text |  | Aggressive anti-spam. |
+| `--apply-to-links` | flag |  | Apply --join-request to existing invite links too. |
+| `--autotranslate` | text |  | Channel auto-translation. |
+| `--direct-messages` | text |  | Enable the channel's direct messages. |
+| `--emoji-set` | text |  | Group custom-emoji pack short name. |
+| `--forum` | text |  | Enable or disable Topics. |
+| `--forum-tabs` | tabs|list |  | Tabbed vs list topic UI. |
+| `--gift-notifications` | text |  | Star-gift notices in the channel. |
+| `--guard-bot` | user |  | Bot that handles the queue. |
+| `--hidden-members` | text |  | Hide the member list from non-admins. |
+| `--join-request` | text |  | Require approval to join. |
+| `--join-to-send` | text |  | Require joining before sending. |
+| `--paid-messages` | text |  | Stars per incoming message. |
+| `--paid-reactions` | text |  | Enable Stars reactions. |
+| `--prehistory` | visible|hidden |  | History visibility for new members. |
+| `--protect`, `--noforwards` | text |  | Restrict saving and forwarding. |
+| `--reactions` | text |  | Allowed reactions. |
+| `--reactions-limit` | int |  | Max distinct reactions per message. |
+| `--signature-profiles` | text |  | Link signatures to profiles. |
+| `--signatures` | text |  | Sign channel posts. |
+| `--slow-mode` | text |  | Seconds between messages, or off. |
+| `--sticker-set` | text |  | Group sticker set short name. |
+| `--view-as` | messages|topics |  | My own view preference for this forum. |
+
+```console
+$ tlgr chat setting set @mygroup --slow-mode 30s --hidden-members on --json
+```
+
+<details><summary>Catalog coverage (11 full, 14 partial)</summary>
+
+Full: `dialogs.channel-autotranslation`, `dialogs.forum-tabs-mode`, `emoji.status-channel`, `groups-channels-admin.channel-direct-messages`, `groups-channels-admin.group-sticker-set`, `groups-channels-admin.restrict-sponsored`, `groups-channels-admin.toggle-join-request`, `groups-channels-admin.view-forum-as-messages`, `messages-core.paid-messages-group-price`, `messages-core.translate-channel-autotranslation`, `sticker.group-sticker-set`
+
+Partial: `groups-channels-admin.antispam`, `groups-channels-admin.autotranslation`, `groups-channels-admin.channel-sponsored-messages`, `groups-channels-admin.content-protection`, `groups-channels-admin.forum-toggle`, `groups-channels-admin.gift-notifications`, `groups-channels-admin.group-emoji-set`, `groups-channels-admin.hidden-members`, `groups-channels-admin.paid-messages-price`, `groups-channels-admin.prehistory-visibility`, `groups-channels-admin.reactions-settings`, `groups-channels-admin.signatures`, `groups-channels-admin.slow-mode`, `groups-channels-admin.toggle-join-to-send`
+
+The writing half of the Manage screen; `chat setting get` reads the same keys and owns most of these ids.
+
+</details>
+
+### `chat similar list`
+
+Channels similar to this one (or global recommendations).
+
+A non-Premium account gets a truncated `messages.chatsSlice`; `total` reports the full count so the cut is visible. There is no bare `chat similar` alias: Click cannot hold a command and a group under one name, and `chat similar list` is the canonical path.
+
+```
+tlgr chat similar list [CHAT] [OPTIONS]
+```
+
+**paginated (`PARTICIPANTS` cursor) · returns `Page[SimilarChat]`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | no | Channel, or omit for mine. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--bots` | flag |  | Bots similar to this bot instead. |
+
+Pagination is transport-level: `--limit/-n`, `--cursor TOKEN`, `--all` (walked inside the daemon, paced by the account's own rate limiter).
+
+```console
+$ tlgr chat similar list @somechannel --json
+```
+
+<details><summary>Catalog coverage (3 full, 0 partial)</summary>
+
+Full: `contacts-users.people-you-may-know`, `dialogs.recommended-channels`, `groups-channels-admin.similar-channels`
+
+</details>
+
+### `chat sponsored list`
+
+Sponsored messages the server wants shown in this channel.
+
+Exposed as data only; `viewed` is always false because tlgr never reports an impression it did not make. Results are cached five minutes server-side, which is the API's own contract. Turning them off for your channel is `chat setting set --ads off`.
+
+```
+tlgr chat sponsored list <CHAT> [OPTIONS]
+```
+
+**returns `list[SponsoredMessage]`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Channel. |
+
+```console
+$ tlgr chat sponsored list @somechannel --json
+```
+
+<details><summary>Catalog coverage (0 full, 1 partial)</summary>
+
+Partial: `groups-channels-admin.channel-sponsored-messages`
+
+Reading them; `chat sponsored report` owns the id and reports one.
+
+</details>
+
+### `chat sponsored report`
+
+Report a sponsored message.
+
+The reason menu is server-driven: with no `--option` the command prints the option blobs and exits 0, so a script can walk the tree one level at a time.
+
+```
+tlgr chat sponsored report <CHAT> <RANDOM_ID> [OPTIONS]
+```
+
+**mutating · returns `SponsoredReport`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Channel. |
+| `RANDOM_ID` | text | yes | The opaque id from `chat sponsored list`. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--comment` | text |  | Free-text comment. |
+| `--option` | text |  | Server-provided option for the next step. |
+
+```console
+$ tlgr chat sponsored report @somechannel AQID --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.channel-sponsored-messages`
+
+</details>
+
+### `chat stats get`
+
+Channel, supergroup, post, story or poll statistics.
+
+Needs `channelFull.can_view_stats` (channels need about 500 members). Every call is routed to `channelFull.stats_dc`. Graph payloads are the API's own chart specification, emitted verbatim; async graphs stay as `{token, zoom_token}` until `--load-graphs` or `--graph` resolves them, and `--out DIR` writes each one to a file instead of inlining it.
+
+```
+tlgr chat stats get <CHAT> [OPTIONS]
+```
+
+**returns `ChatStats`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Channel or supergroup. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--dark` | flag |  | Ask for the dark colour set in the specs. |
+| `--graph` | text |  | Resolve one async graph token. |
+| `--load-graphs` | flag |  | Resolve every async graph before printing. |
+| `--message` | msg-id |  | Per-post statistics. |
+| `--out` | path |  | Write graph specs to files. |
+| `--poll` | msg-id |  | Poll vote statistics. |
+| `--story` | int |  | Story statistics. |
+| `--zoom` | int |  | With --graph: zoom into x. |
+
+Also invocable as: `tlgr stats get`
+
+```console
+$ tlgr chat stats get @mychannel --load-graphs --json
+```
+
+<details><summary>Catalog coverage (5 full, 2 partial)</summary>
+
+Full: `groups-channels-admin.channel-stats`, `groups-channels-admin.poll-stats`, `groups-channels-admin.stats-async-graph`, `groups-channels-admin.supergroup-stats`, `messages-core.message-statistics`
+
+Partial: `groups-channels-admin.message-stats`, `groups-channels-admin.story-stats`
+
+Per-post numbers are here; the repost list is `chat stats list`.
+
+</details>
+
+### `chat stats list`
+
+Public forwards (reposts) of a post or a story.
+
+Also routed to the stats DC. The cursor is the opaque `next_offset` string.
+
+```
+tlgr chat stats list <CHAT> [OPTIONS]
+```
+
+**paginated (`PARTICIPANTS` cursor) · returns `Page[PublicForward]`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Channel. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--message` | msg-id |  | Public forwards of a post. |
+| `--story` | int |  | Public forwards of a story. |
+
+Pagination is transport-level: `--limit/-n`, `--cursor TOKEN`, `--all` (walked inside the daemon, paced by the account's own rate limiter).
+
+Also invocable as: `tlgr stats list`
+
+```console
+$ tlgr chat stats list @mychannel --message 918 --json
+```
+
+<details><summary>Catalog coverage (2 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.message-stats`, `groups-channels-admin.story-stats`
+
+</details>
+
+### `chat suggested-post approve`
+
+Approve a post suggested to a channel.
+
+`--at` doubles as the accept-and-reschedule counter-offer. Accepting a priced post debits the payer, not you.
+
+```
+tlgr chat suggested-post approve <CHANNEL> <MSG_ID> [OPTIONS]
+```
+
+**mutating · returns `SuggestedPostResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHANNEL` | chat | yes | The channel. |
+| `MSG_ID` | msg-id | yes | The suggested post. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--at` | text |  | Publish then instead of when proposed. |
+
+```console
+$ tlgr chat suggested-post approve @mychannel 918 --json
+```
+
+<details><summary>Catalog coverage (0 full, 1 partial)</summary>
+
+Partial: `groups-channels-admin.suggested-post-approve`
+
+Approving; `chat suggested-post deny` rejects and owns the id.
+
+</details>
+
+### `chat suggested-post deny`
+
+Reject a post suggested to a channel.
+
+```
+tlgr chat suggested-post deny <CHANNEL> <MSG_ID> [OPTIONS]
+```
+
+**mutating · destructive (needs `--yes` off a TTY) · returns `SuggestedPostResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHANNEL` | chat | yes | The channel. |
+| `MSG_ID` | msg-id | yes | The suggested post. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--comment` | text |  | Reason sent back to the author. |
+
+```console
+$ tlgr chat suggested-post deny @mychannel 918 --comment 'off topic' --yes --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.suggested-post-approve`
+
+</details>
+
+### `chat suggestion delete`
+
+Dismiss a server-suggested admin action.
+
+The pending keys come from `chat get --full` (`channelFull.pending_suggestions`).
+
+```
+tlgr chat suggestion delete <CHAT> <KEY> [OPTIONS]
+```
+
+**mutating · returns `SuggestionResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+| `KEY` | text | yes | The suggestion key to dismiss. |
+
+```console
+$ tlgr chat suggestion delete @mygroup CONVERT_GIGAGROUP --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.pending-suggestions`
 
 </details>
 
@@ -1009,6 +3067,467 @@ $ tlgr chat theme set @alice --emoji 🌷 --json
 <details><summary>Catalog coverage (4 full, 0 partial)</summary>
 
 Full: `dialogs.chat-theme-reset`, `gift.as-chat-theme`, `gifts.set-as-chat-theme`, `theme.set-chat-theme`
+
+</details>
+
+### `chat topic close`
+
+Close a topic.
+
+```
+tlgr chat topic close <CHAT> <TOPIC> [OPTIONS]
+```
+
+**mutating · returns `TopicResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Forum supergroup. |
+| `TOPIC` | msg-id | yes | Topic id. |
+
+```console
+$ tlgr chat topic close @myforum 314 --json
+```
+
+<details><summary>Catalog coverage (0 full, 1 partial)</summary>
+
+Partial: `groups-channels-admin.topic-close-reopen`
+
+The closing half; `chat topic reopen` owns the id.
+
+</details>
+
+### `chat topic create`
+
+Create a topic.
+
+The returned id is the id of the `messageActionTopicCreate` service message, which is exactly what every `--topic` flag takes. Non-Premium accounts may only use icons from `inputStickerSetEmojiDefaultTopicIcons`.
+
+```
+tlgr chat topic create <CHAT> <TITLE> [OPTIONS]
+```
+
+**mutating · returns `TopicResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Forum supergroup. |
+| `TITLE` | text | yes | Topic title. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--icon-color` | int |  | Icon colour; immutable afterwards. |
+| `--icon-emoji` | text |  | Custom-emoji icon (document id). |
+| `--send-as` | chat |  | Post the creation notice as this peer. |
+
+```console
+$ tlgr chat topic create @myforum Releases --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.topic-create`
+
+</details>
+
+### `chat topic delete`
+
+Delete a topic and all its messages.
+
+Drains `messages.affectedHistory` until the offset is 0. No dedicated update is emitted; other clients learn about it from the deleted root message.
+
+```
+tlgr chat topic delete <CHAT> <TOPIC> [OPTIONS]
+```
+
+**mutating · destructive (needs `--yes` off a TTY) · returns `TopicResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Forum supergroup. |
+| `TOPIC` | msg-id | yes | Topic id. |
+
+```console
+$ tlgr chat topic delete @myforum 314 --yes --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.topic-delete`
+
+</details>
+
+### `chat topic edit`
+
+Rename a topic or change its icon.
+
+`icon_color` cannot be changed after creation — the API has no field for it — and the General topic accepts only `--title` and `--hidden`.
+
+```
+tlgr chat topic edit <CHAT> <TOPIC> [OPTIONS]
+```
+
+**mutating · returns `TopicResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Forum supergroup. |
+| `TOPIC` | msg-id | yes | Topic id. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--closed/--no-closed` | flag |  | Close or reopen in the same call. |
+| `--hidden/--no-hidden` | flag |  | Hide or show (General only). |
+| `--icon-emoji` | text |  | New custom-emoji icon. |
+| `--no-icon` | flag |  | Drop the custom emoji icon. |
+| `--title` | text |  | New title. |
+
+```console
+$ tlgr chat topic edit @myforum 314 --title 'Release notes' --json
+```
+
+<details><summary>Catalog coverage (1 full, 2 partial)</summary>
+
+Full: `groups-channels-admin.topic-edit`
+
+Partial: `groups-channels-admin.topic-close-reopen`, `groups-channels-admin.topic-hide-general`
+
+`--closed`/`--hidden` do it in one call; `chat topic reopen` and `chat topic unhide` own the ids.
+
+</details>
+
+### `chat topic get`
+
+Get one or more topics by id.
+
+`forumTopicDeleted` rows are reported as `{id, deleted: true}`, which is the only signal the API gives that a topic was removed.
+
+```
+tlgr chat topic get <CHAT> [TOPIC]... [OPTIONS]
+```
+
+**returns `list[Topic]`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Forum supergroup. |
+| `TOPIC` | msg-id | one or more | Topic ids. |
+
+```console
+$ tlgr chat topic get @myforum 314 --json
+```
+
+<details><summary>Catalog coverage (2 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.topic-get`, `groups-channels-admin.topic-link`
+
+</details>
+
+### `chat topic hide`
+
+Hide the General topic.
+
+Only General (id 1) may be hidden; the server refuses any other id.
+
+```
+tlgr chat topic hide <CHAT> [OPTIONS]
+```
+
+**mutating · returns `TopicResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Forum supergroup. |
+
+```console
+$ tlgr chat topic hide @myforum --json
+```
+
+<details><summary>Catalog coverage (0 full, 1 partial)</summary>
+
+Partial: `groups-channels-admin.topic-hide-general`
+
+The hiding half; `chat topic unhide` owns the id.
+
+</details>
+
+### `chat topic list`
+
+List or search a forum's topics.
+
+The cursor packs the `(offset_date, offset_id, offset_topic)` triple of the last row. `--closed`, `--hidden` and `--pinned` are client-side filters over the page, because the API offers no flag for any of them.
+
+```
+tlgr chat topic list <CHAT> [OPTIONS]
+```
+
+**paginated (`PARTICIPANTS` cursor) · returns `Page[Topic]`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Forum supergroup. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--closed` | flag |  | Only closed topics. |
+| `--hidden` | flag |  | Only hidden topics. |
+| `--pinned` | flag |  | Only pinned topics. |
+| `--search`, `-s` | text |  | Title query. |
+
+Pagination is transport-level: `--limit/-n`, `--cursor TOKEN`, `--all` (walked inside the daemon, paced by the account's own rate limiter).
+
+```console
+$ tlgr chat topic list @myforum --json
+```
+
+<details><summary>Catalog coverage (1 full, 1 partial)</summary>
+
+Full: `groups-channels-admin.topic-list`
+
+Partial: `groups-channels-admin.topic-unread-counters`
+
+The counters are on every row; `chat topic read` clears them and owns the id.
+
+</details>
+
+### `chat topic mute`
+
+Mute a topic.
+
+`mute_until` is an absolute timestamp computed from the wall clock. `--silent on` without a duration switches to silent delivery instead of muting.
+
+```
+tlgr chat topic mute <CHAT> <TOPIC> [DURATION] [OPTIONS]
+```
+
+**mutating · returns `TopicResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Forum supergroup. |
+| `TOPIC` | msg-id | yes | Topic id. |
+| `DURATION` | text | no | How long; omit to mute forever. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--previews/--no-previews` | flag |  | Show message text in notifications. |
+| `--silent/--no-silent` | flag |  | Deliver without a sound instead of muting. |
+
+```console
+$ tlgr chat topic mute @myforum 314 8h --json
+```
+
+<details><summary>Catalog coverage (0 full, 1 partial)</summary>
+
+Partial: `groups-channels-admin.topic-notify-settings`
+
+Muting half; `chat topic unmute` owns the id.
+
+</details>
+
+### `chat topic pin`
+
+Pin topics (pass several ids to set the pinned order).
+
+`--reorder` sends the ids as the complete order; `--force` also unpins anything missing from the list. At most `topics_pinned_limit` topics can be pinned.
+
+```
+tlgr chat topic pin <CHAT> [TOPIC]... [OPTIONS]
+```
+
+**mutating · returns `TopicPinResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Forum supergroup. |
+| `TOPIC` | msg-id | one or more | Topic ids. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--force` | flag |  | With --reorder: unpin topics missing from the list. |
+| `--reorder` | flag |  | Treat the ids as the complete pinned order. |
+
+```console
+$ tlgr chat topic pin @myforum 314 --json
+```
+
+<details><summary>Catalog coverage (1 full, 1 partial)</summary>
+
+Full: `groups-channels-admin.topic-reorder-pinned`
+
+Partial: `groups-channels-admin.topic-pin`
+
+Pinning is here; `chat topic unpin` owns the id.
+
+</details>
+
+### `chat topic read`
+
+Mark a topic read, including its mentions and reactions.
+
+SEMANTICS: this emits a read receipt inside the topic, exactly like `chat open` does for a chat. `--list` is the silent half. `top_msg_id` is omitted for General (id 1), which is what the API requires. Sending and listing messages inside a topic is `message send/list --topic`.
+
+```
+tlgr chat topic read <CHAT> <TOPIC> [OPTIONS]
+```
+
+**mutating · returns `TopicReadResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Forum supergroup. |
+| `TOPIC` | msg-id | yes | Topic id. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--list` | flag |  | Do not read: list the unread mentions/reactions instead. |
+| `--max-id` | int |  | Read up to this message id; 0 means everything. |
+| `--mentions` | flag |  | Also clear the unread-mentions badge. |
+| `--reactions` | flag |  | Also clear the unread-reactions badge. |
+
+```console
+$ tlgr chat topic read @myforum 314 --mentions --json
+```
+
+<details><summary>Catalog coverage (2 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.topic-messages`, `groups-channels-admin.topic-unread-counters`
+
+</details>
+
+### `chat topic reopen`
+
+Reopen a closed topic.
+
+```
+tlgr chat topic reopen <CHAT> <TOPIC> [OPTIONS]
+```
+
+**mutating · returns `TopicResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Forum supergroup. |
+| `TOPIC` | msg-id | yes | Topic id. |
+
+```console
+$ tlgr chat topic reopen @myforum 314 --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.topic-close-reopen`
+
+</details>
+
+### `chat topic unhide`
+
+Show the General topic again.
+
+```
+tlgr chat topic unhide <CHAT> [OPTIONS]
+```
+
+**mutating · returns `TopicResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Forum supergroup. |
+
+```console
+$ tlgr chat topic unhide @myforum --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.topic-hide-general`
+
+</details>
+
+### `chat topic unmute`
+
+Unmute a topic.
+
+```
+tlgr chat topic unmute <CHAT> <TOPIC> [OPTIONS]
+```
+
+**mutating · returns `TopicResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Forum supergroup. |
+| `TOPIC` | msg-id | yes | Topic id. |
+
+```console
+$ tlgr chat topic unmute @myforum 314 --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.topic-notify-settings`
+
+</details>
+
+### `chat topic unpin`
+
+Unpin a topic.
+
+```
+tlgr chat topic unpin <CHAT> [TOPIC]... [OPTIONS]
+```
+
+**mutating · returns `TopicPinResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Forum supergroup. |
+| `TOPIC` | msg-id | any number | Topic ids. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--all` | flag |  | Unpin every pinned topic. |
+
+```console
+$ tlgr chat topic unpin @myforum 314 --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.topic-pin`
+
+</details>
+
+### `chat transfer`
+
+Transfer ownership of a group or channel (2FA).
+
+The target must already be an admin. PASSWORD_HASH_INVALID exits 4; PASSWORD_TOO_FRESH / SESSION_TOO_FRESH and CHANNELS_TOO_MUCH exit 6 with the wait reported.
+
+```
+tlgr chat transfer <CHAT> <USER> [OPTIONS]
+```
+
+**mutating · destructive (needs `--yes` off a TTY) · returns `TransferResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+| `USER` | user | yes | The new owner. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--password` | text |  | Two-factor password. Never taken on the command line. |
+
+Also invocable as: `tlgr chat admin transfer`
+
+```console
+$ tlgr chat transfer @mygroup @alice --password-stdin --yes --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.transfer-ownership`
 
 </details>
 
@@ -1127,6 +3646,160 @@ Full: `dialogs.mark-unread`, `dialogs.mark-unread-clear`, `messages-core.chat-ma
 
 </details>
 
+### `chat username get`
+
+Check a username: availability, owner, and Fragment collectible info.
+
+`status` is available, occupied, invalid or purchasable. On USERNAME_PURCHASE_AVAILABLE the Fragment purchase date, currency, amount and URL are attached — buying happens on fragment.com, not through the API.
+
+```
+tlgr chat username get <USERNAME> [OPTIONS]
+```
+
+**returns `UsernameCheck`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `USERNAME` | text | yes | The name to check. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--chat` | chat |  | Check it for this existing peer. |
+
+```console
+$ tlgr chat username get mynews --json
+```
+
+<details><summary>Catalog coverage (2 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.check-username`, `groups-channels-admin.collectible-username-info`
+
+</details>
+
+### `chat username set`
+
+Set the public link, or the display order of the additional usernames.
+
+Exactly one of `<username>` and `--order` is required. A basic group has no username at all: `--upgrade` migrates it first, and never silently. Public groups are forced to a visible prehistory by the server, and the public-peer count is capped per account.
+
+```
+tlgr chat username set <CHAT> [USERNAME] [OPTIONS]
+```
+
+**mutating · returns `UsernameResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+| `USERNAME` | text | no | The public link to claim. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--order` | text |  | Set the display order of the usernames. |
+| `--upgrade` | flag |  | Migrate a basic group to a supergroup first, if needed. |
+
+```console
+$ tlgr chat username set @mygroup mynews --json
+```
+
+<details><summary>Catalog coverage (3 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.public-private-toggle`, `groups-channels-admin.set-username`, `groups-channels-admin.username-reorder`
+
+</details>
+
+### `chat username toggle`
+
+Activate or deactivate one additional username.
+
+```
+tlgr chat username toggle <CHAT> <USERNAME> <ON|OFF> [OPTIONS]
+```
+
+**mutating · returns `UsernameResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+| `USERNAME` | text | yes | The additional username. |
+| `ON|OFF` | text | yes | Activate or deactivate it. |
+
+```console
+$ tlgr chat username toggle @mygroup mynews off --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.username-toggle`
+
+</details>
+
+### `chat username unset`
+
+Make a group/channel private by clearing its username(s).
+
+Prints the private invite link afterwards, so the chat stays reachable rather than becoming unfindable in one command.
+
+```
+tlgr chat username unset <CHAT> [OPTIONS]
+```
+
+**mutating · returns `UsernameResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--all` | flag |  | Deactivate every username; collectibles stay reserved. |
+
+```console
+$ tlgr chat username unset @mygroup --json
+```
+
+<details><summary>Catalog coverage (1 full, 1 partial)</summary>
+
+Full: `groups-channels-admin.username-deactivate-all`
+
+Partial: `groups-channels-admin.public-private-toggle`
+
+Going private is here; `chat username set` goes public and owns the id.
+
+</details>
+
+### `chat verification set`
+
+Attach or remove a third-party (bot) verification badge.
+
+This is a bot's badge, not Telegram's blue check — `channel.verified` is server-assigned and has no API to set.
+
+```
+tlgr chat verification set <CHAT> [OPTIONS]
+```
+
+**mutating · returns `VerificationResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | The peer to badge. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--bot` | user |  | Your bot with verifier_settings. |
+| `--description` | text |  | Custom description for the badge. |
+| `--off` | flag |  | Remove the badge instead. |
+
+```console
+$ tlgr chat verification set @mygroup --bot @myverifierbot --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.verify-peer`
+
+</details>
+
 ### `chat wallpaper set`
 
 Set, apply, revert or remove the wallpaper of one chat.
@@ -1162,5 +3835,101 @@ $ tlgr chat wallpaper set @alice --slug pattern --json
 <details><summary>Catalog coverage (6 full, 0 partial)</summary>
 
 Full: `contacts-users.user-wallpaper`, `dialogs.chat-wallpaper-apply-suggested`, `dialogs.chat-wallpaper-revert`, `stories.story-set-wallpaper`, `wallpaper.set-for-channel-group`, `wallpaper.set-for-chat`
+
+</details>
+
+### `chat welcome delete`
+
+Delete one or all welcome messages.
+
+Registered and refusing with NOT_SUPPORTED (exit 13): layer 229.
+
+```
+tlgr chat welcome delete <CHAT> [ID] [OPTIONS]
+```
+
+**mutating · destructive (needs `--yes` off a TTY) · returns `WelcomeResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+| `ID` | int | no | Which welcome message. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--all` | flag |  | Delete every welcome message. |
+
+```console
+$ tlgr chat welcome delete @mygroup --all --yes --json
+```
+
+<details><summary>Catalog coverage (0 full, 1 partial)</summary>
+
+Partial: `groups-channels-admin.welcome-messages`
+
+Layer-229 surface; `chat welcome set` owns the id.
+
+</details>
+
+### `chat welcome list`
+
+List a group/channel's welcome messages.
+
+Registered and refusing with NOT_SUPPORTED (exit 13). `chatFull.has_welcome_messages` advertises them, but the `ephemeral.*` methods that read them are layer 229 and Telethon 1.44 speaks 227.
+
+```
+tlgr chat welcome list <CHAT> [OPTIONS]
+```
+
+**returns `list[WelcomeMessage]`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+
+```console
+$ tlgr chat welcome list @mygroup --json
+```
+
+<details><summary>Catalog coverage (1 full, 1 partial)</summary>
+
+Full: `messages-core.chat-welcome-messages`
+
+Partial: `groups-channels-admin.welcome-messages`
+
+Layer-229 surface; `chat welcome set` owns the writing id.
+
+</details>
+
+### `chat welcome set`
+
+Add or edit a welcome message.
+
+Registered and refusing with NOT_SUPPORTED (exit 13): layer 229.
+
+```
+tlgr chat welcome set <CHAT> [TEXT] [OPTIONS]
+```
+
+**mutating · returns `WelcomeResult`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `CHAT` | chat | yes | Group or channel. |
+| `TEXT` | text | no | The message. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--file` | path |  | Attach media. |
+| `--id` | int |  | Edit this welcome message instead of adding. |
+| `--parse` | text |  | Markup of the text: md, html or none. |
+
+```console
+$ tlgr chat welcome set @mygroup 'Welcome aboard' --json
+```
+
+<details><summary>Catalog coverage (1 full, 0 partial)</summary>
+
+Full: `groups-channels-admin.welcome-messages`
 
 </details>

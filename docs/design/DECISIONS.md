@@ -1014,3 +1014,117 @@ path segment against it. COMMANDS.md's conventions already carve out
 verb-first nouns (`resolve <kind>`, `search <scope>`), so `peer`, `phone` and
 `username` were added to `VERBS` with a comment saying which rule they arrive
 under — rather than bending the paths into `resolve peer get`.
+
+## 2026-09-03 — one rights vocabulary, in `ops/_rights.py`, or four that drift
+
+`chat admin promote --rights`, `chat member restrict --deny`, `chat permission
+set --allow` and `bot default-rights set` all name the same two masks. Writing
+the names four times would have produced four spellings within a release, so
+the table lives in one module and every command reads it — which is also what
+lets `chat permission list` be the answer to "what may I type here" instead of
+a paragraph of documentation. The same module owns both conversions:
+`ChatBannedRights` is stored inverted, and a single missing `not` turns "may
+not send media" into "may send media", so the inversion happens once rather
+than once per caller.
+
+## 2026-09-03 — every mask is read before it is written
+
+`channels.editBanned`, `channels.editAdmin` and
+`messages.editChatDefaultBannedRights` replace the whole mask: a flag the
+request omits is a flag the server clears. Sending only what the caller named
+would therefore hand back every restriction somebody set last week, silently,
+as a side effect of taking one new one away. `chat member restrict`,
+`chat admin promote` and `chat permission set` all fetch the current mask
+first and send a complete one, and the tests assert the *untouched* flags
+survive rather than only that the named one changed.
+
+## 2026-09-03 — a layer-229 right is refused, not dropped
+
+`manage-linked-peers` and `manage-welcome-messages` exist in the API and have
+no field in Telethon 1.44's `ChatAdminRights`. Accepting them and quietly
+granting less than the caller asked for is the worst available outcome for a
+permission change, so `chat permission list` marks them `supported: false` and
+asking for one exits 13 with the reason. The same rule produced the seven
+registered-and-refusing commands (`chat community *`, `chat welcome *`): a
+command that refuses with an explanation tells an agent what is missing and
+when it arrives; a command that is absent tells it nothing.
+
+## 2026-09-03 — `chat setting set` is a batch that reports per key
+
+The Manage screen is one screen in the GUI and about twenty MTProto methods
+underneath, most of them gated on a different right or a boost level. Aborting
+on the first refusal would let a boost-gated `--autotranslate` hide nine
+changes that landed, and reporting only "ok" would hide the refusal. Flags are
+therefore applied in a fixed order, a toggle already in the requested state is
+reported in `already` and never sent, and each failure lands in `failed` under
+its own key while the rest still run.
+
+## 2026-09-03 — `chat request list` stays a read, and answers under its own guard
+
+The work list marks the command mutating because `--approve`/`--decline` write.
+Declaring the whole op mutating would make `--dry-run chat request list` print
+a stub instead of the queue — the wrong trade for the command people run to
+*see* who is waiting. The answer flags check `ctx.dry_run` themselves and warn
+instead of firing, which is the rule `folder list --tags` already follows.
+
+## 2026-09-03 — every `stats.*` call follows STATS_MIGRATE
+
+Telegram answers a statistics request on the wrong data centre with
+`STATS_MIGRATE_X`, and a client that does not follow it reports "no
+statistics" for a channel that has plenty. Telethon's `get_stats` handles this
+for two of the calls; tlgr needs six, so the migration is followed once in
+`_stats()` through the same borrowed exported sender, and `chat stats list`,
+`--load-graphs` and the story and poll variants all get it for free.
+
+## 2026-09-03 — a graph is emitted verbatim, and revenue is read-only
+
+Telegram's chart specification is a JSON document with columns, types,
+colours, subcharts and stacking rules. Redrawing it would mean re-deciding
+every one of those, in a CLI with no viewport, and a chart that is subtly
+wrong is worse than no chart — so `chat stats get` reports the API's own
+payload and lets the caller render. For the same class of reason
+`payments.getStarsRevenueWithdrawalUrl` is not implemented: it moves money and
+wants the 2FA password, so `chat revenue get` says a withdrawal is available
+and points at an official client.
+
+## 2026-09-03 — tlgr never reports a sponsored-message impression
+
+`messages.viewSponsoredMessage` and `clickSponsoredMessage` tell the server an
+advert was seen. A headless CLI has no viewport, so calling them would be
+reporting something that did not happen — to the advertiser and to the channel
+owner both. `chat sponsored list` therefore exposes the messages as data with
+`viewed: false`, and the owner-side switch stays `chat setting set --ads off`.
+
+## 2026-09-03 — the QR code needs an optional extra rather than an encoder
+
+`chat invite get --qr` renders locally; the API contributes nothing beyond the
+link. Carrying a pure-Python QR encoder for one P2 flag is a lot of surface to
+own and to test, so the command tries `segno` (`pip install 'tlgr[qr]'`) and,
+when it is absent, warns and still reports the link. The catalog id is claimed
+as partial with that note, so the parity number does not overstate what a
+default install does.
+
+## 2026-09-03 — no bare `chat similar` alias
+
+The work list lists `chat similar` as an alias of `chat similar list`. Click
+cannot hold a command and a group under one name, so registering it would
+replace the `chat similar` *group* and take `chat similar list` off the tree
+entirely. The canonical three-word path is the only spelling; nothing else in
+the group has this shape.
+
+## 2026-09-03 — `chat permission list` runs in the daemon
+
+The vocabulary is a static table and would happily be a `Surface.LOCAL`
+operation, except that `--chat` marks which rights *you* may currently grant,
+which needs your own participant row. Splitting the command in two for one
+flag would be worse than one round trip, so the op is a normal daemon
+operation with `rate_class="local"`: without `--chat` it answers from the
+table and touches no network.
+
+## 2026-09-03 — the reference stays one page per group
+
+`docs/reference/` is generated one page per top-level noun, so the 86 new
+operations land in `chat.md` and `boost.md` rather than in a hand-named
+`chat-admin.md`. Adding a second grouping rule to the generator would mean the
+page a command lives on is no longer derivable from its id, which is the
+property that makes the docs impossible to get out of sync.

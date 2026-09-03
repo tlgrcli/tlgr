@@ -17,9 +17,17 @@ on the busiest group, not on a toy one. `tlgr/cli/message.py` and
 `tlgr/cli/draft.py` are deleted rather than shadowed.
 
 The `chat` and `folder` groups follow: 47 more operations covering the dialog
-list, the per-chat settings and the chat folders. `tlgr/cli/legacy/chat.py`
-keeps exactly `chat create` and `chat members`, which are member-and-admin
-operations and migrate with the groups-and-channels group.
+list, the per-chat settings and the chat folders.
+
+Then the groups-and-channels group: 86 more operations covering members,
+admins, invites, join requests, topics, the Manage screen, the admin log,
+statistics, revenue and boosts. `tlgr/cli/legacy/chat.py` is deleted along
+with the `/chat/create` and `/chat/members` IPC routes and
+`ClientWrapper.create_chat` / `list_participants`; both v1 paths keep working
+through the registry. Seven commands — `chat community create|list|set|ban`
+and `chat welcome list|set|delete` — are registered and refuse with
+`NOT_SUPPORTED` (exit 13) because they need MTProto layer 229 and Telethon
+1.44 speaks 227.
 
 `auth`, `account` and `passport` follow: 51 more operations covering logging
 in, the Devices list, 2-step verification, connected websites, passkeys and
@@ -100,6 +108,13 @@ Three more changed in the contact and user groups:
 | 10 | `contact.list`, `contact.search` | `{"contacts":[…],"has_more":…}` | `Page[Contact]` | `--results-only` yields `{items, has_more, next_cursor, total}`; every v1 row key (`id`, `name`, `username`, `phone`) is still there, and `phone` is now normalised to E.164 |
 | 11 | `contact.add` | `{"added": true, "user_id": 123}` | the same two keys plus `imported`, `retry`, `popular_importers` and `reason` | additive. `reason` is filled when the import came back empty, because "no such account" and "the owner hides their number" are indistinguishable and v1 reported the first |
 | 12 | `user.get` | `{"id","first_name","username","bio","is_bot","status","stories_hidden",…}` | the same keys, plus everything `users.getFullUser` carries | additive; `--select` reaches any of it. `--field` is gone: the global `--select bio --results-only` does the same thing on every command |
+
+Two more in the groups-and-channels group:
+
+| # | Change | v1 | v2 | Migration |
+|---|---|---|---|---|
+| 10 | `chat.member.list` (`chat members`) | `{"members":[{"id","first_name","last_name","username","is_bot"}]}` | `Page[Participant]`, each row keeping its `ChannelParticipant*` wrapper: `status`, `rank`, `date`, `inviter_id`, `promoted_by`, `kicked_by`, `admin_rights`, `banned_rights` | `--results-only` yields `{items, has_more, next_cursor, total}`; `id`, `username` and `is_bot` are unchanged, and `first_name`/`last_name` are joined into `name` (`--select name` reaches it). The dropped wrapper was why v1 could list members but not say whether one was banned or merely restricted |
+| 11 | `chat.create` | `{"id","name","type"}` with `--type group\|channel` | `{"id","type","title","username","invite_link","added","missing"}` with `--type group\|supergroup\|channel\|forum` | `name` became `title` (`--select title`), and `--type group` still means the legacy basic group. `missing` names every seed member the server refused, instead of dropping them |
 
 `tlgr agent whoami --json` reports `output_schema_version: 2`, so an agent can
 branch on the two sets without probing for each change.

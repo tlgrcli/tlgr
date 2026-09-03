@@ -57,6 +57,8 @@ V1_PATHS = [
     ("chat", "leave"),
     ("chat", "typing"),
     ("chat", "posters"),
+    ("chat", "members"),
+    ("chat", "create"),
     ("chats",),
     ("inbox",),
     ("catchup",),
@@ -75,10 +77,11 @@ V1_PATHS = [
     ("user", "hide-stories"),
 ]
 
-#: Documented v1 paths that are still hand-written commands rather than
-#: registry operations: `chat create` and `chat members` migrate with the
-#: groups-and-channels group (PR-7), and must keep working until they do.
-V1_HAND_WRITTEN = [("chat", "members"), ("chat", "create")]
+#: Nothing documented is hand-written any more inside a migrated group: PR-7
+#: moved `chat members` and `chat create` into the registry and deleted
+#: `tlgr/cli/legacy/chat.py`. The list stays so a future group can name its
+#: own stragglers here rather than inventing a second mechanism.
+V1_HAND_WRITTEN: list[tuple[str, ...]] = []
 
 #: The v1 paths PR-4 replaced. Every module behind them is deleted; every one
 #: of them still resolves, because §12.4 makes that absolute.
@@ -181,6 +184,13 @@ DELIBERATE_CHANGES = {
     "survive on each item, and one invocation can now produce several",
     "media.upload": "`{id, chat_id}` became the `Uploaded` object; `id` is "
     "`msg_id`, beside `msg_ids` for an album",
+    "chat.member.list": "`{members: [...]}` became `Page[Participant]`; each row "
+    "keeps its ChannelParticipant wrapper (status, rank, date, inviter_id, "
+    "promoted_by, kicked_by, both rights masks) and `first_name`/`last_name` "
+    "are joined into `name`. `id`, `username` and `is_bot` are unchanged",
+    "chat.create": "`{id, name, type}` became "
+    "`{id, type, title, username, invite_link, added, missing}`; `name` is now "
+    "`title`, and `missing` names every seed member the server refused",
 }
 
 

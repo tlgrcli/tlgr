@@ -489,8 +489,135 @@ event loop's clock, so every timed mute resolved to 1970 and did nothing.
 `chat secret list|start|send` are registered and refuse with `NOT_SUPPORTED`
 (exit 13) — tlgr has no end-to-end layer; `chat secret discard` works.
 
-`chat create` and `chat members` are unchanged from v1 and migrate with the
-groups-and-channels group.
+### Groups and channels
+
+Members, admins, invites, topics and the Manage screen. Three shapes matter
+before you script any of it.
+
+* **A member is a participant, not a user.** Every row keeps its wrapper —
+  `status` (creator/admin/member/self/restricted/banned/left), `rank`, `date`,
+  `inviter_id`, `promoted_by`, `kicked_by`, `admin_rights`, `banned_rights` —
+  so "is this person banned or merely restricted" is answerable.
+* **Rights are always allow-polarity.** Telegram stores banned rights inverted
+  (`send_messages=true` means *cannot* send); tlgr normalises once, so `true`
+  means allowed everywhere, including in `banned_rights`.
+* **Both masks are replaced, never patched, server-side.** Every writing
+  command reads the current mask first and sends a complete one, which is why
+  `chat member restrict --deny send-media` does not hand back the four other
+  restrictions somebody set last week.
+
+```
+tlgr chat member list <chat> [--filter recent|admins|bots|contacts|kicked|banned|restricted|mentions]
+                             [--search Q] [--via-link LINK] [--topic ID] [--limit N] [--all]
+→ page of {"id", "user_id", "username", "name", "status", "rank", "date",
+           "inviter_id", "promoted_by", "kicked_by", "admin_rights", "banned_rights"}
+# `chat members` is v1's spelling and still works. --filter kicked is people
+# who were removed; --filter restricted is people still in the chat with a
+# mask on them. A chat with participants_hidden answers exit 6, not an empty
+# page — "nobody is in this group" would be a lie.
+
+tlgr chat member get <chat> <user>        # + effective_permissions: defaults patched with their mask
+tlgr chat member add <chat> <user>...     # missing[] carries {user_id, reason} verbatim
+tlgr chat member remove <chat> <user>...  # a kick: they may rejoin
+tlgr chat member ban <chat> <user>... [--until 7d] [--purge] [--messages ID] [--report] --yes
+tlgr chat member unban <chat> <user>...
+tlgr chat member restrict <chat> <user> [--deny R,R] [--allow R,R] [--none|--all|--clear]
+                                        [--replace] [--until 7d] [--purge]
+tlgr chat member edit <chat> <user> [--rank TITLE] [--free-messages on|off] [--refund]
+tlgr chat member delete-history <chat> <user> --yes
+tlgr chat member report <chat> <user> [--messages ID] --yes
+
+tlgr chat admin list <chat> [--no-rights]
+tlgr chat admin promote <chat> <user> [--rights R,R|--grant R,R|--revoke R,R|--all|--none]
+                                      [--except R,R] [--rank TITLE] [--anonymous]
+tlgr chat admin demote <chat> <user> --yes
+tlgr chat permission list [--mask admin|member|all] [--chat CHAT]   # the canonical names
+tlgr chat permission get <chat>   → {"allow": [...], "deny": [...], "rights": {...}}
+tlgr chat permission set <chat> [--allow R,R] [--deny R,R] [--all|--none] [--replace]
+tlgr chat transfer <chat> <user> --password-stdin --yes             # 2FA, irreversible
+tlgr chat admin-log list <chat> [--filter join,ban,kick,…] [--admin USER] [--search Q]
+→ page of {"id", "date", "user_id", "action", "raw_type", "prev", "new"}
+tlgr chat admin-log report <chat> <msg_id>                          # anti-spam false positive
+```
+
+`chat permission list` is the single source of truth for right names.
+`manage-linked-peers` and `manage-welcome-messages` are layer-229 flags
+Telethon 1.44 cannot express: they are listed with `"supported": false` and
+asking for one exits 13 rather than granting less than you asked for.
+
+Invites, join requests and topics:
+
+```
+tlgr chat invite create <chat> [--title T] [--expires 7d] [--limit N|--request-approval]
+                               [--subscription-stars N] [--replace-primary]
+tlgr chat invite list <chat> [--admin USER] [--revoked] [--by-admin]
+tlgr chat invite get <chat> <link> | chat invite get <t.me/+hash> [--qr] [--png PATH]
+tlgr chat invite edit <chat> <link> [--title T] [--expires …] [--limit N] [--request-approval on|off]
+tlgr chat invite revoke <chat> <link> --yes      # the permanent link is replaced, both are reported
+tlgr chat invite delete <chat> [<link>|--revoked] --yes
+tlgr chat invite open <t.me/+hash>               # read a peek without joining
+tlgr chat join <@name|t.me/+hash>
+→ {"chat_id", "title", "joined", "pending_approval", "already"}
+# All three outcomes exit 0: joined, already a member, and request-sent.
+
+tlgr chat request list <chat> [--link L] [--search Q] [--approve USER] [--decline USER]
+                             [--approve-all] [--decline-all]
+tlgr chat request approve|deny <chat> [<user>...] [--all] [--link L] --yes
+
+tlgr chat topic list <chat> [--search Q] [--closed] [--hidden] [--pinned]
+tlgr chat topic get <chat> <topic>...            # a deleted topic comes back as {"id", "deleted": true}
+tlgr chat topic create <chat> <title> [--icon-emoji ID] [--icon-color RGB]
+tlgr chat topic edit <chat> <topic> [--title T] [--icon-emoji ID|--no-icon] [--closed on|off]
+tlgr chat topic close|reopen <chat> <topic>
+tlgr chat topic hide|unhide <chat>               # General (id 1) only
+tlgr chat topic pin <chat> <topic>... [--reorder] | chat topic unpin <chat> [<topic>...|--all]
+tlgr chat topic mute <chat> <topic> [8h] | chat topic unmute <chat> <topic>
+tlgr chat topic delete <chat> <topic> --yes
+tlgr chat topic read <chat> <topic> [--max-id N] [--mentions] [--reactions] [--list]
+```
+
+A topic id **is** the id of its creation service message, so it is exactly what
+`message send --topic` and `message list --topic` take. General is id 1, always
+exists, cannot be deleted, and is the only topic that may be hidden.
+
+The Manage screen, and the numbers behind it:
+
+```
+tlgr chat create <title> [--type group|supergroup|channel|forum] [--about T] [--members USER]
+                         [--photo PATH] [--username NAME] [--ttl 1d] [--geo lat,lon] [--tabs]
+tlgr chat edit <chat> [--title T] [--about T] [--geo lat,lon|off] [--color ID] [--emoji-status ID]
+                      [--main-tab posts|gifts|media|…] [--palettes]
+tlgr chat convert <chat> supergroup|gigagroup --yes           # one-way, both ids reported
+tlgr chat setting get <chat>                                  # every toggle, keyed as its flag
+tlgr chat setting set <chat> [--slow-mode 30s] [--prehistory visible|hidden] [--forum on|off]
+                             [--antispam on|off] [--hidden-members on|off] [--signatures on|off]
+                             [--reactions all|none|👍,❤️] [--sticker-set NAME] [--ads on|off] …
+→ {"chat_id", "changed": [...], "already": [...], "failed": {"key": "why"}}
+tlgr chat username get <name> [--chat CHAT] | chat username set <chat> <name> [--order LIST]
+tlgr chat username toggle <chat> <name> on|off | chat username unset <chat> [--all]
+tlgr chat photo set <chat> <file>|--video PATH|--emoji-markup ID | chat photo delete <chat>
+tlgr chat send-as list <chat> | chat send-as set <chat> <peer>
+tlgr chat discussion list | chat discussion set <channel> <group> [--unhide-prehistory]
+                          | chat discussion unset <channel>
+tlgr chat stats get <chat> [--message ID|--story ID|--poll ID] [--load-graphs] [--out DIR]
+tlgr chat stats list <chat> --message ID|--story ID            # public reposts
+tlgr chat revenue get <chat> [--ton] [--since USER] | chat revenue list <chat> [--in|--out]
+tlgr boost get [<chat>] [--features] | boost list [<chat>] [--mine|--user U|--gifts]
+tlgr boost add <chat> [--slots N]
+```
+
+`chat setting set` is a batch: a toggle already in the state you asked for is
+reported in `already` and never sent, and a refusal lands in `failed` per key
+instead of hiding the changes that did land. Statistics are routed to
+`channelFull.stats_dc` automatically, and graphs are emitted as Telegram's own
+chart spec — tlgr never redraws them. Revenue is read-only: withdrawing money
+needs your 2FA password and belongs in an official client.
+
+Seven commands are registered and refuse with `NOT_SUPPORTED` (exit 13):
+`chat community create|list|set|ban` and `chat welcome list|set|delete` need
+MTProto layer 229 and Telethon 1.44 speaks 227, so there is no request to
+send. The command shapes are settled and will start working with the layer
+uplift.
 
 ### Folders
 

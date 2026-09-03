@@ -228,6 +228,41 @@ tlgr emoji get|list|search
 A file's `file_reference` expires in hours, so every command that touches
 bytes re-fetches its source first; `media file-id get --source` is how a
 stored id is made usable again.
+### Calls and video chats
+
+tlgr speaks the **signalling** half of calls and carries no audio or video: it
+rings, answers, hangs up, mutes, moderates, records and observes, and nobody
+can hear it. Every answer says so (`"media": "none"`).
+
+```bash
+tlgr call start @alice                 # --video, --check (rings nothing), --wait
+tlgr call accept <call>                # --ack-only marks it received (busy-lock)
+tlgr call decline <call>               # --reason missed|busy, --reply "can't talk"
+tlgr call end <call>                   # --reason, --duration
+tlgr call log list                     # the Calls tab; --missed, --with @alice
+tlgr call watch                        # who is ringing, as NDJSON, for a notifier
+```
+
+```bash
+tlgr vc create <chat> --yes            # video chat, livestream or --rtmp
+tlgr vc get <chat>                     # state, recording, limits, stream channels
+tlgr vc participant list <chat>        # --raised-hands, --video
+tlgr vc mute <chat> [@alice]           # --for-me; `vc unmute` = "allow to speak"
+tlgr vc link <chat> --speaker          # invite links; `vc rtmp get` for the key
+tlgr vc watch <chat>                   # the only way to read the in-call chat
+tlgr vc download <chat> --out live.ogg # record a livestream (it cannot play one)
+```
+
+```bash
+tlgr conference create                 # a t.me/call/<slug> link, no crypto needed
+tlgr conference invite <call> @alice   # rings them; falls back to the link
+tlgr conference decline <msg_id>       # refuse, or cancel an invite you sent
+```
+
+Conferences are end-to-end encrypted. Reading, ringing and revoking are
+complete; **joining**, **removing somebody** and **sending inside** need a
+signed `e2e.chain` block that tlgr cannot build — pass one with `--block` and
+`--public-key`, or the command exits 2 naming what is missing.
 
 ### Profile
 

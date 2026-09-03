@@ -650,3 +650,120 @@ groups' commands (`profile photo set`, `chat photo set`, `notify`,
 `settings`). Each of the 22 is waived to the PR that owns the command, rather
 than implemented here under a `media` noun where nobody would look for it.
 `media_files` is 84.6 % covered and 100 % accounted.
+## 2026-09-04 — the call groups say `media: none` on the wire, not in a footnote
+
+tlgr speaks the signalling half of calls and has no tgcalls binding, so
+"joined the call" means server-side presence and nothing else. Every shape a
+reader could mistake for participation — `Call`, `GroupCall`,
+`GroupCallJoined`, `MuteState`, `VideoState`, `StreamDownload`,
+`ConferenceCreated` — carries a `media` field whose only value is `"none"`,
+and it is declared **without a default** so `omit_defaults` cannot drop it.
+The same reasoning made the verdict fields of mutations (`started`, `ended`,
+`joined`, `left`, `declined`, `revoked`, `removed`, `muted`, `raise_hand`)
+required: a promise that disappears from the JSON when it happens to equal the
+default is not a promise. The cost is that every construction site repeats the
+field, which mypy enforces.
+
+## 2026-09-04 — `--dry-run` cannot mean something special for one operation
+
+The work list gave `call start --dry-run` the meaning "report whether the peer
+can be called, do not ring". It cannot have it: the dry-run short-circuit sits
+in `run_op` above every implementation (COR-17) and returns `{"dry_run":
+true, "would": …}` for every mutating op, which is exactly the property the
+registry contract test asserts for all 45 operations here. The availability
+probe is therefore `call start --check`, which reads
+`userFull.phone_calls_available` / `video_calls_available` /
+`phone_calls_private` and rings nothing. `conference remove --dry-run` lost
+its "list the candidates" behaviour for the same reason.
+
+## 2026-09-04 — spending Stars needs its own word, because `--yes` never arrives
+
+`vc send --stars` spends real money and the work list required `--yes`. The
+daemon never sees `--yes`: confirmation is a CLI-side control driven by
+`spec.destructive`, and making the whole of `vc send` destructive would put a
+confirmation prompt in front of every in-call message. The request therefore
+carries `--confirm-stars`, and `--stars` without it is a usage error naming
+the flag. `--no-input` needs no special case: the flag is absent, so the send
+is refused.
+
+## 2026-09-04 — the emoji verification is reported as indices, not as emoji
+
+The four-emoji key check is `SHA256(key ‖ g_a)` reduced to four indices into a
+fixed 333-emoji table that every official client ships. tlgr does not bundle
+that table, and printing four *guessed* emoji for a security comparison is
+worse than printing none — a user comparing the wrong glyphs would conclude
+the call is verified. `call get --fingerprint` returns the indices (`#12`,
+`#301`, …), which compare exactly as well against another client that prints
+them, and `calls.emoji-fingerprint` is claimed as `covers_partial` with that
+note. `conference get --qr` is the same shape of decision: it returns the
+exact text to encode and says tlgr has no QR encoder.
+
+## 2026-09-04 — E2E conference operations refuse in the client, not at the server
+
+Joining a conference, removing a participant, upgrading a 1:1 call and sending
+inside a conference all require a signed `e2e.chain` block built on the
+current tip, plus an int256 public key. Writing that block builder is a
+project on the scale of the rest of tlgr. Two honest options existed: fail at
+the server with `CONF_WRITE_CHAIN_INVALID`, or refuse locally naming the
+missing piece. These commands refuse locally (exit 2), accept `--block` and
+`--public-key` from an external E2E implementation, and `conference chain
+list --tip` hands that implementation the tip to build on. The affected
+catalog ids are `covers_partial` with the reason attached, never `covers`.
+
+## 2026-09-04 — `vc join --listen-only` is offered, and marked experimental
+
+`phone.joinGroupCall`'s `params` is documented as a payload the local tgcalls
+engine produces; an empty or `{}` payload is sanctioned nowhere. Joining is
+nonetheless a hard prerequisite for `vc download`, which is the one thing a
+headless CLI does better than the GUI. So `--params-json` is the supported
+path and `--listen-only` synthesizes a syntactically valid listener payload —
+fresh SSRC, ICE credentials, a self-signed DTLS fingerprint — purely to obtain
+presence. It carries no audio, the response says `media: none` and
+`experimental: true`, and the docstring says the server's acceptance of it is
+undocumented and must be verified against a live call.
+
+## 2026-09-04 — the daemon holds live calls, so a human can type a bare call id
+
+Telegram hands out a call's `access_hash` once, in the update that created the
+call, and there is no `phone.getCall`. A CLI whose process ends between "ring"
+and "hang up" could otherwise never hang up. `ops/_calls` keeps an in-memory,
+per-account store of the calls this daemon has seen; `call end 12345` resolves
+through it, `call end 12345:678` works without it and *teaches* it, so the
+next command can use the bare id. Nothing is written to disk: the store
+describes a connection, not a fact worth persisting.
+
+## 2026-09-04 — the DH parameters are validated, and a failure is exit 13
+
+A client that accepts whatever prime the server sends has not performed a key
+exchange; it has accepted a key the server chose. `call start` and `call
+accept` check 2048 bits, `p` and `(p-1)/2` prime (Miller-Rabin), and the
+residue condition for the generator, and refuse to ring when the check fails.
+The refusal is `INDETERMINATE` (exit 13), not `PERMISSION_DENIED`: nobody
+declined anything, and a caller must not read it as "the peer said no". The
+check is `lru_cache`d because it costs half a second and the parameters change
+roughly never.
+
+## 2026-09-04 — three flags from the work list were dropped, and why
+
+`call watch --exec` would have the *daemon* fork a program per event: a
+long-lived privileged process running arbitrary argv on behalf of whoever can
+reach the socket. Pipe `tlgr call watch --json` into your own program instead.
+`--json-lines` on the two watch commands duplicates the global `--json`.
+`conference chain list --follow` would have made a paginated operation return
+an async iterator depending on a flag; new blocks arrive on `vc watch` as
+`kind: "chain"` records instead. Four aliases from the work list were also
+dropped — `call config`, `call debug`, `vc rtmp`, `vc video`, `vc volume` and
+`conference invite cancel` — because each names a path that is a *group* in
+the generated Click tree, and registering a command there would delete the
+group and its subcommands.
+
+## 2026-09-04 — `CONFIG_DIR` was captured at import, and read the production home
+
+`tlgr.core.config.CONFIG_DIR` is resolved once at import. Two call sites used
+it — `cli/globals.resolve_account` and the legacy `agent whoami` — so a
+process that set `TLGR_HOME` *after* importing tlgr (every test that invokes
+the CLI in-process, and any embedding program) silently read the real
+`~/.tlgr`. On this machine that is a live deployment with four accounts, and
+the `.production` marker turned the bug into a hard failure rather than a
+quiet one. Both now call `paths.default_base()` at call time. `CONFIG_DIR`
+survives for the legacy modules that will be deleted with their groups.

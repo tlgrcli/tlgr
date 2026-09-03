@@ -66,6 +66,16 @@ class OpContext(Protocol):
         """
         ...
 
+    def mark_already(self) -> None:
+        """Record that the world already looked the way the caller asked for.
+
+        Part of the contract, not a convenience: COMMANDS.md promises that an
+        idempotent no-op reports `already: true` rather than pretending to
+        have done something, and an implementation cannot honour that without
+        a way to say so.
+        """
+        ...
+
 
 #: `Awaitable[Any] | AsyncIterator[Any]`: a streaming operation is an async
 #: *generator*, which is not awaitable. Registry lint L6 is what keeps the two

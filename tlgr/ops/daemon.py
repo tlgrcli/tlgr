@@ -233,13 +233,14 @@ async def daemon_start(ctx: OpContext, req: DaemonStartReq) -> LifecycleResult:
     base = _writable_base("tlgr daemon start")
     existing = read_pid(base)
     if existing:
-        status = _probe() or {}
+        running = _probe() or {}
+        ctx.mark_already()
         return LifecycleResult(
             started=False,
             already=True,
             pid=existing,
-            socket=str(status.get("daemon", {}).get("socket", "")),
-            ready=bool(status.get("daemon", {}).get("ready")),
+            socket=str(running.get("daemon", {}).get("socket", "")),
+            ready=bool(running.get("daemon", {}).get("ready")),
             catch_up=req.catch_up,
         )
 

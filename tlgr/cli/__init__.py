@@ -231,14 +231,12 @@ def cli(
 
 from tlgr.cli.gen import build_click_tree  # noqa: E402
 from tlgr.cli.legacy.chat import chat_create, chat_members  # noqa: E402
-from tlgr.cli.legacy.config_cmd import config_group  # noqa: E402
 from tlgr.cli.legacy.contact import contact_group  # noqa: E402
 from tlgr.cli.legacy.profile import profile_group  # noqa: E402
 from tlgr.cli.legacy.user import user_group  # noqa: E402
 
 cli.add_command(contact_group, "contact")
 cli.add_command(profile_group, "profile")
-cli.add_command(config_group, "config")
 cli.add_command(user_group, "user")
 
 

@@ -332,14 +332,13 @@ async def test_the_access_log_is_off(live_daemon):
     assert logging.getLogger("aiohttp.access").disabled is True
 
 
-def test_config_init_writes_private_files(tlgr_home: Path, monkeypatch):
+def test_config_init_writes_private_files(tlgr_home: Path):
     """SEC-07: `webhook.toml` holds a token and v1 created it 0644."""
     from click.testing import CliRunner
 
-    from tlgr.cli.legacy import config_cmd
+    from tlgr.cli import cli
 
-    monkeypatch.setattr(config_cmd, "CONFIG_DIR", tlgr_home)
-    result = CliRunner().invoke(config_cmd.config_group, ["init"], obj={"fmt": "json"})
+    result = CliRunner().invoke(cli, ["--json", "config", "init"])
     assert result.exit_code == 0, result.output
     for name in ("config.toml", "jobs.yaml", "webhook.toml"):
         assert stat.S_IMODE((tlgr_home / name).stat().st_mode) == 0o600, name

@@ -448,6 +448,16 @@ def lint() -> list[str]:
     """Return every problem in the registry; empty means the registry is sound."""
     problems: list[str] = []
     seen_names: dict[str, str] = {}
+    # L16 — every path prefix that is a *group* in the generated tree. An
+    # alias naming one of these would be placed as a command where a group
+    # already stands, replacing it and taking every command inside it with it:
+    # `config app` as an alias silently deletes `config app get`.
+    groups: dict[str, str] = {}
+    for spec in REGISTRY.values():
+        path = spec.path
+        for depth in range(1, len(path)):
+            groups.setdefault(".".join(path[:depth]), spec.id)
+
     for spec in REGISTRY.values():
         _lint_spec(spec, problems)
         # L2 — aliases and legacy paths are unique and disjoint from ids.
@@ -458,6 +468,12 @@ def lint() -> list[str]:
             if owner is not None:
                 problems.append(f"{spec.id}: alias {name!r} is also claimed by {owner!r}")
             seen_names[name] = spec.id
+            owner = groups.get(name)
+            if owner is not None:
+                problems.append(
+                    f"{spec.id}: alias {name!r} names a command group (from {owner!r}); "
+                    "placing it would replace the group and delete the commands in it"
+                )
     return problems
 
 

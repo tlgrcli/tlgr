@@ -835,6 +835,7 @@ tlgr account suggestion list [OPTIONS]
 
 | Flag | Type | Default | Meaning |
 |---|---|---|---|
+| `--chat` | chat |  | Dismiss a per-chat suggestion. |
 | `--dismiss` | text |  | Dismiss this suggestion. |
 | `--hide-promo` | chat |  | Hide the promoted dialog. |
 
@@ -844,9 +845,9 @@ Pagination is transport-level: `--limit/-n`, `--cursor TOKEN`, `--all` (walked i
 $ tlgr account suggestion list --json
 ```
 
-<details><summary>Catalog coverage (2 full, 1 partial)</summary>
+<details><summary>Catalog coverage (3 full, 1 partial)</summary>
 
-Full: `account.promo-data`, `auth.security-suggestions`
+Full: `account.promo-data`, `auth.security-suggestions`, `updates.config-suggestions`
 
 Partial: `password.check-remembered`
 

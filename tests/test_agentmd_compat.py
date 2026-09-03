@@ -150,10 +150,18 @@ class TestChangeTable:
 
 
 class TestWhoami:
-    def test_whoami_reports_the_output_schema_version(self):
-        """An agent has to be able to tell v1 output from v2 without probing."""
+    def test_whoami_reports_the_output_schema_version(self, tlgr_home, monkeypatch):
+        """An agent has to be able to tell v1 output from v2 without probing.
+
+        Runs against the isolated `tlgr_home`: the legacy `whoami` reads the
+        account store, and a test must never open the developer's real
+        `~/.tlgr` (which is now refused when marked as production).
+        """
         from click.testing import CliRunner
 
+        import tlgr.core.config as config
+
+        monkeypatch.setattr(config, "CONFIG_DIR", tlgr_home)
         result = CliRunner().invoke(cli, ["--json", "agent", "whoami"])
         assert result.exit_code == 0, result.output
         assert '"output_schema_version": 2' in result.output

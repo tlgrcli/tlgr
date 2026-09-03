@@ -7,7 +7,7 @@ Coverage against the Telegram feature catalog, computed from the registry: every
 `covered` is implemented today. `acct%` is covered **plus** waived — an id that belongs to a group a later PR owns, named in `tlgr/data/parity_waivers.toml` with the PR that closes it. Ids whose feasibility is `not-applicable` or `prohibited` are excluded from the denominator once and never counted again.
 
 ```
-catalog 2026-09-02 — 341 operations, 509 invocable paths
+catalog 2026-09-02 — 346 operations, 517 invocable paths
 
 domain                        covered    req       %   acct%  ops
 auth_sessions_security             87     89   97.8%  100.0%  44
@@ -21,17 +21,17 @@ messages_core                     159    167   95.2%  100.0%  54
 polls_reactions_content           117    174   67.2%  100.0%  57
 profile_settings_privacy           21    178   11.8%  100.0%  20
 stories                            12    120   10.0%  100.0%  9
-updates_sync_network              178    189   94.2%  100.0%  53
+updates_sync_network              185    189   97.9%  100.0%  58
 
 priority                      covered    req       %   acct%
-P0                                113    178   63.5%  100.0%
-P1                                238    379   62.8%  100.0%
-P2                                314    610   51.5%  100.0%
+P0                                116    178   65.2%  100.0%
+P1                                240    379   63.3%  100.0%
+P2                                316    610   51.8%  100.0%
 P3                                331    630   52.5%  100.0%
 
-TOTAL                             996   1797   55.4%  100.0%
+TOTAL                            1003   1797   55.8%  100.0%
 excluded: not-applicable 79, prohibited 40
-uncovered: 801 (801 waived with a PR number)
+uncovered: 794 (794 waived with a PR number)
 ```
 
 ## By domain
@@ -49,15 +49,15 @@ uncovered: 801 (801 waived with a PR number)
 | `polls_reactions_content` | 117 | 174 | 67.2% | 100.0% | 57 |
 | `profile_settings_privacy` | 21 | 178 | 11.8% | 100.0% | 20 |
 | `stories` | 12 | 120 | 10.0% | 100.0% | 9 |
-| `updates_sync_network` | 178 | 189 | 94.2% | 100.0% | 53 |
+| `updates_sync_network` | 185 | 189 | 97.9% | 100.0% | 58 |
 
 ## By priority
 
 | Priority | Covered | Required | % | Accounted % |
 |---|---:|---:|---:|---:|
-| P0 | 113 | 178 | 63.5% | 100.0% |
-| P1 | 238 | 379 | 62.8% | 100.0% |
-| P2 | 314 | 610 | 51.5% | 100.0% |
+| P0 | 116 | 178 | 65.2% | 100.0% |
+| P1 | 240 | 379 | 63.3% | 100.0% |
+| P2 | 316 | 610 | 51.8% | 100.0% |
 | P3 | 331 | 630 | 52.5% | 100.0% |
 
 ## Partial coverage
@@ -93,11 +93,7 @@ uncovered: 801 (801 waived with a PR number)
 | `stories.live-join` | `vc.download` | watching a live story as a viewer is owned by `story live get` |
 | `updates.invoke-with-layer` | `agent.capabilities` | states the policy and the layer bound; the switches themselves are `config set`, and recovery is `daemon reconnect`. |
 | `updates.stream-webhook-delivery` | `daemon.dead-letter.delete` | the disposal half; delivery is the webhook pusher's. |
-| `updates.sync-channel-short-poll` | `config.set` | sets the switch; the behaviour it selects belongs to the group that implements it (`proxy`, `sync`, `net`, `daemon`). |
-| `updates.sync-difference-too-long` | `events.watch` | delivers every type; the catalogue half (what exists, what it means) is `events list`/`events get`, and gap recovery is the `sync` group. |
 | `updates.sync-duplicate-suppression` | `events.replay` | replays a range; following it live is `watch`, and de-duplication is the consumer's job through the envelope's stable seq. |
-| `updates.sync-state-persistence` | `daemon.save-state` | flushes it on demand; the periodic flush is the session supervisor's. |
-| `updates.sync-too-long` | `events.watch` | delivers every type; the catalogue half (what exists, what it means) is `events list`/`events get`, and gap recovery is the `sync` group. |
 
 ## Gaps in a migrated domain
 
@@ -110,9 +106,6 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `dialogs.resolve-peer` | P0 | Resolve @username / phone / t.me link to a chat | waived until PR-5: Turning a @username, a phone number or a t.me link into a chat is `resolve` (PR-5); the chat group consumes the resolver rather than exposing it. |
 | `dialogs.unblock-user` | P0 | Unblock user | waived until PR-5: Unblocking is `user unblock` (PR-5). |
 | `profile.photo-set` | P0 | Set profile photo | waived until PR-12: Setting your profile photo is `profile photo set` (PR-12). |
-| `updates.sync-get-channel-difference` | P0 | Fill gaps in a channel's update sequence | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
-| `updates.sync-get-difference` | P0 | Fill gaps in the common/secret update sequence | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
-| `updates.sync-pts-gap-algorithm` | P0 | pts/pts_count gap detection per message box | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
 | `calls.privacy-p2p` | P1 | Privacy: peer-to-peer calls | waived until PR-12: inputPrivacyKeyPhoneP2P is the same account.setPrivacy surface as every other privacy key (PR-12). |
 | `chat.photo-set` | P1 | Set group / channel photo (photo, video or emoji/sticker avatar) | waived until PR-7: A group or channel photo is `chat photo set` (PR-7). |
 | `contact.receive-card` | P1 | Add a received contact card to your address book | waived until PR-5: contact cards, notes and birthdays are the `contact` surface (PR-5). |
@@ -122,8 +115,6 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `dialogs.notify-exceptions` | P1 | List notification exceptions | waived until PR-12: The exceptions *list* is `notify exceptions` (PR-12); one chat's exception is `chat notify`. |
 | `profile.photos-list-history` | P1 | View own / another user's profile photo history | waived until PR-12: Profile photo history is the `profile` group (PR-12). |
 | `stars.balance` | P1 | Telegram Stars balance | waived until PR-12: the Star balance and top-up packages are the `stars` surface (PR-12). |
-| `updates.sync-get-state` | P1 | Fetch update state (pts/qts/date/seq) | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
-| `updates.sync-seq-gap-algorithm` | P1 | seq gap detection for the Updates container | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
 | `attach.menu-bots` | P2 | Attachment-menu / side-menu mini-app bots: list, info, add, remove | waived until PR-10: Attachment-menu bots are the `bot` group (PR-10). |
 | `auth.url-auth-bot-button` | P2 | Log in to a website via a bot's login button (Seamless Telegram Login) | waived until PR-10: Seamless Telegram Login is a bot keyboard button (messages.requestUrlAuth / acceptUrlAuth); it lands with the bots group in PR-10. |
 | `contact.note` | P2 | Private note on a contact | waived until PR-5: contact cards, notes and birthdays are the `contact` surface (PR-5). |
@@ -166,8 +157,6 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `profile.photo-set-video` | P2 | Animated profile photo (video avatar) | waived until PR-12: A video avatar is the `profile` group (PR-12). |
 | `profile.saved-music` | P2 | Music on profile (save songs to profile, list, reorder) | waived until PR-12: Music on a profile is the `profile` group (PR-12). |
 | `sticker.group-sticker-set` | P2 | Group sticker set and group custom-emoji set (supergroup admin) | waived until PR-7: A supergroup's sticker set is a chat setting (PR-7). |
-| `updates.sync-force-resync` | P2 | Force a resync / repair the update state by hand | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
-| `updates.sync-qts-gap-algorithm` | P2 | qts gap detection for the secondary sequence | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
 | `updates.takeout-export-run` | P2 | Run a full account export | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
 | `updates.takeout-session` | P2 | Start/finish a data-export (takeout) session | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
 | `attach.file-download-check` | P3 | Mini-app file download permission check | waived until PR-10: Mini-app download permission is the `webapp` surface (PR-10). |

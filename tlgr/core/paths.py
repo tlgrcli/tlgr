@@ -26,9 +26,11 @@ from tlgr.core.errors import ConfigurationError, UsageError
 
 __all__ = [
     "ALIAS_RE",
+    "PRODUCTION_MARKER",
     "TlgrPaths",
     "audit_permissions",
     "default_base",
+    "refuse_production_home",
     "validate_alias",
     "write_private",
 ]
@@ -49,6 +51,34 @@ def default_base() -> Path:
     if override:
         return Path(override).expanduser()
     return Path.home() / ".tlgr"
+
+
+#: A home directory carrying this marker belongs to a live deployment.
+PRODUCTION_MARKER = ".production"
+_ALLOW_PRODUCTION_ENV = "TLGR_ALLOW_PRODUCTION_HOME"
+
+
+def refuse_production_home(base: Path) -> None:
+    """Refuse to operate on a home marked as production unless told to.
+
+    A development checkout that resolves to the same `~/.tlgr` as the
+    installed, running tlgr is a live deploy by accident: on 2026-09-03 a dev
+    daemon started from a worktree bound the production socket, held the
+    production session files (``database is locked``) and served a registry
+    without the message routes the running agent needed. `TLGR_HOME` already
+    lets a dev point elsewhere; this makes forgetting to set it fail fast
+    instead of silently taking over. Touch ``<home>/.production`` on the
+    deployment; set ``TLGR_ALLOW_PRODUCTION_HOME=1`` only from the installed
+    tlgr that is meant to run there.
+    """
+    if os.environ.get(_ALLOW_PRODUCTION_ENV, "").strip() == "1":
+        return
+    if (base / PRODUCTION_MARKER).exists():
+        raise ConfigurationError(
+            f"{base} is marked as a production home ({PRODUCTION_MARKER} present). "
+            "Set TLGR_HOME to a separate directory for development, or "
+            f"{_ALLOW_PRODUCTION_ENV}=1 when this really is the deployed tlgr."
+        )
 
 
 def validate_alias(alias: str) -> str:
@@ -99,6 +129,7 @@ class TlgrPaths:
 
     def __init__(self, base: Path | str | None = None) -> None:
         self.base = Path(base) if base is not None else default_base()
+        refuse_production_home(self.base)
 
     # -- top level ---------------------------------------------------------
 

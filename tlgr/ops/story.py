@@ -58,6 +58,7 @@ from tlgr.models.story import (
     StoryExport,
     StoryFeedPeer,
     StoryHidden,
+    StoryHiddenPeer,
     StoryLimits,
     StoryPinned,
     StoryPostCheck,
@@ -1817,47 +1818,59 @@ SPEC_UNPIN = OperationSpec(
 
 class HideReq(Request):
     chat: Annotated[
-        PeerRef | None,
-        arg(0, metavar="CHAT", required=False, kind="peer", help="Whose stories to hide."),
-    ] = None
+        list[PeerRef],
+        arg(0, metavar="CHAT", variadic=True, kind="peer", help="Whose stories to hide."),
+    ] = []
     every: Annotated[bool, opt("--all", help="Collapse the whole stories bar.")] = False
     unhide: Annotated[
         bool, opt("--unhide", help="Put them back instead (v1's `user hide-stories --unhide`).")
     ] = False
 
 
-async def _toggle_hidden(ctx: OpContext, req: HideReq, *, hidden: bool) -> StoryHidden:
+async def _toggle_one(ctx: OpContext, ref: PeerRef, *, hidden: bool) -> StoryHiddenPeer:
     from telethon.tl.functions import stories as fn
 
-    if req.every:
-        await client(ctx)(fn.ToggleAllStoriesHiddenRequest(hidden=hidden))
-        return StoryHidden(hidden=hidden, all=True)
-    if req.chat is None:
-        raise UsageError("give a peer, or --all for the whole stories bar", field="chat")
-
-    peer = await _send.resolve(ctx, req.chat)
+    peer = await _send.resolve(ctx, ref)
     peer_id = _send.peer_id_of(peer)
     entity = await client(ctx).get_entity(peer)
     was = bool(getattr(entity, "stories_hidden", False))
-    if was == hidden:
-        # v1 detected this and sent nothing, so a bulk pass is cheap to repeat.
-        already(ctx)
-        return StoryHidden(
-            user_id=peer_id if peer_id > 0 else 0,
-            username=getattr(entity, "username", None),
-            peer_id=peer_id,
-            hidden=hidden,
-            already=True,
-        )
-    await client(ctx)(fn.TogglePeerStoriesHiddenRequest(peer=peer, hidden=hidden))
-    ctx.emit("story_peer_hidden", {"peer": peer_id, "hidden": hidden})
-    return StoryHidden(
+    row = StoryHiddenPeer(
         user_id=peer_id if peer_id > 0 else 0,
         username=getattr(entity, "username", None),
         peer_id=peer_id,
         hidden=hidden,
-        already=False,
+        # v1 detected this and sent nothing, so a bulk pass is cheap to repeat.
+        already=was == hidden,
     )
+    if not row.already:
+        await client(ctx)(fn.TogglePeerStoriesHiddenRequest(peer=peer, hidden=hidden))
+        ctx.emit("story_peer_hidden", {"peer": peer_id, "hidden": hidden})
+    return row
+
+
+async def _toggle_hidden(ctx: OpContext, req: HideReq, *, hidden: bool) -> StoryHidden:
+    from telethon.tl.functions import stories as fn
+
+    result = StoryHidden(hidden=hidden)
+    if req.every:
+        await client(ctx)(fn.ToggleAllStoriesHiddenRequest(hidden=hidden))
+        result.all = True
+        if not req.chat:
+            return result
+    if not req.chat:
+        raise UsageError("give a peer, or --all for the whole stories bar", field="chat")
+
+    rows = [await _toggle_one(ctx, ref, hidden=hidden) for ref in req.chat]
+    first = rows[0]
+    result.user_id = first.user_id
+    result.username = first.username
+    result.peer_id = first.peer_id
+    result.already = first.already
+    if len(rows) > 1:
+        result.peers = rows
+    if all(row.already for row in rows):
+        already(ctx)
+    return result
 
 
 async def hide(ctx: OpContext, req: HideReq) -> StoryHidden:
@@ -1892,7 +1905,11 @@ SPEC_HIDE = OperationSpec(
     columns=("user_id", "username", "hidden", "already"),
     example={"user_id": 4242, "username": "alice", "hidden": True, "already": False},
     example_args="story hide @alice",
-    covers=("dialogs.hide-stories-peer", "groups-channels-admin.hide-peer-stories"),
+    covers=(
+        "contacts-users.user-hide-stories",
+        "dialogs.hide-stories-peer",
+        "groups-channels-admin.hide-peer-stories",
+    ),
     covers_partial=("stories.hide-all", "stories.hide-peer"),
     coverage_note="`story unhide` owns the other half of both toggles.",
 )

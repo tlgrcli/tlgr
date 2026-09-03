@@ -1,6 +1,6 @@
 """The `user` group: one person's profile, and what this account may do to them.
 
-Two contracts here are frozen by `AGENT.md` and must not drift; the tests in
+One contract here is frozen by `AGENT.md` and must not drift; the tests in
 `tests/test_ops_contacts.py` hold the line.
 
 * **`user dialog-status` is three-valued.** `resolved=true, has_dialog=true`
@@ -12,11 +12,9 @@ Two contracts here are frozen by `AGENT.md` and must not drift; the tests in
   id only consults the local cache, and its network fallback returns
   `UserEmpty` for any non-contact. Reading that as "no history" is the
   cold-contact bug this command exists to remove.
-* **`user hide-stories` is idempotent and local.** It reads the fresh
-  `stories_hidden` flag first and returns `already: true` with no RPC when
-  there is nothing to do, so a bulk pass over hundreds of peers is nearly
-  free. The other side is never notified and nothing about the chat, the
-  contact entry or their access to us changes.
+v1's other frozen `user` contract, `user hide-stories`, now lives in the
+story group: `story hide` owns the implementation and keeps `user
+hide-stories` as a legacy path, so one toggle has one definition.
 
 Access hashes are never printed. `access_hash_cached` says whether one is
 held; the value is per-login-session state that is useless — and unsafe —
@@ -40,8 +38,6 @@ from tlgr.models.contact import (
     PersonalChannel,
     PhotoResult,
     ProfilePhoto,
-    StoriesHidden,
-    StoriesHiddenPeer,
     SuggestedBirthday,
     UserLink,
     UserProfile,
@@ -681,108 +677,6 @@ SPEC_DIALOG_STATUS = OperationSpec(
         "The reference-resolution half of `dialogs.resolve-peer` is `resolve peer`; "
         "this op only answers the has-a-dialog question about a user."
     ),
-)
-
-
-# ---------------------------------------------------------------------------
-# user hide-stories
-# ---------------------------------------------------------------------------
-
-
-class HideStoriesReq(Request):
-    user: Annotated[
-        list[PeerRef],
-        arg(0, metavar="USER", variadic=True, kind="user", help="Peers to hide."),
-    ] = []
-    unhide: Annotated[bool, opt("--unhide", help="Put them back in the main stories bar.")] = False
-    all_stories: Annotated[
-        str | None,
-        opt("--all", metavar="ON|OFF", help="Collapse or expand the whole story strip."),
-    ] = None
-
-
-async def hide_stories(ctx: OpContext, req: HideStoriesReq) -> StoriesHidden:
-    """Hide or unhide a peer's stories — per account, silently.
-
-    SEMANTICS FROZEN (AGENT.md). Exactly Telegram's own "Hide Stories" menu
-    item: the peer leaves the main stories bar for the collapsed Hidden list.
-    The other side is never notified and nothing about the chat, the contact
-    entry or their access to us changes.
-
-    The fresh `stories_hidden` flag is read first, so a peer already in the
-    requested state costs no RPC and reports `already: true` — which is what
-    makes a bulk pass over hundreds of peers nearly free to repeat.
-    """
-    from telethon.tl.functions import stories as sfn
-
-    hidden = not req.unhide
-    result = StoriesHidden(hidden=hidden)
-
-    if req.all_stories is not None:
-        wanted = req.all_stories.strip().lower()
-        if wanted not in ("on", "off"):
-            raise UsageError("--all takes on or off", field="all")
-        await client_of(ctx)(sfn.ToggleAllStoriesHiddenRequest(hidden=wanted == "on"))
-        result.all_hidden = wanted == "on"
-        if not req.user:
-            return result
-
-    if not req.user:
-        raise UsageError("give at least one user, or --all on|off", field="user")
-
-    rows: list[StoriesHiddenPeer] = []
-    for ref in req.user:
-        target = await input_user(ctx, ref)
-        user = await fetch_user(ctx, target)
-        was = bool(getattr(user, "stories_hidden", False))
-        already = was == hidden
-        if not already:
-            peer = await _send.resolve(ctx, ref)
-            await client_of(ctx)(sfn.TogglePeerStoriesHiddenRequest(peer=peer, hidden=hidden))
-            ctx.emit("stories_hidden", {"user_id": int(user.id), "hidden": hidden})
-        rows.append(
-            StoriesHiddenPeer(
-                user_id=int(getattr(user, "id", 0) or 0),
-                username=getattr(user, "username", None),
-                hidden=hidden,
-                already=already,
-            )
-        )
-
-    first = rows[0]
-    result.user_id = first.user_id
-    result.username = first.username
-    result.hidden = first.hidden
-    result.already = first.already
-    if len(rows) > 1:
-        result.peers = rows
-    elif all(row.already for row in rows):
-        mark_already(ctx)
-    return result
-
-
-SPEC_HIDE_STORIES = OperationSpec(
-    id="user.hide-stories",
-    request=HideStoriesReq,
-    response=StoriesHidden,
-    impl=hide_stories,
-    summary="Hide or unhide a peer's stories (per-account; the other side is never notified)",
-    description=(
-        "Idempotent: the fresh flag is read first and `already: true` means "
-        "no RPC was sent, so repeating a bulk pass is nearly free. Purely "
-        "local to this account — the chat, the contact entry and their "
-        "access to you are untouched. `user get` reports the current value "
-        "as `stories_hidden`. More than one peer fills `peers`; a single "
-        "peer answers exactly as v1 did."
-    ),
-    legacy_paths=("user hide-stories",),
-    mutating=True,
-    idempotent=True,
-    rate_class="bulk",
-    columns=("user_id", "username", "hidden", "already"),
-    example={"user_id": 777123, "username": "alice", "hidden": True, "already": False},
-    example_args="user hide-stories @alice",
-    covers=("contacts-users.user-hide-stories", "dialogs.hide-stories-peer"),
 )
 
 

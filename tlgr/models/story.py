@@ -283,12 +283,24 @@ class StoryPostCheck(Model):
     chats: list[Peer] = []
 
 
+class StoryHiddenPeer(Model):
+    """One row of a bulk `story hide`, in the same keys the single call uses."""
+
+    user_id: int = 0
+    username: str | None = None
+    peer_id: int = 0
+    hidden: bool = False
+    already: bool = False
+
+
 class StoryHidden(Model):
     """The per-account "Hide Stories" toggle, in v1's keys.
 
     `user_id`/`username` are what `tlgr user hide-stories` printed and stay
     spelled that way; `peer_id` is the marked id, for the channels the same
-    RPC accepts.
+    RPC accepts. A single target answers exactly as v1 did; extra targets
+    appear in `peers`, so a bulk pass stays one command without changing the
+    shape the documented single-peer call returns.
     """
 
     user_id: int = 0
@@ -298,6 +310,7 @@ class StoryHidden(Model):
     already: bool = False
     #: Set instead of the peer fields when `--all` collapsed the whole bar.
     all: bool = False
+    peers: list[StoryHiddenPeer] = []
 
 
 class StoriesDeleted(Model):

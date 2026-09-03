@@ -52,8 +52,6 @@ __all__ = [
     "ProfilePhoto",
     "SavedPhoneContact",
     "SignUp",
-    "StoriesHidden",
-    "StoriesHiddenPeer",
     "SuggestedBirthday",
     "TopPeer",
     "TopPeerState",
@@ -330,29 +328,6 @@ class DialogStatus(ContactModel):
     source: str = "unknown"
     reason: str | None = None
     scanned_dialogs: int | None = None
-
-
-class StoriesHiddenPeer(ContactModel):
-    user_id: int = 0
-    username: str | None = None
-    hidden: bool = False
-    already: bool = False
-
-
-class StoriesHidden(ContactModel):
-    """SEMANTICS FROZEN (AGENT.md): v1's four keys, plus a bulk tail.
-
-    A single target answers exactly as v1 did. Extra targets appear in
-    `peers`, so a bulk pass stays one command without changing the shape the
-    documented single-peer call returns.
-    """
-
-    user_id: int = 0
-    username: str | None = None
-    hidden: bool = False
-    already: bool = False
-    peers: list[StoriesHiddenPeer] = []
-    all_hidden: bool | None = None
 
 
 class UserProfile(ContactModel):

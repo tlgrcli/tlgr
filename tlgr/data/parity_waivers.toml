@@ -19,11 +19,6 @@ final_pr = 12
 
 
 [[domain]]
-name = "bots_inline_payments"
-pr = 10
-reason = "bot, inline, webapp and payment land in PR-10."
-
-[[domain]]
 name = "profile_settings_privacy"
 pr = 12
 reason = "profile, privacy, notify, settings, business, premium, gift and stars land in PR-12."
@@ -602,46 +597,6 @@ pr = 4
 reason = "The suggested login-screen language comes from the language pack, which is the `config`/langpack surface in PR-4."
 
 [[id]]
-id = "auth.oauth-deep-link"
-pr = 10
-reason = "A tg://oauth request is a bot authorization flow (messages.requestUrlAuth); it lands with the bots group in PR-10."
-
-[[id]]
-id = "auth.url-auth-bot-button"
-pr = 10
-reason = "Seamless Telegram Login is a bot keyboard button (messages.requestUrlAuth / acceptUrlAuth); it lands with the bots group in PR-10."
-# ---------------------------------------------------------------------------
-# media_files ids PR-6 does not own. The catalog groups by subject — anything
-# that moves a file — while tlgr is organised by command group, so a profile
-# photo is a `profile` command even though uploading one is a file transfer.
-# ---------------------------------------------------------------------------
-
-[[id]]
-id = "attach.file-download-check"
-pr = 10
-reason = "Mini-app download permission is the `webapp` surface (PR-10)."
-
-[[id]]
-id = "attach.menu-bots"
-pr = 10
-reason = "Attachment-menu bots are the `bot` group (PR-10)."
-
-[[id]]
-id = "attach.open-mini-app"
-pr = 10
-reason = "Opening a mini app is the `webapp` group (PR-10)."
-
-[[id]]
-id = "bot.media-previews"
-pr = 10
-reason = "A bot's Mini App previews are the `bot` group (PR-10)."
-
-[[id]]
-id = "bot.profile-photo-set"
-pr = 10
-reason = "Setting an owned bot's photo is the `bot` group (PR-10)."
-
-[[id]]
 id = "chat.photo-set"
 pr = 7
 reason = "A group or channel photo is `chat photo set` (PR-7)."
@@ -883,3 +838,123 @@ reason = "Suggested peers come from channels.getChannelRecommendations, a channe
 id = "contacts-users.url-auth-login"
 pr = 10
 reason = "URL authorization is a bot surface (PR-10); `resolve link` classifies the link and delegates."
+# PR-10 landed the bots/inline/mini-app/payment domain. Its 22 remaining ids
+# are of three kinds, and each is named rather than hidden behind a domain
+# waiver that would have let the group read as unfinished forever:
+#
+#   * nine need API layer 229, which the pinned Telethon does not speak. Each
+#     has a registered command that exits 13 rather than not existing.
+#   * twelve belong to another group's command surface — Stars, business bots,
+#     privacy rules, the bot-side update stream, stories.
+#   * one, sharing a mini-app result to a story, is the story group's.
+# ---------------------------------------------------------------------------
+
+[[id]]
+id = "bots.ephemeral-callback-press"
+pr = 12
+reason = "layer 229: `ephemeral.*` and the rich-message keyboard are not in Telethon 1.44. The commands are registered and exit 13 (NOT_SUPPORTED) so an agent can tell 'unavailable in this build' from 'no such command'."
+
+[[id]]
+id = "bots.ephemeral-command-send"
+pr = 12
+reason = "layer 229: `ephemeral.*` and the rich-message keyboard are not in Telethon 1.44. The commands are registered and exit 13 (NOT_SUPPORTED) so an agent can tell 'unavailable in this build' from 'no such command'."
+
+[[id]]
+id = "bots.ephemeral-message-send"
+pr = 12
+reason = "layer 229: `ephemeral.*` and the rich-message keyboard are not in Telethon 1.44. The commands are registered and exit 13 (NOT_SUPPORTED) so an agent can tell 'unavailable in this build' from 'no such command'."
+
+[[id]]
+id = "bots.ephemeral-message-view"
+pr = 12
+reason = "layer 229: `ephemeral.*` and the rich-message keyboard are not in Telethon 1.44. The commands are registered and exit 13 (NOT_SUPPORTED) so an agent can tell 'unavailable in this build' from 'no such command'."
+
+[[id]]
+id = "bots.ephemeral-report"
+pr = 12
+reason = "layer 229: `ephemeral.*` and the rich-message keyboard are not in Telethon 1.44. The commands are registered and exit 13 (NOT_SUPPORTED) so an agent can tell 'unavailable in this build' from 'no such command'."
+
+[[id]]
+id = "bots.welcome-messages-manage"
+pr = 12
+reason = "layer 229: `ephemeral.*` and the rich-message keyboard are not in Telethon 1.44. The commands are registered and exit 13 (NOT_SUPPORTED) so an agent can tell 'unavailable in this build' from 'no such command'."
+
+[[id]]
+id = "bots.welcome-messages-view"
+pr = 12
+reason = "layer 229: `ephemeral.*` and the rich-message keyboard are not in Telethon 1.44. The commands are registered and exit 13 (NOT_SUPPORTED) so an agent can tell 'unavailable in this build' from 'no such command'."
+
+[[id]]
+id = "bots.rich-message-buttons"
+pr = 12
+reason = "layer 229: `ephemeral.*` and the rich-message keyboard are not in Telethon 1.44. The commands are registered and exit 13 (NOT_SUPPORTED) so an agent can tell 'unavailable in this build' from 'no such command'."
+
+[[id]]
+id = "bots.chat-join-webview"
+pr = 12
+reason = "messages.requestChatJoinWebView is absent from Telethon 1.44; `webapp open --join-query-id` is registered and exits 13."
+
+[[id]]
+id = "bots.bot-stars-balance"
+pr = 12
+reason = "The Star balance is the `stars` surface (PR-12)."
+
+[[id]]
+id = "bots.bot-revenue-stats"
+pr = 12
+reason = "Bot revenue graphs are the `stars`/`stats` surface (PR-12)."
+
+[[id]]
+id = "bots.stars-topup-options"
+pr = 12
+reason = "Buying Stars is the `stars` surface (PR-12)."
+
+[[id]]
+id = "bots.stars-topup-deeplink"
+pr = 12
+reason = "The Stars top-up deep link is the `stars` surface (PR-12)."
+
+[[id]]
+id = "bots.business-bot-connect"
+pr = 12
+reason = "Business bots are the `business` surface (PR-12)."
+
+[[id]]
+id = "bots.business-bot-disconnect"
+pr = 12
+reason = "Business bots are the `business` surface (PR-12)."
+
+[[id]]
+id = "bots.business-bot-remove-from-chat"
+pr = 12
+reason = "Business bots are the `business` surface (PR-12)."
+
+[[id]]
+id = "bots.business-bots-list"
+pr = 12
+reason = "Business bots are the `business` surface (PR-12)."
+
+[[id]]
+id = "bots.privacy-rule-bots"
+pr = 12
+reason = "Allowing or disallowing bots in a privacy rule is `privacy set` (PR-12)."
+
+[[id]]
+id = "bots.bot-side-update-stream"
+pr = 4
+reason = "The bot-only update stream is `watch --bot-updates`, which is the updates group (PR-4)."
+
+[[id]]
+id = "bots.bot-updates-status"
+pr = 4
+reason = "The pending-update backlog is daemon/updates plumbing (PR-4)."
+
+[[id]]
+id = "bots.bot-subscription-update"
+pr = 4
+reason = "Subscription updates reach a bot through the update stream (PR-4)."
+
+[[id]]
+id = "bots.webapp-share-to-story"
+pr = 8
+reason = "Sharing to a story is the `story` group (PR-8)."

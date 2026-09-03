@@ -801,7 +801,7 @@ SPEC_STOP = OperationSpec(
     headers=("Bot", "Blocked", "Deleted"),
     example={"bot_id": 93372553, "blocked": True, "history_deleted": 0},
     example_args="bot stop @gifbot",
-    covers=("bots.delete-bot-chat-and-block", "bots.stop-bot"),
+    covers=("bots.delete-bot-chat-and-block", "bots.stop-bot", "dialogs.bot-stop-restart"),
 )
 
 
@@ -4235,17 +4235,31 @@ SPEC_REPORT = OperationSpec(
 
 
 class AdListReq(Request):
-    bot: Annotated[PeerRef, arg(0, metavar="BOT", kind="user", help="The bot chat.")]
+    bot: Annotated[
+        PeerRef | None,
+        arg(0, metavar="BOT", required=False, kind="user", help="The bot chat."),
+    ] = None
+    search: Annotated[
+        str | None,
+        opt("--search", metavar="QUERY", help="Sponsored chats a search for QUERY would show."),
+    ] = None
 
 
 async def ad_list(ctx: OpContext, req: AdListReq) -> Page[SponsoredMessage]:
-    """The sponsored messages a bot chat would show.
+    """The sponsored messages a bot chat — or a search — would show.
 
     Opt-in, like `message sponsored list`: tlgr never mixes ads into a message
-    listing, and never reports an impression that nobody saw — that is
-    `bot ad read`.
+    listing or a search result, and never reports an impression that nobody
+    saw — that is `bot ad read`. Both surfaces are here because both are ads,
+    and splitting them would hide one of the two places they appear.
     """
+    from telethon.tl.functions import contacts as contacts_fn
     from telethon.tl.functions import messages as fn
+
+    if req.search is not None:
+        return await _sponsored_peers(ctx, req.search, contacts_fn)
+    if req.bot is None:
+        raise UsageError("name a bot chat, or use --search", field="bot")
 
     peer = await _send.resolve(ctx, req.bot)
     result = await client(ctx)(fn.GetSponsoredMessagesRequest(peer=peer))
@@ -4266,6 +4280,40 @@ async def ad_list(ctx: OpContext, req: AdListReq) -> Page[SponsoredMessage]:
     return Page(items=items, has_more=False, total=len(items))
 
 
+async def _sponsored_peers(ctx: OpContext, query: str, contacts_fn: Any) -> Page[SponsoredMessage]:
+    """`contacts.getSponsoredPeers` as the same row a bot-chat ad produces.
+
+    A sponsored *peer* is an ad for a chat rather than a message in one, so it
+    has a title and no body; reporting it in the same shape is what lets one
+    `bot ad read` mark either kind as seen.
+    """
+    from tlgr.ops._serialize import entity_to_peer
+
+    result = await client(ctx)(contacts_fn.GetSponsoredPeersRequest(q=query))
+    chats = {int(getattr(c, "id", 0)): c for c in (getattr(result, "chats", None) or [])}
+    users = {int(getattr(u, "id", 0)): u for u in (getattr(result, "users", None) or [])}
+    items: list[SponsoredMessage] = []
+    for entry in getattr(result, "peers", None) or []:
+        peer = getattr(entry, "peer", None)
+        raw_id = int(
+            getattr(peer, "channel_id", 0)
+            or getattr(peer, "user_id", 0)
+            or getattr(peer, "chat_id", 0)
+            or 0
+        )
+        entity = chats.get(raw_id) or users.get(raw_id)
+        items.append(
+            SponsoredMessage(
+                random_id=_bots.key_text(getattr(entry, "random_id", b"")),
+                title=entity_to_peer(entity).title if entity is not None else None,
+                message="",
+                sponsor_info=getattr(entry, "sponsor_info", None),
+                additional_info=getattr(entry, "additional_info", None),
+            )
+        )
+    return Page(items=items, has_more=False, total=len(items))
+
+
 SPEC_AD_LIST = OperationSpec(
     id="bot.ad.list",
     request=AdListReq,
@@ -4281,7 +4329,7 @@ SPEC_AD_LIST = OperationSpec(
     headers=("ID", "Title", "Text"),
     example={"items": [{"random_id": "abc", "message": "An ad"}], "has_more": False},
     example_args="bot ad list @my_helper_bot",
-    covers=("bots.bot-ads-account",),
+    covers=("bots.bot-ads-account", "dialogs.sponsored-search-peers"),
     covers_partial=("bots.sponsored-message-in-bot-chat",),
     coverage_note="Reporting an impression or a click is `bot ad read`.",
 )
@@ -4700,8 +4748,7 @@ SPEC_EPHEMERAL_SEND = OperationSpec(
     headers=("Chat", "Ephemeral"),
     example={"chat_id": 4242, "ephemeral_id": 0},
     example_args="bot ephemeral send @alice Hello",
-    covers_partial=("bots.ephemeral-command-send", "bots.ephemeral-message-send"),
-    coverage_note="Registered and refused with exit 13: the methods are layer 229.",
+    tags=frozenset({"not-supported"}),
 )
 
 
@@ -4735,8 +4782,7 @@ SPEC_EPHEMERAL_DELETE = OperationSpec(
     headers=("Chat", "Deleted"),
     example={"chat_id": 4242, "deleted": 0},
     example_args="bot ephemeral delete @alice 12",
-    covers_partial=("bots.ephemeral-message-send",),
-    coverage_note="Registered and refused with exit 13: `ephemeral.*` is layer 229.",
+    tags=frozenset({"not-supported"}),
 )
 
 
@@ -4761,8 +4807,7 @@ SPEC_WELCOME_LIST = OperationSpec(
     headers=("ID", "Text"),
     example={"items": [], "has_more": False},
     example_args="bot welcome list @mygroup",
-    covers_partial=("bots.welcome-messages-view",),
-    coverage_note="Registered and refused with exit 13: `ephemeral.*` is layer 229.",
+    tags=frozenset({"not-supported"}),
 )
 
 
@@ -4793,8 +4838,7 @@ SPEC_WELCOME_SET = OperationSpec(
     headers=("Chat", "ID", "Text"),
     example={"chat_id": -1001, "id": 0, "text": "Welcome!"},
     example_args="bot welcome set @mygroup Welcome!",
-    covers_partial=("bots.welcome-messages-manage",),
-    coverage_note="Registered and refused with exit 13: `ephemeral.*` is layer 229.",
+    tags=frozenset({"not-supported"}),
 )
 
 
@@ -4824,6 +4868,5 @@ SPEC_WELCOME_DELETE = OperationSpec(
     headers=("Chat", "Deleted"),
     example={"chat_id": -1001, "deleted": 0},
     example_args="bot welcome delete @mygroup 1",
-    covers_partial=("bots.welcome-messages-manage",),
-    coverage_note="Registered and refused with exit 13: `ephemeral.*` is layer 229.",
+    tags=frozenset({"not-supported"}),
 )

@@ -30,25 +30,41 @@ P0_FLOOR = 30
 #: The floor for total covered ids. Same rule, weaker guarantee.
 COVERED_FLOOR = 200
 
-#: The P0 ids PR-1 is responsible for. Named, not counted, so a swap — one
-#: dropped and one added — cannot pass the count check silently.
+#: Every P0 catalog id PR-1's own operations cover — all 30 of them, named
+#: rather than counted, so a swap (one dropped, one added) cannot pass a
+#: count check silently. `test_the_floor_is_the_whole_truth` keeps the list
+#: equal to what the registry actually claims, so raising it is a deliberate
+#: line in a diff and never an accident.
 PR1_P0_IDS = frozenset(
     {
+        "bots.inline-keyboard-render",
+        "bots.reply-keyboard-render",
+        "dialogs.draft-set",
         "messages-core.delete-for-everyone",
         "messages-core.delete-for-me",
         "messages-core.edit-text",
-        "messages-core.entities-detect-local",
+        "messages-core.format-basic-styles",
+        "messages-core.format-code-and-pre",
         "messages-core.format-entity-offsets-utf16",
-        "messages-core.format-raw-entities-json",
+        "messages-core.format-html-parse-mode",
+        "messages-core.format-markdown-parse-mode",
+        "messages-core.format-mention",
+        "messages-core.format-text-link",
         "messages-core.forward-basic",
+        "messages-core.forward-hide-sender",
         "messages-core.history-list",
+        "messages-core.link-preview-disable",
         "messages-core.message-get",
         "messages-core.message-link-create",
         "messages-core.pin-message",
         "messages-core.reaction-add-remove",
         "messages-core.read-mark-history",
+        "messages-core.saved-messages-send",
+        "messages-core.search-filter-media-type",
         "messages-core.search-in-chat-text",
         "messages-core.send-reply",
+        "messages-core.send-scheduled",
+        "messages-core.send-silent",
         "messages-core.send-text",
         "messages-core.unpin-message",
     }
@@ -118,6 +134,25 @@ class TestTheGate:
     def test_every_p0_id_this_pr_owns_is_covered(self):
         missing = sorted(PR1_P0_IDS - _covered_ids())
         assert missing == [], f"PR-1 dropped coverage of {missing}"
+
+    def test_the_floor_is_the_whole_truth(self):
+        """The named list is exactly the P0 set `message`/`draft` claim.
+
+        A floor that is a subset is a floor with holes in it: an op could drop
+        a P0 id nobody wrote down and the gate would stay green. Computing the
+        set here and comparing it to the literal above means new coverage has
+        to be added to the list on purpose.
+        """
+        catalogue = catalog()
+        actual = {
+            cid
+            for op_id, spec in REGISTRY.items()
+            if op_id.startswith(("message.", "draft."))
+            for cid in (*spec.covers, *spec.covers_partial)
+            if cid in catalogue and catalogue[cid].priority == "P0"
+        }
+        assert actual == set(PR1_P0_IDS)
+        assert len(PR1_P0_IDS) == P0_FLOOR
 
     def test_every_uncovered_id_is_waived_with_a_pr_number(self, report):
         """No silent gaps: the gate is meaningful from day one, not at the end."""

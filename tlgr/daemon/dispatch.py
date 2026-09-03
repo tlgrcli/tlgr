@@ -335,8 +335,11 @@ def _envelope(
     }
     if dry_run:
         envelope["meta"]["dry_run"] = True
-    if spec.paginated is not None and isinstance(body, dict) and "items" in body:
-        envelope["result"] = body.get("items")
+    # `omit_defaults` drops an empty `items`, so the membership test v1 used
+    # here made an empty page lose its `page` envelope entirely — the one
+    # shape a caller walking pages must be able to rely on.
+    if spec.paginated is not None and isinstance(body, dict):
+        envelope["result"] = body.get("items") or []
         envelope["page"] = {
             "has_more": bool(body.get("has_more")),
             "next_cursor": body.get("next_cursor"),

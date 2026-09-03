@@ -329,7 +329,7 @@ async def test_the_v1_error_shape_is_flat_and_the_v2_one_is_wrapped(live_daemon,
             conn.close()
 
     client._ready = True
-    v1 = await in_thread(raw, "GET", "/chat/get?chat=x&account=nope")
+    v1 = await in_thread(raw, "GET", "/chat/members?chat=x&account=nope")
     assert {"code", "exit_code", "error"} <= set(v1)
     assert "ok" not in v1
 

@@ -233,3 +233,103 @@ are re-derived with a small pattern table, kept close to Telegram's rules and
 deliberately not authoritative: they are reported under `auto_entities`, never
 mixed into `entities`, because a message that re-declares a server-side entity
 is rejected.
+
+## 2026-09-03 — a chat folder is evaluated client-side, and `--all` is the daemon's job
+
+There is no `messages.getDialogs(filter_id)`: a `dialogFilter` is a *filter*
+every client applies to its own dialog list. `chat list --folder <name|id>`
+therefore walks the whole list inside the daemon and applies the filter's
+rules — explicit include or pin wins, explicit exclude loses, the type flags
+decide the rest — rather than paging. That is also why such a listing ignores
+`--limit` for the *walk* and only slices the answer: "the dialog list was
+fully enumerated" is the guarantee `user dialog-status` depends on to turn an
+absent peer into a negative rather than an "I don't know", and a folder query
+that paged would quietly break it.
+
+## 2026-09-03 — `chat unread` keeps v1's verb, and the vocabulary grows by one
+
+STYLE §1 spells this operation `mark-unread`, and the registry already had
+that verb. `chat unread` is the path v1's `AGENT.md` documents and agents have
+in their prompts, and an id of `chat.mark-unread` with `chat unread` as a
+legacy path would have made the canonical name the one nobody uses. The id is
+`chat.unread` and `unread` joins the verb list, next to `mark-unread`, with a
+comment saying the two name the same call.
+
+## 2026-09-03 — a two-segment alias that shadows a sub-noun group is dropped
+
+`chat badge`, `chat action-bar`, `chat ttl`, `chat autoarchive`, `chat promo`
+and `folder suggested` were proposed as shorthands for their `… get`/`… set`/
+`… list` operations. Click has one namespace per level, so registering them
+would have replaced the *group* of the same name and taken `chat badge get`
+with it. The canonical three-segment paths stand alone; only aliases that
+cannot collide (`chat mentions`, `chat posters`, `chat suggestions`,
+`chat unarchive`, `folder updates`, …) are registered.
+
+## 2026-09-03 — the two cross-noun aliases wait for the `user` group
+
+The work list gives `chat action-bar get` the alias `user action-bar` and
+`chat report` the alias `user report`. Registering either would make the
+registry generate a top-level `user` group, which collides with the
+hand-written one still serving `user get`, `user dialog-status` and
+`user hide-stories` — `build_cli()` refuses that overlap on purpose. Both
+aliases are deferred to the PR that migrates the `user` group; the canonical
+`chat …` paths cover the operations meanwhile.
+
+## 2026-09-03 — `chat import` is not a stream
+
+The work list marks it `stream: true`. The foundation has exactly one
+streaming shape (`GET /v1/events`) and no streaming *operation*, so a
+streaming import would have meant inventing the second one for a P2 command
+that runs a fixed five-step sequence. It runs to completion and reports the
+state it reached (`checked` or `started`) with the media counts; `--check` and
+`--dry-run` stop after the two feasibility calls, which is where the useful
+progress information actually is.
+
+## 2026-09-03 — `folder list --tags` honours `--dry-run` itself
+
+`folder list` is a read, and the work list marks it non-mutating, but
+`--tags on|off` writes an account-wide setting. Declaring the whole op
+mutating would make `--dry-run folder list` print a stub instead of the
+folders, which is the wrong trade for the command people run to *see* their
+folders. The implementation checks `ctx.dry_run` before the toggle and warns
+instead, so the flag cannot silently fire under a dry run and listing keeps
+working.
+
+## 2026-09-03 — the four secret-chat commands are registered and refuse
+
+Telethon has no MTProto-2.0 end-to-end layer: DH validation, AES-IGE, in/out
+sequence numbers, PFS re-keying and a local key store are a module tlgr does
+not have, and secret chats never appear in `messages.getDialogs`.
+`chat secret list`, `start` and `send` are therefore registered and raise
+`NOT_SUPPORTED` (exit 13 — "tlgr cannot do this", not "the operation failed")
+with the reason. `chat secret discard` is implemented, because discarding
+needs only the chat id. The catalog ids stay covered by ops that refuse
+loudly rather than by silence.
+
+## 2026-09-03 — `chat notify set` reads before it writes
+
+`account.updateNotifySettings` replaces the whole `inputPeerNotifySettings`,
+and an omitted field means "inherit the scope default". Sending only the field
+the caller named would therefore have cleared every other exception on that
+chat as a side effect. The implementation fetches the current exception,
+carries its fields over, applies the change, and treats `default` as *dropping*
+the field — which is the only way to express "stop overriding this" in a
+request whose absent fields are meaningful.
+
+## 2026-09-03 — an empty page keeps its `page` envelope
+
+`omit_defaults` drops an empty `items`, and the daemon decided whether to emit
+the `page` envelope by testing for that key. A paginated operation with no
+results therefore answered `{"total": 0}` with no `page` at all — the one
+shape a caller walking pages must be able to rely on. The test is now on the
+spec (`paginated is not None`), and the result is `[]`.
+
+## 2026-09-03 — `chat list` rows nest their peer, and v1's keys move with it
+
+v1's `chat list` returned `{"chats": [{"id", "name", "type", "username", …}]}`.
+A dialog now returns `Page[Dialog]` with the peer under `chat`, the same
+`Peer` every other v2 response embeds, and the preview under `last_message` as
+a whole `Message` — so a service event, a caption-less sticker and a genuinely
+blank message are three distinguishable things in the surface agents read
+first, instead of three empty strings. It is rows 8 and 9 of the
+CHANGELOG's breaking table; `--select chat.id,unread_count` is the migration.

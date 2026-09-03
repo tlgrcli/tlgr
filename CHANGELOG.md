@@ -16,18 +16,24 @@ from one registry — which is what makes the model worth trusting: it is proven
 on the busiest group, not on a toy one. `tlgr/cli/message.py` and
 `tlgr/cli/draft.py` are deleted rather than shadowed.
 
+The `chat` and `folder` groups follow: 47 more operations covering the dialog
+list, the per-chat settings and the chat folders. `tlgr/cli/legacy/chat.py`
+keeps exactly `chat create` and `chat members`, which are member-and-admin
+operations and migrate with the groups-and-channels group.
+
 ### Breaking
 
 Every change below applies **only to commands generated from the operation
-registry** — in this release that is the `message` group, `draft`,
-`tlgr agent exit-codes`, `tlgr agent parity` and `tlgr schema`. Commands still
-hand-written under `tlgr/cli/legacy/` behave exactly as they did in v1 until
-their own migration PR, at which point these rules apply to them too.
+registry** — in this release that is the `message`, `draft`, `chat` and
+`folder` groups, `tlgr agent exit-codes`, `tlgr agent parity` and
+`tlgr schema`. Commands still hand-written under `tlgr/cli/legacy/` behave
+exactly as they did in v1 until their own migration PR, at which point these
+rules apply to them too.
 
 No documented command path disappears. Every migrated operation declares its
 v1 paths, so `tlgr send`, `tlgr msg list`, `tlgr message react` and the rest
 still work; `tests/test_agentmd_compat.py` asserts it, and asserts that every
-JSON key v1's `AGENT.md` documented is still there — except for the seven
+JSON key v1's `AGENT.md` documented is still there — except for the nine
 changes in the table below, which is the whole list.
 
 | # | Change | v1 | v2 | Migration |
@@ -39,6 +45,8 @@ changes in the table below, which is the whole list.
 | 5 | Error envelope | `{"error","code","exit_code"}` on stdout | `{"ok":false,"error":{…}}` with the same three keys inside `error` | `--results-only` emits the inner `error` object, byte-for-byte v1's shape |
 | 6 | List envelopes: `message.list`, `message.search`, `message.forward`, `draft.list` | `{"messages":[…],"has_more":…}`, `{"forwarded":2,"ids":[…]}`, `{"drafts":[…]}` | `{"ok":true,"result":[…],"page":{…}}` | `--results-only` yields `Page[T]` = `{items, has_more, next_cursor, total}`. `message.forward` returns the forwarded messages, not just a count; `draft.set` returns the saved `Draft` instead of `{"draft": true}`; `draft.list` moved `chat_name`/`chat_username` into a nested `chat` |
 | 7 | `message.edit` timestamp | `date` — the moment the message was *sent* | `edit_date` — the moment it was *edited*, which is what the field always held | rename only; `edited`, `id` and `chat_id` are unchanged, and `--select edit_date` reaches it |
+| 8 | `chat.list` rows | `{"chats":[{"id","name","type","username","unread_count",…}]}` | `Page[Dialog]`, each row's peer nested under `chat` (`chat.id`, `chat.title`, `chat.kind`, `chat.username`) | `--results-only` yields `{items, has_more, next_cursor, total}`; `--select chat.id,unread_count` reaches the fields. `chats`, `inbox` and `catchup` keep working and now carry the same shape |
+| 9 | `chat.poster.list` (`chat posters`) | each poster had `id`, `last_date`, `last_message_id` | `user_id` beside v1's `id`, and `date`/`date_unix`/`last_msg_id` | `posters`, `scanned_messages`, `distinct_posters`, `partial` and `flood_wait` are unchanged, and `id` is still emitted |
 
 `tlgr agent whoami --json` reports `output_schema_version: 2`, so an agent can
 branch on the two sets without probing for each change.
@@ -75,12 +83,24 @@ Two more, outside the documented output shapes:
   `fact-check set`, `sponsored *`, `suggested *`, `thread disable` and
   `tone *`. Everything a pinned Telethon (layer 227) cannot express is
   refused with `NOT_SUPPORTED` and a reason, never silently ignored.
+- **The `chat` and `folder` groups, generated from the registry.** 47
+  operations: v1's `chat list/open/catchup/unread/get/archive/mute/leave/
+  typing/posters` keep their paths and gain `read`, `pin`, `clear`, `delete`,
+  `set`, `notify get|set`, `ttl set`, `theme list|set`, `wallpaper set`,
+  `translate`, `mention list`, `badge get`, `action-bar get`,
+  `autoarchive set`, `promo list`, `saved list`, `report`, `import` and
+  `secret *`; `folder` is new in full (`list`, `create`, `edit`, `add`,
+  `remove`, `delete`, `reorder`, `join`, `share *`, `suggested list`,
+  `update list`). `chat archive` gained `--undo`, `chat mute` gained
+  durations that actually work (COR-01), and every list is a signed page.
+  The four secret-chat commands that need end-to-end keys are registered and
+  refuse with `NOT_SUPPORTED` (exit 13) rather than pretending.
 - **`tlgr agent parity`** — coverage of the pinned feature catalog by
   priority and domain, with every uncovered id either waived to a named PR or
   reported as a gap. `--uncovered` prints the full list; `docs/reference/PARITY.md`
   is the same report, generated. Neither number is hand-maintained.
 - **Generated reference docs.** `docs/reference/message.md`, `draft.md`,
-  `agent.md` and `PARITY.md` come out of the registry via `make docs` /
+  `chat.md`, `folder.md`, `agent.md` and `PARITY.md` come out of the registry via `make docs` /
   `make parity`; `tests/test_docs_fresh.py` fails the build on a stale page,
   so a flag cannot ship undocumented.
 - `tlgr agent whoami` reports `output_schema_version: 2` (§12.4), so an agent

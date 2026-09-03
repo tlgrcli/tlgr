@@ -25,7 +25,8 @@ from tlgr.registry import ALIASES
 
 ALICE = 4242
 
-#: Every `message`/`draft` invocation AGENT.md documents, as v1 spelled it.
+#: Every `message`/`draft`/`chat` invocation AGENT.md documents, as v1
+#: spelled it.
 V1_PATHS = [
     ("message", "send"),
     ("message", "list"),
@@ -46,7 +47,25 @@ V1_PATHS = [
     ("draft", "set"),
     ("draft", "clear"),
     ("draft", "list"),
+    ("chat", "list"),
+    ("chat", "open"),
+    ("chat", "unread"),
+    ("chat", "catchup"),
+    ("chat", "get"),
+    ("chat", "archive"),
+    ("chat", "mute"),
+    ("chat", "leave"),
+    ("chat", "typing"),
+    ("chat", "posters"),
+    ("chats",),
+    ("inbox",),
+    ("catchup",),
 ]
+
+#: Documented v1 paths that are still hand-written commands rather than
+#: registry operations: `chat create` and `chat members` migrate with the
+#: groups-and-channels group (PR-7), and must keep working until they do.
+V1_HAND_WRITTEN = [("chat", "members"), ("chat", "create")]
 
 #: op id → the keys v1's AGENT.md showed in the response, minus the ones the
 #: deliberate-change table below accounts for.
@@ -59,6 +78,14 @@ V1_KEYS: dict[str, set[str]] = {
     "message.read": {"read", "chat_id"},
     "message.edit": {"edited", "id", "chat_id"},
     "draft.clear": {"cleared", "chat_id"},
+    "chat.open": {"chat_id", "marked_read", "messages"},
+    "chat.unread": {"unread", "chat_id"},
+    "chat.get": {"id", "type", "name"},
+    "chat.archive": {"archived", "chat_id"},
+    "chat.mute": {"muted", "chat_id"},
+    "chat.leave": {"left", "chat_id"},
+    "chat.typing": {"typing", "chat_id"},
+    "chat.catchup": {"chats"},
 }
 
 #: The changes CHANGELOG.md lists under "Breaking". Anything not in here has
@@ -72,6 +99,12 @@ DELIBERATE_CHANGES = {
     "draft.set": "`{draft: true}` became the saved `Draft` object",
     "draft.list": "`{drafts: [...]}` became `Page[Draft]`; `chat_name`/"
     "`chat_username` moved into `chat`, and `chat_id` is now the marked id",
+    "chat.list": "`{chats: [...]}` became the `Page[Dialog]` envelope, and "
+    "each row's `id`/`name`/`type`/`username` moved into a nested `chat` "
+    "object so a dialog names its peer the same way every other response does",
+    "chat.poster.list": "`{posters: [...], scanned_messages, distinct_posters}` "
+    "keeps its keys, but each poster gained `user_id` beside v1's `id` and "
+    "`last_date`/`last_message_id` became `date`/`date_unix`/`last_msg_id`",
 }
 
 
@@ -84,7 +117,7 @@ def _walk(path: tuple[str, ...]) -> Any:
     return node
 
 
-@pytest.mark.parametrize("path", V1_PATHS, ids=lambda p: " ".join(p))
+@pytest.mark.parametrize("path", V1_PATHS + V1_HAND_WRITTEN, ids=lambda p: " ".join(p))
 def test_every_documented_v1_path_is_still_invocable(path):
     assert _walk(path) is not None, f"tlgr {' '.join(path)} disappeared"
 
@@ -92,6 +125,13 @@ def test_every_documented_v1_path_is_still_invocable(path):
 @pytest.mark.parametrize("path", V1_PATHS, ids=lambda p: " ".join(p))
 def test_every_documented_v1_path_resolves_to_an_operation(path):
     assert ALIASES.get(".".join(path)) is not None
+
+
+def test_the_chat_list_shortcuts_still_resolve():
+    """`chats`, `inbox` and `catchup` were top-level v1 commands."""
+    assert ALIASES["chats"] == "chat.list"
+    assert ALIASES["inbox"] == "chat.list"
+    assert ALIASES["catchup"] == "chat.catchup"
 
 
 def test_the_shortcuts_still_reach_message_send():
@@ -150,18 +190,15 @@ class TestChangeTable:
 
 
 class TestWhoami:
-    def test_whoami_reports_the_output_schema_version(self, tlgr_home, monkeypatch):
+    def test_whoami_reports_the_output_schema_version(self, tlgr_home):
         """An agent has to be able to tell v1 output from v2 without probing.
 
-        Runs against the isolated `tlgr_home`: the legacy `whoami` reads the
-        account store, and a test must never open the developer's real
-        `~/.tlgr` (which is now refused when marked as production).
+        Runs against the isolated home the fixture provides: reading the
+        developer's real `~/.tlgr` would make the result depend on their
+        accounts, and a home marked as production refuses to be read at all.
         """
         from click.testing import CliRunner
 
-        import tlgr.core.config as config
-
-        monkeypatch.setattr(config, "CONFIG_DIR", tlgr_home)
         result = CliRunner().invoke(cli, ["--json", "agent", "whoami"])
         assert result.exit_code == 0, result.output
         assert '"output_schema_version": 2' in result.output

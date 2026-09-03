@@ -98,16 +98,53 @@ tlgr draft list                        # all non-empty drafts across chats
 ### Chats
 
 ```bash
-tlgr chat list                         # --type, --search, --limit, --unread
-tlgr inbox                             # shortcut: chats with unread messages
+tlgr chat list                         # --folder, --type, --search, --unread, --pinned, --muted
+tlgr inbox                             # shortcut: chat list (add --unread)
+tlgr catchup                           # every unread chat with its recent messages, read-only
+tlgr chat open <chat>                  # history AND a read receipt; --no-read to peek
+tlgr chat read <chat>...               # the receipt without the history; --folder, --from-file
+tlgr chat unread <chat>                # the undo for an accidental receipt
+tlgr chat get <chat>                   # --full for getFullUser/getFullChat/getFullChannel
+tlgr chat posters <chat>               # distinct senders + message counts, walked internally
+tlgr chat archive <chat>... [--undo]   # one RPC for any number of peers
+tlgr chat mute <chat> --for 8h         # or --until, --forever, --off, --stories, --folder
+tlgr chat pin <chat>... [--unpin]      # --folder pins inside a chat folder; --order rewrites it
+tlgr chat clear <chat> --yes           # history goes, chat stays
+tlgr chat delete <chat> --yes          # --for-both, or --for-everyone if you own it
+tlgr chat leave <chat>... --yes        # --delete-history, --remove-from-folders
+tlgr chat typing <chat>                # --action record-audio, upload-photo, …
+tlgr chat notify set <chat> --silent on
+tlgr chat ttl set <chat> 1d            # auto-delete timer; omit the period to read it
+tlgr chat theme set <chat> --emoji 🌷
+tlgr chat wallpaper set <chat> --slug pattern
+tlgr chat badge get --limits           # the unread badge, and the chat-list limits behind it
+tlgr chat report <chat> --spam --yes
 tlgr chat members <chat>               # --admins, --search, --limit
-tlgr chat posters <chat>               # distinct senders + message counts; --limit, --max-messages
-tlgr chat get <chat>
 tlgr chat create <name>                # --type group|channel, --members
-tlgr chat archive <chat>
-tlgr chat mute <chat> [duration]
-tlgr chat leave <chat>
 ```
+
+`chat list` returns a page of dialogs whose peer is nested under `chat`;
+`chat catchup` and `chat list` never emit a read receipt, `chat open` does on
+purpose, and `chat unread` restores only your own badge. Full reference:
+[`docs/reference/chat.md`](docs/reference/chat.md).
+
+### Folders
+
+A chat folder is a filter, not a container, so every edit rewrites the whole
+filter in one call — and `--folder <name|id>` works on `chat list`,
+`chat read`, `chat mute`, `chat pin` and `chat badge get`.
+
+```bash
+tlgr folder list --with-counts
+tlgr folder create Work --groups --emoji 💼
+tlgr folder add Work @alice            # --pin to pin it inside the folder
+tlgr folder remove Work @alice --exclude
+tlgr folder reorder main Work Family
+tlgr folder join t.me/addlist/SLUG     # previews; --chats/--all-chats to actually join
+tlgr folder share set Work --all-eligible
+```
+
+Full reference: [`docs/reference/folder.md`](docs/reference/folder.md).
 
 ### Contacts
 
@@ -398,7 +435,7 @@ reach the socket can reach the session. See [SECURITY.md](SECURITY.md).
 
 ```bash
 tlgr --json --results-only chat list           # strip pagination/envelope, emit only the chat array
-tlgr --json --select "id,name" chat list       # project specific fields
+tlgr --json --select "chat.id,unread_count" chat list   # project specific fields
 ```
 
 ### Auto-JSON for pipelines

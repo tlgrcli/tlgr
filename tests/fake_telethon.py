@@ -19,6 +19,14 @@ send/edit/delete/forward/pin/read/draft requests. A test therefore asserts
 against *history that moved*, not against a canned reply — `message send`
 followed by `message list` shows the message, because the fake really stored
 it.
+
+Stage D adds the dialog world: real `types.Dialog` rows with unread counters,
+notification settings, pin and archive state, plus the chat folders
+(`dialogFilter`) the folder group rewrites. `chat archive` therefore *moves*
+a row into folder 1 and `chat list --folder archive` finds it there, and
+`chat mute --for 8h` writes an absolute `mute_until` a test can compare with
+the wall clock — which is COR-01 and is not expressible by inspecting a
+return value.
 """
 
 from __future__ import annotations
@@ -31,6 +39,7 @@ from typing import Any
 from telethon.tl import types
 
 __all__ = [
+    "DialogState",
     "FakeTelegramClient",
     "World",
     "fake_client_factory",
@@ -108,6 +117,24 @@ def make_message(
 
 
 @dataclass
+class DialogState:
+    """One chat's dialog row, as a test declares it."""
+
+    chat_id: int
+    top_message: int = 0
+    unread_count: int = 0
+    unread_mentions_count: int = 0
+    unread_reactions_count: int = 0
+    unread_poll_votes_count: int = 0
+    unread_mark: bool = False
+    pinned: bool = False
+    folder_id: int = 0
+    mute_until: datetime | None = None
+    silent: bool | None = None
+    ttl_period: int | None = None
+
+
+@dataclass
 class World:
     """What exists, and what should go wrong."""
 
@@ -139,6 +166,15 @@ class World:
     read_inbox: dict[int, int] = field(default_factory=dict)
     read_outbox: dict[int, int] = field(default_factory=dict)
     pinned: dict[int, set[int]] = field(default_factory=dict)
+    #: marked chat id → its dialog row. Ordered newest-first by top_message,
+    #: which is how the server orders `messages.getDialogs`.
+    dialogs_by_id: dict[int, DialogState] = field(default_factory=dict)
+    #: The chat folders (`dialogFilter`), in display order.
+    filters: list[Any] = field(default_factory=list)
+    tags_enabled: bool = False
+    #: The `peerSettings` action bar, per chat.
+    peer_settings: dict[int, Any] = field(default_factory=dict)
+    global_privacy: Any = None
     #: request type name → callable(request) -> result, or a plain value.
     raw: dict[str, Any] = field(default_factory=dict)
     calls: list[tuple[str, Any]] = field(default_factory=list)
@@ -213,6 +249,49 @@ class World:
             if message.id == message_id:
                 return message
         return None
+
+    # -- the dialog world --------------------------------------------------
+
+    def add_dialog(self, chat_id: int, **state: Any) -> DialogState:
+        """Give a chat a dialog row. Anything unset is the server's default."""
+        row = DialogState(chat_id=chat_id, **state)
+        if not row.top_message:
+            history = self.history(chat_id)
+            row.top_message = history[-1].id if history else 0
+        self.dialogs_by_id[chat_id] = row
+        return row
+
+    def dialog(self, chat_id: int) -> DialogState:
+        row = self.dialogs_by_id.get(chat_id)
+        if row is None:
+            row = self.add_dialog(chat_id)
+        return row
+
+    def entity_for(self, chat_id: int) -> Any:
+        """The user or chat a marked id names, or None."""
+        raw_id = abs(chat_id)
+        if chat_id < -1000000000000:
+            raw_id = -1000000000000 - chat_id
+        if chat_id == self.me.id:
+            return self.me
+        return self.users.get(raw_id) or self.chats.get(raw_id)
+
+    def notify_of(self, chat_id: int) -> types.PeerNotifySettings:
+        row = self.dialog(chat_id)
+        return types.PeerNotifySettings(mute_until=row.mute_until, silent=row.silent)
+
+    def add_folder(self, folder_id: int, title: str, **kwargs: Any) -> Any:
+        """A `dialogFilter` in the world, addressed by id or by title."""
+        folder = types.DialogFilter(
+            id=folder_id,
+            title=types.TextWithEntities(text=title, entities=[]),
+            pinned_peers=kwargs.pop("pinned_peers", []),
+            include_peers=kwargs.pop("include_peers", []),
+            exclude_peers=kwargs.pop("exclude_peers", []),
+            **kwargs,
+        )
+        self.filters.append(folder)
+        return folder
 
 
 class _Dialog:
@@ -525,20 +604,7 @@ class FakeTelegramClient:
         for item in request.peers:
             peer = getattr(item, "peer", item)
             chat_id = self._chat_id(peer)
-            dialogs.append(
-                types.Dialog(
-                    peer=types.PeerUser(user_id=abs(chat_id)),
-                    top_message=0,
-                    read_inbox_max_id=self.world.read_inbox.get(chat_id, 0),
-                    read_outbox_max_id=self.world.read_outbox.get(chat_id, 0),
-                    unread_count=0,
-                    unread_mentions_count=0,
-                    unread_reactions_count=0,
-                    unread_poll_votes_count=0,
-                    notify_settings=types.PeerNotifySettings(),
-                    draft=self.world.drafts.get(chat_id),
-                )
-            )
+            dialogs.append(self._dialog_row(self.world.dialog(chat_id)))
         return types.messages.PeerDialogs(
             dialogs=dialogs,
             messages=[],
@@ -560,6 +626,324 @@ class FakeTelegramClient:
             )
             return self._updates(message)
         return self._updates()
+
+    # -- the dialog world --------------------------------------------------
+    #
+    # These are the calls the `chat` and `folder` groups make. Each one moves
+    # the world: archiving a chat really changes its `folder_id`, so
+    # `chat list --folder archive` finds it there afterwards.
+
+    def _dialog_row(self, state: Any) -> types.Dialog:
+        from telethon import utils
+
+        entity = self.world.entity_for(state.chat_id)
+        peer = utils.get_peer(entity) if entity is not None else types.PeerUser(state.chat_id)
+        return types.Dialog(
+            peer=peer,
+            top_message=state.top_message,
+            read_inbox_max_id=self.world.read_inbox.get(state.chat_id, 0),
+            read_outbox_max_id=self.world.read_outbox.get(state.chat_id, 0),
+            unread_count=state.unread_count,
+            unread_mentions_count=state.unread_mentions_count,
+            unread_reactions_count=state.unread_reactions_count,
+            unread_poll_votes_count=state.unread_poll_votes_count,
+            notify_settings=self.world.notify_of(state.chat_id),
+            pinned=state.pinned or None,
+            unread_mark=state.unread_mark or None,
+            folder_id=state.folder_id or None,
+            draft=self.world.drafts.get(state.chat_id),
+            ttl_period=state.ttl_period,
+        )
+
+    def _dialog_payload(self, rows: list[Any]) -> Any:
+        """`messages.dialogs` with the entities and top messages it must carry."""
+        chats: list[Any] = []
+        users: list[Any] = []
+        messages: list[Any] = []
+        for state in rows:
+            entity = self.world.entity_for(state.chat_id)
+            if isinstance(entity, types.User):
+                users.append(entity)
+            elif entity is not None:
+                chats.append(entity)
+            top = self.world.find(state.chat_id, state.top_message)
+            if top is not None:
+                messages.append(top)
+        return types.messages.Dialogs(
+            dialogs=[self._dialog_row(state) for state in rows],
+            messages=messages,
+            chats=chats,
+            users=users,
+        )
+
+    def _ordered_dialogs(self) -> list[Any]:
+        """Newest first, which is the order the server answers in."""
+        rows = list(self.world.dialogs_by_id.values())
+        return sorted(rows, key=lambda row: -row.top_message)
+
+    def _raw_GetDialogsRequest(self, request: Any) -> Any:
+        folder_id = getattr(request, "folder_id", None) or 0
+        rows = [row for row in self._ordered_dialogs() if (row.folder_id or 0) == folder_id]
+        if getattr(request, "exclude_pinned", None):
+            rows = [row for row in rows if not row.pinned]
+        offset_id = int(getattr(request, "offset_id", 0) or 0)
+        if offset_id:
+            rows = [row for row in rows if row.top_message < offset_id]
+        return self._dialog_payload(rows[: int(getattr(request, "limit", 100) or 100)])
+
+    def _raw_GetPinnedDialogsRequest(self, request: Any) -> Any:
+        folder_id = int(getattr(request, "folder_id", 0) or 0)
+        rows = [
+            row
+            for row in self._ordered_dialogs()
+            if row.pinned and (row.folder_id or 0) == folder_id
+        ]
+        return types.messages.PeerDialogs(
+            dialogs=[self._dialog_row(row) for row in rows],
+            messages=[],
+            chats=[],
+            users=[],
+            state=types.updates.State(pts=1, qts=0, date=None, seq=0, unread_count=0),
+        )
+
+    def _raw_ToggleDialogPinRequest(self, request: Any) -> bool:
+        chat_id = self._chat_id(getattr(request.peer, "peer", request.peer))
+        self.world.dialog(chat_id).pinned = bool(getattr(request, "pinned", False))
+        return True
+
+    def _raw_ReorderPinnedDialogsRequest(self, request: Any) -> bool:
+        wanted = [
+            self._chat_id(getattr(item, "peer", item)) for item in getattr(request, "order", [])
+        ]
+        for chat_id, row in self.world.dialogs_by_id.items():
+            row.pinned = chat_id in wanted
+        return True
+
+    def _raw_MarkDialogUnreadRequest(self, request: Any) -> bool:
+        chat_id = self._chat_id(getattr(request.peer, "peer", request.peer))
+        self.world.dialog(chat_id).unread_mark = bool(getattr(request, "unread", False))
+        return True
+
+    def _raw_EditPeerFoldersRequest(self, request: Any) -> types.Updates:
+        for item in getattr(request, "folder_peers", []):
+            chat_id = self._chat_id(item.peer)
+            self.world.dialog(chat_id).folder_id = int(item.folder_id)
+        return self._updates()
+
+    def _raw_UpdateNotifySettingsRequest(self, request: Any) -> bool:
+        peer = getattr(request.peer, "peer", None)
+        if peer is None:
+            return True
+        row = self.world.dialog(self._chat_id(peer))
+        settings = request.settings
+        if getattr(settings, "mute_until", None) is not None:
+            row.mute_until = settings.mute_until
+        if getattr(settings, "silent", None) is not None:
+            row.silent = settings.silent
+        return True
+
+    def _raw_GetNotifySettingsRequest(self, request: Any) -> types.PeerNotifySettings:
+        peer = getattr(request.peer, "peer", None)
+        if peer is None:
+            return types.PeerNotifySettings(silent=False)
+        return self.world.notify_of(self._chat_id(peer))
+
+    def _raw_SetHistoryTTLRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.peer)
+        self.world.dialog(chat_id).ttl_period = int(request.period) or None
+        return self._updates()
+
+    def _raw_GetPeerSettingsRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        settings = self.world.peer_settings.get(chat_id) or types.PeerSettings()
+        return types.messages.PeerSettings(settings=settings, chats=[], users=[])
+
+    def _raw_HidePeerSettingsBarRequest(self, request: Any) -> bool:
+        self.world.peer_settings[self._chat_id(request.peer)] = types.PeerSettings()
+        return True
+
+    def _raw_GetGlobalPrivacySettingsRequest(self, request: Any) -> Any:
+        if self.world.global_privacy is None:
+            self.world.global_privacy = types.GlobalPrivacySettings()
+        return self.world.global_privacy
+
+    def _raw_SetGlobalPrivacySettingsRequest(self, request: Any) -> Any:
+        self.world.global_privacy = request.settings
+        return request.settings
+
+    def _raw_DeleteHistoryRequest(self, request: Any) -> Any:
+        peer = getattr(request, "peer", None) or getattr(request, "channel", None)
+        chat_id = self._chat_id(peer)
+        removed = len(self.world.history(chat_id))
+        max_id = int(getattr(request, "max_id", 0) or 0)
+        if max_id:
+            kept = [m for m in self.world.history(chat_id) if m.id > max_id]
+            removed -= len(kept)
+            self.world.messages[chat_id] = kept
+        else:
+            self.world.messages[chat_id] = []
+        return types.messages.AffectedHistory(pts=1, pts_count=removed, offset=0)
+
+    def _raw_DeleteChatUserRequest(self, request: Any) -> types.Updates:
+        return self._updates()
+
+    def _raw_ReadPollVotesRequest(self, request: Any) -> bool:
+        return True
+
+    def _raw_GetUnreadMentionsRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        found = [m for m in self.world.history(chat_id) if getattr(m, "mentioned", False)]
+        return types.messages.Messages(messages=found, chats=[], users=[], topics=[])
+
+    def _raw_GetUnreadReactionsRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        found = [m for m in self.world.history(chat_id) if getattr(m, "reactions", None)]
+        return types.messages.Messages(messages=found, chats=[], users=[], topics=[])
+
+    def _raw_GetUnreadPollVotesRequest(self, request: Any) -> Any:
+        return types.messages.Messages(messages=[], chats=[], users=[], topics=[])
+
+    def _raw_GetSavedDialogsRequest(self, request: Any) -> Any:
+        rows = [
+            types.SavedDialog(
+                peer=types.PeerUser(user_id=abs(chat_id)), top_message=state.top_message
+            )
+            for chat_id, state in self.world.dialogs_by_id.items()
+        ]
+        return types.messages.SavedDialogs(dialogs=rows, messages=[], chats=[], users=[])
+
+    def _raw_GetPinnedSavedDialogsRequest(self, request: Any) -> Any:
+        return types.messages.SavedDialogs(dialogs=[], messages=[], chats=[], users=[])
+
+    # -- folders -----------------------------------------------------------
+
+    def _raw_GetDialogFiltersRequest(self, request: Any) -> Any:
+        return types.messages.DialogFilters(
+            filters=list(self.world.filters), tags_enabled=self.world.tags_enabled or None
+        )
+
+    def _raw_UpdateDialogFilterRequest(self, request: Any) -> bool:
+        filter_id = int(request.id)
+        self.world.filters = [
+            f for f in self.world.filters if int(getattr(f, "id", -1)) != filter_id
+        ]
+        if request.filter is not None:
+            self.world.filters.append(request.filter)
+        return True
+
+    def _raw_UpdateDialogFiltersOrderRequest(self, request: Any) -> bool:
+        order = {int(value): index for index, value in enumerate(request.order)}
+        self.world.filters.sort(key=lambda f: order.get(int(getattr(f, "id", 0) or 0), 99))
+        return True
+
+    def _raw_ToggleDialogFilterTagsRequest(self, request: Any) -> bool:
+        self.world.tags_enabled = bool(request.enabled)
+        return True
+
+    def _raw_GetSuggestedDialogFiltersRequest(self, request: Any) -> list[Any]:
+        return [
+            types.DialogFilterSuggested(
+                filter=types.DialogFilter(
+                    id=0,
+                    title=types.TextWithEntities(text="Unread", entities=[]),
+                    pinned_peers=[],
+                    include_peers=[],
+                    exclude_peers=[],
+                    exclude_read=True,
+                ),
+                description="Unread chats",
+            )
+        ]
+
+    def _raw_GetExportedInvitesRequest(self, request: Any) -> Any:
+        return types.chatlists.ExportedInvites(invites=[], chats=[], users=[])
+
+    def _raw_ExportChatlistInviteRequest(self, request: Any) -> Any:
+        return types.chatlists.ExportedChatlistInvite(
+            filter=types.DialogFilterChatlist(
+                id=request.chatlist.filter_id,
+                title=types.TextWithEntities(text=request.title, entities=[]),
+                pinned_peers=[],
+                include_peers=list(request.peers),
+            ),
+            invite=types.ExportedChatlistInvite(
+                title=request.title,
+                url="https://t.me/addlist/AbCdEf",
+                peers=[types.PeerUser(user_id=4242)],
+            ),
+        )
+
+    def _raw_CheckChatlistInviteRequest(self, request: Any) -> Any:
+        return types.chatlists.ChatlistInvite(
+            title=types.TextWithEntities(text="Shared", entities=[]),
+            peers=[types.PeerUser(user_id=4242)],
+            chats=[],
+            users=list(self.world.users.values()),
+            emoticon="📁",
+        )
+
+    def _raw_JoinChatlistInviteRequest(self, request: Any) -> types.Updates:
+        return self._updates()
+
+    def _raw_GetLeaveChatlistSuggestionsRequest(self, request: Any) -> list[Any]:
+        return [types.PeerUser(user_id=4242)]
+
+    def _raw_LeaveChatlistRequest(self, request: Any) -> types.Updates:
+        filter_id = int(request.chatlist.filter_id)
+        self.world.filters = [
+            f for f in self.world.filters if int(getattr(f, "id", -1)) != filter_id
+        ]
+        return self._updates()
+
+    def _raw_GetChatlistUpdatesRequest(self, request: Any) -> Any:
+        return types.chatlists.ChatlistUpdates(
+            missing_peers=[types.PeerUser(user_id=4242)],
+            chats=[],
+            users=list(self.world.users.values()),
+        )
+
+    # -- odds and ends the chat group reads --------------------------------
+
+    def _raw_GetChatThemesRequest(self, request: Any) -> Any:
+        return types.account.ChatThemes(
+            hash=0, themes=[types.ChatTheme(emoticon="🌷")], chats=[], users=[]
+        )
+
+    def _raw_GetPromoDataRequest(self, request: Any) -> Any:
+        return types.help.PromoData(
+            expires=None,
+            pending_suggestions=["VALIDATE_PHONE_NUMBER"],
+            dismissed_suggestions=[],
+            chats=[],
+            users=[],
+        )
+
+    def _raw_GetAppConfigRequest(self, request: Any) -> Any:
+        entries = [
+            types.JsonObjectValue(
+                key="dialogs_pinned_limit_default", value=types.JsonNumber(value=5)
+            ),
+            types.JsonObjectValue(key="channels_limit_default", value=types.JsonNumber(value=500)),
+        ]
+        return types.help.AppConfig(hash=0, config=types.JsonObject(value=entries))
+
+    def _raw_GetCommonChatsRequest(self, request: Any) -> Any:
+        return types.messages.Chats(chats=list(self.world.chats.values()))
+
+    def _raw_GetInactiveChannelsRequest(self, request: Any) -> Any:
+        return types.messages.InactiveChats(
+            dates=[datetime.now(timezone.utc)] * len(self.world.chats),
+            chats=list(self.world.chats.values()),
+            users=[],
+        )
+
+    def _raw_ReportRequest(self, request: Any) -> Any:
+        if not request.option:
+            return types.ReportResultChooseOption(
+                title="What is wrong?",
+                options=[types.MessageReportOption(text="Spam", option=b"\x01")],
+            )
+        return types.ReportResultReported()
 
     # -- entities ----------------------------------------------------------
 
@@ -588,6 +972,12 @@ class FakeTelegramClient:
         return types.InputPeerChat(entity.id)
 
     def _lookup(self, ref: Any) -> Any:
+        if isinstance(ref, types.InputPeerSelf):
+            return self.world.me
+        for attribute in ("user_id", "chat_id", "channel_id"):
+            value = getattr(ref, attribute, None)
+            if isinstance(value, int) and not isinstance(ref, int):
+                return self.world.users.get(value) or self.world.chats.get(value)
         if ref in ("me", "self"):
             return self.world.me
         if isinstance(ref, str):
@@ -654,6 +1044,9 @@ class FakeTelegramClient:
         self.world.calls.append(
             ("iter_messages", {"chat_id": chat_id, "limit": limit, "offset_id": offset_id})
         )
+        failure = self.world._fail_next.pop("iter_messages", None)
+        if failure is not None:
+            return _AsyncFailure(failure)
         history = sorted(self.world.history(chat_id), key=lambda m: m.id)
 
         if ids is not None:
@@ -799,6 +1192,23 @@ class FakeTelegramClient:
         if limit is not None:
             entities = entities[:limit]
         return _AsyncList(entities)
+
+
+class _AsyncFailure:
+    """An async iterator that raises on the first step.
+
+    `chat posters` has to keep the partial harvest when a flood cuts the scan
+    short, and that is only testable if the *iteration* can fail.
+    """
+
+    def __init__(self, error: BaseException) -> None:
+        self._error = error
+
+    def __aiter__(self) -> _AsyncFailure:
+        return self
+
+    async def __anext__(self) -> Any:
+        raise self._error
 
 
 class _AsyncList:

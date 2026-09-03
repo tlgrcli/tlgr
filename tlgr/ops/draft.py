@@ -26,7 +26,7 @@ from tlgr.ops._params import arg, choice, opt
 from tlgr.ops._serialize import entity_to_peer, message_entities
 from tlgr.ops._spec import OpContext, OperationSpec
 
-__all__ = ["SPEC_CLEAR", "SPEC_LIST", "SPEC_SET"]
+__all__ = ["SPEC_CLEAR", "SPEC_LIST", "SPEC_SET", "draft_model"]
 
 _EXAMPLE_DRAFT: dict[str, Any] = {
     "chat_id": 777123,
@@ -44,7 +44,7 @@ def _client(ctx: OpContext) -> Any:
     return client
 
 
-def _draft_model(raw: Any, *, chat_id: int, chat: Any = None) -> Draft:
+def draft_model(raw: Any, *, chat_id: int, chat: Any = None) -> Draft:
     """A Telethon `DraftMessage` (or a `Draft` wrapper) as the model."""
     inner = getattr(raw, "draft", None) or raw
     reply = getattr(inner, "reply_to", None)
@@ -203,7 +203,7 @@ async def list_drafts(ctx: OpContext, req: ListReq) -> Page[Draft]:
         result = await client(fn.GetPeerDialogsRequest(peers=[types.InputDialogPeer(peer)]))
         chat_id = _send.peer_id_of(peer)
         drafts = [
-            _draft_model(dialog.draft, chat_id=chat_id)
+            draft_model(dialog.draft, chat_id=chat_id)
             for dialog in (getattr(result, "dialogs", None) or [])
             if getattr(dialog, "draft", None) is not None
         ]
@@ -215,7 +215,7 @@ async def list_drafts(ctx: OpContext, req: ListReq) -> Page[Draft]:
         chat_id = int(getattr(draft, "entity_id", 0) or 0)
         if not chat_id and entity is not None:
             chat_id = _send.peer_id_of(entity)
-        model = _draft_model(draft, chat_id=chat_id, chat=entity)
+        model = draft_model(draft, chat_id=chat_id, chat=entity)
         if model.text or model.entities:
             items.append(model)
     return Page(items=items[:limit], has_more=len(items) > limit, total=len(items))

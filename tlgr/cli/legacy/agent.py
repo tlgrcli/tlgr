@@ -22,11 +22,16 @@ def agent_group() -> None:
 def agent_whoami(ctx: click.Context) -> None:
     """Return current account info, daemon status, and environment for agents."""
     from tlgr.core.accounts import AccountManager
-    from tlgr.core.config import CONFIG_DIR
+    from tlgr.core.paths import default_base
     from tlgr.daemon.lifecycle import read_pid
 
     obj = ctx.obj or {}
-    mgr = AccountManager(CONFIG_DIR)
+    # Resolved per call, not at import: `tlgr.core.config.CONFIG_DIR` freezes
+    # the home the process started with, so `TLGR_HOME` set afterwards (a
+    # test, a wrapper script) was ignored and this reported the developer's
+    # real home instead.
+    config_dir = default_base()
+    mgr = AccountManager(config_dir)
     active_alias = obj.get("account") or mgr.get_active()
     acct = mgr.get_account(active_alias) if active_alias else None
 
@@ -41,7 +46,7 @@ def agent_whoami(ctx: click.Context) -> None:
         "username": acct.username if acct else None,
         "phone": acct.phone if acct else None,
         "daemon_running": read_pid() is not None,
-        "config_dir": str(CONFIG_DIR),
+        "config_dir": str(config_dir),
     }
 
     enabled = obj.get("enable_commands", "")

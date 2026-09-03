@@ -97,6 +97,10 @@ VERBS: frozenset[str] = frozenset(
         "terminate-all",
         "read-all",
         "mark-unread",
+        # `chat unread` is v1's spelling of markDialogUnread and AGENT.md
+        # documents it; "mark-unread" above is the same operation named the
+        # STYLE way, and both resolve to the one op.
+        "unread",
         "report",
         "clear",
         "check",

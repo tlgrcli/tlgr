@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
@@ -227,104 +225,6 @@ class ClientWrapper:
         except Exception as e:
             raise ChatNotFoundError(f"Cannot resolve '{chat_ref}': {e}")
 
-    async def list_chats(
-        self,
-        limit: int | None = None,
-        chat_type: str | None = None,
-        search: str | None = None,
-        unread_only: bool = False,
-        offset: int = 0,
-    ) -> AsyncIterator[dict[str, Any]]:
-        """Yield dialogs as dicts, optionally filtered by type/search/unread.
-
-        `limit=None` yields every match — that is how you enumerate an
-        account, and it costs ONE walk.
-
-        Do not page this to collect everything. `offset` counts post-filter
-        matches (so paging with a type/search filter skips already-returned
-        chats rather than raw dialogs), but each call restarts
-        `iter_dialogs()` at the top, making full enumeration by paging
-        O(n^2): the caller re-walks every dialog per page and discards the
-        prefix. Measured on a 708-private-dialog account: 8 pages of 100 =
-        104s, versus 24s unpaged for the identical list in identical order.
-        `offset` is for resuming or sampling, never for a full sweep.
-        """
-        matched = 0
-        count = 0
-        async for dialog in self.client.iter_dialogs():
-            entity = dialog.entity
-            info = self._entity_to_dict(entity, dialog)
-
-            if chat_type:
-                if info["type"].lower() != chat_type.lower():
-                    continue
-            if search:
-                if search.lower() not in info["name"].lower():
-                    continue
-            # A chat marked unread BY HAND has unread_count 0 — filtering on
-            # the count alone hides exactly the chats someone flagged as
-            # "still waiting on me".
-            if unread_only and not (info.get("unread_count") or info.get("unread_mark")):
-                continue
-
-            matched += 1
-            if matched <= offset:
-                continue
-            yield info
-            count += 1
-            if limit and count >= limit:
-                break
-
-    @staticmethod
-    def _dialog_extras(dialog: Any) -> dict[str, Any]:
-        extras: dict[str, Any] = {
-            "unread_count": getattr(dialog, "unread_count", 0) or 0,
-        }
-        # highest outgoing msg id the OTHER side has read — lets an agent see
-        # whether its last message was seen ("seen" = out msg id <= this)
-        raw = getattr(dialog, "dialog", None)
-        if raw is not None and hasattr(raw, "read_outbox_max_id"):
-            extras["read_outbox_max_id"] = raw.read_outbox_max_id
-        # the manual "unread" flag (chat unread / MarkDialogUnread) — set on a
-        # chat with nothing new in it, so it never shows in unread_count
-        if raw is not None and getattr(raw, "unread_mark", False):
-            extras["unread_mark"] = True
-        msg = getattr(dialog, "message", None)
-        if msg is not None:
-            text = (getattr(msg, "text", None) or "").replace("\n", " ")
-            extras["last_message"] = {
-                "id": msg.id,
-                "date": str(msg.date),
-                "out": bool(getattr(msg, "out", False)),
-                "text": text[:120],
-            }
-            # Same two labels get_messages() emits. Without them an empty
-            # `text` here is three different facts wearing one shape: a
-            # Telegram service event, a caption-less sticker, and a message
-            # someone really did send blank. Consumers that read the dialog
-            # list (inbox, chat list) got the bare shape and had to re-fetch
-            # the chat to tell them apart — or, worse, not notice.
-            action = getattr(msg, "action", None)
-            if action is not None:
-                extras["last_message"]["service"] = type(action).__name__
-            if getattr(msg, "media", None) is not None:
-                extras["last_message"]["media_type"] = type(msg.media).__name__
-                extras["last_message"].update(
-                    {"media_" + k: v for k, v in media_details(msg.media).items()}
-                )
-            # ...and the same reaction summary, for exactly the same reason.
-            # A consumer that reads the dialog list could see WHAT the last
-            # message was but never whether this account had already reacted
-            # to it, so "have we answered this warm close yet?" was
-            # unanswerable without re-fetching the chat — and the re-fetch is
-            # a read receipt away from being the wrong gesture on a closed or
-            # user-driven chat. `mine` is the field that matters; `counts`
-            # also carries the only signal that a CONTACT reacted to US.
-            summary = ClientWrapper._reactions_summary(msg)
-            if summary:
-                extras["last_message"]["reactions"] = summary
-        return extras
-
     def _entity_to_dict(self, entity: Any, dialog: Any = None) -> dict[str, Any]:
         if isinstance(entity, User):
             if entity.is_self:
@@ -360,13 +260,7 @@ class ClientWrapper:
                 "type": "unknown",
                 "username": None,
             }
-        if dialog is not None:
-            info.update(self._dialog_extras(dialog))
         return info
-
-    async def get_chat_info(self, chat_id: int | str) -> dict[str, Any]:
-        entity = await self.client.get_entity(chat_id)
-        return self._entity_to_dict(entity)
 
     @staticmethod
     def _reactions_summary(msg: Any) -> dict[str, Any] | None:
@@ -457,35 +351,6 @@ class ClientWrapper:
                     for e in msg.entities
                 ]
             result.append(d)
-        return result
-
-    async def open_chat(
-        self,
-        chat_id: int | str,
-        limit: int = 30,
-        mark_read: bool = True,
-    ) -> dict[str, Any]:
-        """Open a chat the way a human would: fetch recent history and
-        (by default) emit a read receipt. Use get_messages for silent peeks."""
-        messages = await self.get_messages(chat_id, limit=limit, include_sender=True)
-        if mark_read:
-            await self.client.send_read_acknowledge(chat_id)
-        return {"chat_id": chat_id, "marked_read": mark_read, "messages": messages}
-
-    async def catchup(
-        self,
-        limit_chats: int = 20,
-        per_chat: int = 10,
-        chat_type: str | None = None,
-    ) -> list[dict[str, Any]]:
-        """One call for "what did I miss?": every unread chat with its recent
-        messages (a couple before the unread ones for context). Read-only —
-        emits no read receipts."""
-        result: list[dict[str, Any]] = []
-        async for chat in self.list_chats(limit=limit_chats, chat_type=chat_type, unread_only=True):
-            depth = min(max(chat.get("unread_count", 0) + 2, 5), per_chat)
-            chat["messages"] = await self.get_messages(chat["id"], limit=depth, include_sender=True)
-            result.append(chat)
         return result
 
     async def get_message(self, chat_id: int | str, msg_id: int) -> dict[str, Any]:
@@ -611,76 +476,6 @@ class ClientWrapper:
             users = members or []
             result = await self.client.create_group(name, users)
             return {"id": result.id if hasattr(result, "id") else 0, "name": name, "type": "group"}
-
-    async def archive_chat(self, chat_id: int | str) -> dict[str, Any]:
-        from telethon.tl.functions.folders import EditPeerFoldersRequest
-        from telethon.tl.types import InputFolderPeer
-
-        entity = await self.client.get_input_entity(chat_id)
-        await self.client(EditPeerFoldersRequest([InputFolderPeer(peer=entity, folder_id=1)]))
-        return {"archived": True, "chat_id": chat_id}
-
-    async def mark_chat_unread(self, chat_id: int | str, unread: bool = True) -> dict[str, Any]:
-        """Set (or clear) the dialog's manual unread mark.
-
-        This is the undo for an accidental read receipt: it restores the blue
-        badge the *owner* of the account sees in their client, which is often
-        the only reminder that a chat is still waiting on them. It does NOT
-        un-send the read receipt already delivered to the other side — that
-        part is irreversible — and it does not restore the numeric
-        unread_count, only the manual "unread" flag Telegram keeps per dialog.
-        """
-        from telethon.tl.functions.messages import MarkDialogUnreadRequest
-
-        entity = await self.client.get_input_entity(chat_id)
-        await self.client(MarkDialogUnreadRequest(peer=entity, unread=unread))
-        return {"unread": unread, "chat_id": chat_id}
-
-    async def mute_chat(self, chat_id: int | str, duration: int | None = None) -> dict[str, Any]:
-        """Mute a chat for *duration* seconds, or for ever when it is None.
-
-        `mute_until` is a **Unix timestamp**, and v1 built it from
-        `asyncio.get_event_loop().time()` — the loop's monotonic clock, which
-        on a freshly started daemon is a number near zero. `now + 3600` was
-        therefore a moment in 1970, which is in the past, so every timed mute
-        was a no-op that reported success (COR-01). The effective deadline is
-        returned as RFC-3339 so the caller can see what actually happened.
-        """
-        import time as _time
-
-        from telethon.tl.functions.account import UpdateNotifySettingsRequest
-        from telethon.tl.types import InputNotifyPeer, InputPeerNotifySettings
-
-        from tlgr.core.timefmt import fmt_unix
-
-        entity = await self.client.get_input_entity(chat_id)
-        forever = duration is None
-        mute_until = 2**31 - 1 if forever else int(_time.time()) + int(duration or 0)
-        await self.client(
-            UpdateNotifySettingsRequest(
-                peer=InputNotifyPeer(peer=entity),
-                settings=InputPeerNotifySettings(mute_until=mute_until),
-            )
-        )
-        return {
-            "muted": True,
-            "chat_id": chat_id,
-            "mute_until": None if forever else fmt_unix(mute_until),
-            "mute_until_unix": None if forever else mute_until,
-            "forever": forever,
-        }
-
-    async def leave_chat(self, chat_id: int | str) -> dict[str, Any]:
-        entity = await self.client.get_entity(chat_id)
-        if isinstance(entity, Channel):
-            from telethon.tl.functions.channels import LeaveChannelRequest
-
-            await self.client(LeaveChannelRequest(entity))
-        elif isinstance(entity, Chat):
-            from telethon.tl.functions.messages import DeleteChatUserRequest
-
-            await self.client(DeleteChatUserRequest(entity.id, self.me.id))
-        return {"left": True, "chat_id": chat_id}
 
     async def list_contacts(self) -> list[dict[str, Any]]:
         from telethon.tl.functions.contacts import GetContactsRequest
@@ -830,20 +625,6 @@ class ClientWrapper:
     ) -> dict[str, Any]:
         msg = await self.client.send_file(chat_id, file_path, caption=caption)
         return {"id": msg.id, "chat_id": chat_id}
-
-    async def send_typing(self, chat_id: int | str, duration: float = 5.0) -> dict[str, Any]:
-        """Send typing indicator for *duration* seconds."""
-        from telethon.tl.functions.messages import SetTypingRequest
-        from telethon.tl.types import SendMessageTypingAction
-
-        entity = await self.client.get_input_entity(chat_id)
-        await self.client(SetTypingRequest(peer=entity, action=SendMessageTypingAction()))
-        if duration > 0:
-            await asyncio.sleep(min(duration, 30))
-            from telethon.tl.types import SendMessageCancelAction
-
-            await self.client(SetTypingRequest(peer=entity, action=SendMessageCancelAction()))
-        return {"typing": True, "chat_id": chat_id, "duration": duration}
 
     async def get_user_info(self, user_ref: str) -> dict[str, Any]:
         """Get detailed info about a user."""
@@ -1075,72 +856,3 @@ class ClientWrapper:
         if out["source"] != "dialog_scan":
             out["source"] = "peer_dialogs"
         return out
-
-    async def chat_posters(
-        self,
-        chat_id: int | str,
-        *,
-        limit: int | None = None,
-        max_messages: int = 2000,
-    ) -> dict[str, Any]:
-        """Distinct senders in a chat's recent history with per-sender counts.
-
-        Replaces the hand-rolled `message list --offset-id` walk every caller
-        was re-implementing: pagination is Telethon's job, the dedupe and the
-        count are done here once. Newest-first, so the first message seen for
-        a sender is their most recent one.
-        """
-        max_messages = max(1, min(int(max_messages), 20000))
-        posters: dict[int, dict[str, Any]] = {}
-        scanned = 0
-        flood_wait = 0
-
-        try:
-            async for msg in self.client.iter_messages(chat_id, limit=max_messages):
-                scanned += 1
-                sid = getattr(msg, "sender_id", None)
-                if sid is None:
-                    continue
-                rec = posters.get(sid)
-                if rec is None:
-                    sender = getattr(msg, "sender", None)
-                    name = " ".join(
-                        p
-                        for p in (
-                            getattr(sender, "first_name", None) or "",
-                            getattr(sender, "last_name", None) or "",
-                        )
-                        if p
-                    ).strip() or (getattr(sender, "title", None) or "")
-                    rec = {
-                        "id": sid,
-                        "username": getattr(sender, "username", None),
-                        "name": name,
-                        "count": 0,
-                        "is_bot": bool(getattr(sender, "bot", False)),
-                        "is_deleted": bool(getattr(sender, "deleted", False)),
-                        "last_date": str(getattr(msg, "date", "")),
-                        "last_message_id": getattr(msg, "id", None),
-                    }
-                    posters[sid] = rec
-                rec["count"] += 1
-        except FloodWaitError as e:
-            # Back off instead of hammering: hand back the partial harvest and
-            # say so, so the caller can decide rather than retry blindly.
-            if not posters:
-                raise
-            flood_wait = int(e.seconds)
-
-        ordered = sorted(posters.values(), key=lambda p: (-p["count"], p["id"]))
-        if limit:
-            ordered = ordered[: int(limit)]
-
-        result: dict[str, Any] = {
-            "posters": ordered,
-            "scanned_messages": scanned,
-            "distinct_posters": len(posters),
-        }
-        if flood_wait:
-            result["partial"] = True
-            result["flood_wait"] = flood_wait
-        return result

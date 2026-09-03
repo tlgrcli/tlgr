@@ -22,13 +22,13 @@ from tlgr.registry import REGISTRY
 
 ROOT = Path(__file__).resolve().parent.parent
 
-#: Every P0 catalog id PR-1 claims. Raised by each group PR, never lowered.
-#: ARCHITECTURE §1.3: "P0 coverage may never decrease and must reach 100 %
-#: before 2.0.0 final".
-P0_FLOOR = 30
+#: Every P0 catalog id the registry claims. Raised by each group PR, never
+#: lowered. ARCHITECTURE §1.3: "P0 coverage may never decrease and must reach
+#: 100 % before 2.0.0 final".
+P0_FLOOR = 53
 
 #: The floor for total covered ids. Same rule, weaker guarantee.
-COVERED_FLOOR = 200
+COVERED_FLOOR = 350
 
 #: Every P0 catalog id PR-1's own operations cover — all 30 of them, named
 #: rather than counted, so a swap (one dropped, one added) cannot pass a
@@ -67,6 +67,37 @@ PR1_P0_IDS = frozenset(
         "messages-core.send-silent",
         "messages-core.send-text",
         "messages-core.unpin-message",
+    }
+)
+
+
+#: The P0 ids PR-3's own operations cover, named for the same reason: a swap
+#: must not pass a count check.
+PR3_P0_IDS = frozenset(
+    {
+        "dialogs.archive",
+        "dialogs.chat-full-settings",
+        "dialogs.clear-history-both",
+        "dialogs.clear-history-self",
+        "dialogs.delete-chat-private",
+        "dialogs.get-peer-dialog",
+        "dialogs.leave-group",
+        "dialogs.list-archive",
+        "dialogs.list-main",
+        "dialogs.mark-read",
+        "dialogs.mark-unread",
+        "dialogs.mute-for-duration",
+        "dialogs.mute-forever",
+        "dialogs.open-chat",
+        "dialogs.peek-chat",
+        "dialogs.pin",
+        "dialogs.unarchive",
+        "dialogs.unmute",
+        "dialogs.unpin",
+        "dialogs.unread-counters",
+        "dialogs.unread-quick-filter",
+        "groups-channels-admin.get-full-info",
+        "groups-channels-admin.leave",
     }
 )
 
@@ -135,6 +166,10 @@ class TestTheGate:
         missing = sorted(PR1_P0_IDS - _covered_ids())
         assert missing == [], f"PR-1 dropped coverage of {missing}"
 
+    def test_every_p0_id_the_chat_group_owns_is_covered(self):
+        missing = sorted(PR3_P0_IDS - _covered_ids())
+        assert missing == [], f"PR-3 dropped coverage of {missing}"
+
     def test_the_floor_is_the_whole_truth(self):
         """The named list is exactly the P0 set `message`/`draft` claim.
 
@@ -152,7 +187,16 @@ class TestTheGate:
             if cid in catalogue and catalogue[cid].priority == "P0"
         }
         assert actual == set(PR1_P0_IDS)
-        assert len(PR1_P0_IDS) == P0_FLOOR
+
+        chat = {
+            cid
+            for op_id, spec in REGISTRY.items()
+            if op_id.startswith(("chat.", "folder."))
+            for cid in (*spec.covers, *spec.covers_partial)
+            if cid in catalogue and catalogue[cid].priority == "P0"
+        }
+        assert chat == set(PR3_P0_IDS)
+        assert len(PR1_P0_IDS) + len(PR3_P0_IDS) == P0_FLOOR
 
     def test_every_uncovered_id_is_waived_with_a_pr_number(self, report):
         """No silent gaps: the gate is meaningful from day one, not at the end."""
@@ -164,6 +208,20 @@ class TestTheGate:
         stats = report.by_domain["messages_core"]
         assert stats["accounted_percent"] == 100.0
         assert stats["covered"] >= 130
+
+    def test_dialogs_chats_is_fully_accounted_for(self, report):
+        """PR-3's own domain: implemented, or waived to a named later PR.
+
+        The domain-wide waiver is gone, so every id left in it names the group
+        that owns it — which is what makes "the chat group is done" checkable
+        rather than asserted.
+        """
+        stats = report.by_domain["dialogs_chats"]
+        assert stats["accounted_percent"] == 100.0
+        assert stats["covered"] >= 105
+
+    def test_the_dialogs_chats_domain_is_no_longer_waived_wholesale(self):
+        assert "dialogs_chats" not in waivers().domains
 
 
 class TestReport:

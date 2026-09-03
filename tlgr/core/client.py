@@ -596,36 +596,6 @@ class ClientWrapper:
             await self.client.upload_profile_photo(file=photo)
         return {"updated": True}
 
-    async def download_media(
-        self,
-        chat_id: int | str,
-        msg_id: int,
-        *,
-        out_dir: str | None = None,
-    ) -> dict[str, Any]:
-        from tlgr.core.config import get_downloads_dir
-
-        msgs = await self.client.get_messages(chat_id, ids=[msg_id])
-        if not msgs or msgs[0] is None:
-            raise ChatNotFoundError(f"Message {msg_id} not found")
-        msg = msgs[0]
-        if not msg.media:
-            raise TlgrError("Message has no media")
-        dl_dir = Path(out_dir) if out_dir else get_downloads_dir()
-        dl_dir.mkdir(parents=True, exist_ok=True)
-        path = await self.client.download_media(msg, file=str(dl_dir))
-        return {"path": str(path), "msg_id": msg_id}
-
-    async def upload_file(
-        self,
-        chat_id: int | str,
-        file_path: str,
-        *,
-        caption: str = "",
-    ) -> dict[str, Any]:
-        msg = await self.client.send_file(chat_id, file_path, caption=caption)
-        return {"id": msg.id, "chat_id": chat_id}
-
     async def get_user_info(self, user_ref: str) -> dict[str, Any]:
         """Get detailed info about a user."""
         from telethon.tl.functions.users import GetFullUserRequest

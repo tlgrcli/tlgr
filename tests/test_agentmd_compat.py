@@ -25,7 +25,7 @@ from tlgr.registry import ALIASES
 
 ALICE = 4242
 
-#: Every `message`/`draft`/`chat` invocation AGENT.md documents, as v1
+#: Every `message`/`draft`/`chat`/`media` invocation AGENT.md documents, as v1
 #: spelled it.
 V1_PATHS = [
     ("message", "send"),
@@ -60,6 +60,10 @@ V1_PATHS = [
     ("chats",),
     ("inbox",),
     ("catchup",),
+    ("media", "download"),
+    ("media", "upload"),
+    ("dl",),
+    ("up",),
 ]
 
 #: Documented v1 paths that are still hand-written commands rather than
@@ -105,6 +109,10 @@ DELIBERATE_CHANGES = {
     "chat.poster.list": "`{posters: [...], scanned_messages, distinct_posters}` "
     "keeps its keys, but each poster gained `user_id` beside v1's `id` and "
     "`last_date`/`last_message_id` became `date`/`date_unix`/`last_msg_id`",
+    "media.download": "`{path, msg_id}` became `Page[Downloaded]`; both keys "
+    "survive on each item, and one invocation can now produce several",
+    "media.upload": "`{id, chat_id}` became the `Uploaded` object; `id` is "
+    "`msg_id`, beside `msg_ids` for an album",
 }
 
 
@@ -137,6 +145,13 @@ def test_the_chat_list_shortcuts_still_resolve():
 def test_the_shortcuts_still_reach_message_send():
     for name in ("send", "msg.send", "message.send"):
         assert ALIASES[name] == "message.send"
+
+
+def test_the_media_shortcuts_still_reach_the_media_operations():
+    """`tlgr dl` and `tlgr up` were the two shortcuts v1's README taught."""
+    assert ALIASES["dl"] == "media.download"
+    for name in ("up", "media.send", "media.upload"):
+        assert ALIASES[name] == "media.upload"
 
 
 class TestDocumentedKeys:

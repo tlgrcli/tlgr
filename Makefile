@@ -9,7 +9,8 @@ STRICT := tlgr/models tlgr/ops tlgr/registry.py tlgr/schema.py tlgr/version.py \
           tlgr/daemon/session.py tlgr/daemon/sessions.py tlgr/daemon/events.py \
           tlgr/daemon/preauth.py tlgr/daemon/dispatch.py \
           tlgr/daemon/ratelimit.py tlgr/daemon/policy.py tlgr/daemon/idle.py \
-          tlgr/daemon/singleton.py tlgr/daemon/peercred.py
+          tlgr/daemon/singleton.py tlgr/daemon/peercred.py \
+          tlgr/daemon/files.py tlgr/daemon/transfers.py
 
 .PHONY: lint format typecheck test test-fast check docs parity acceptance
 
@@ -48,6 +49,7 @@ check: lint typecheck test docs parity
 ACCEPTANCE := tests/test_agentmd_compat.py tests/test_registry_contract.py \
               tests/test_ops_message.py tests/test_ops_draft.py \
               tests/test_ops_auth.py tests/test_account_alias_resolution.py \
+              tests/test_ops_media.py tests/test_ops_sticker.py \
               tests/test_cli_mapping.py tests/test_security.py \
               tests/test_daemon_lifecycle.py tests/test_account_session.py \
               tests/test_daemon_connection_health.py tests/test_stream.py \

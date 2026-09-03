@@ -137,8 +137,6 @@ class LegacyRoutes:
         app.router.add_post("/profile/update", self._profile_update)
 
         # Media
-        app.router.add_post("/media/download", self._media_download)
-        app.router.add_post("/media/upload", self._media_upload)
 
         # Jobs
         app.router.add_get("/job/list", self._job_list)
@@ -324,40 +322,6 @@ class LegacyRoutes:
                 last_name=body.get("last_name"),
                 bio=body.get("bio"),
                 photo=body.get("photo"),
-            )
-            return _json_response(result)
-        except Exception as e:
-            return _handle_exception(e)
-
-    # -- Media --
-
-    async def _media_download(self, request: web.Request) -> web.Response:
-        body = await _get_body(request)
-        account = body.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _no_client(account)
-        try:
-            result = await client.download_media(
-                _ref(body["chat"]),
-                body["msg_id"],
-                out_dir=body.get("out_dir"),
-            )
-            return _json_response(result)
-        except Exception as e:
-            return _handle_exception(e)
-
-    async def _media_upload(self, request: web.Request) -> web.Response:
-        body = await _get_body(request)
-        account = body.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _no_client(account)
-        try:
-            result = await client.upload_file(
-                _ref(body["chat"]),
-                body["path"],
-                caption=body.get("caption", ""),
             )
             return _json_response(result)
         except Exception as e:

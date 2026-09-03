@@ -45,8 +45,8 @@ tlgr logout <alias>                    # account remove
 tlgr status                            # daemon status
 tlgr chats                             # chat list
 tlgr contacts                          # contact list
-tlgr dl <chat> <msg_id>               # media download
-tlgr up <chat> <path>                 # media upload
+tlgr dl <chat> <msg_id>...            # media download
+tlgr up <chat> <path>...              # media upload
 ```
 
 ### Messages
@@ -204,12 +204,30 @@ tlgr user hide-stories <user>          # archive their stories for this account 
 (exit 13) instead of guessing. Never infer "no history" from an entity
 resolution error — see AGENT.md for why.
 
-### Media
+### Media, stickers, GIFs and emoji
 
 ```bash
-tlgr media download <chat> <msg_id>    # --out-dir
-tlgr media upload <chat> <path>        # --caption
+tlgr media get <chat> <msg_id>         # kind, size, duration, ids — no download
+tlgr media download <chat> <msg_id>... # --out-dir, --thumb, --range, --resume,
+                                       # --connections, --verify, --all, --read
+tlgr media upload <chat> <path>...     # --as, --caption, --spoiler, --album,
+                                       # --ttl, --no-send, --dedupe, --paid-stars
+tlgr media list <chat> --type photo    # the shared-media tabs
+tlgr media search <query>              # across every chat
+tlgr media export <chat>               # resumable archive with a manifest
+tlgr media transfer list|stop|retry    # the Downloads panel
+tlgr media limit get                   # the server's own limits, never guessed
+
+tlgr sticker set list|get|add|remove   # install / uninstall a set
+tlgr sticker pack create|add|edit      # a pack you own (`emoji set …` too)
+tlgr sticker fave|recent|search
+tlgr gif list|add|remove|search|send
+tlgr emoji get|list|search
 ```
+
+A file's `file_reference` expires in hours, so every command that touches
+bytes re-fetches its source first; `media file-id get --source` is how a
+stored id is made usable again.
 
 ### Profile
 

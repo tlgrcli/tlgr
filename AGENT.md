@@ -612,15 +612,46 @@ tlgr profile update [--first-name TEXT] [--last-name TEXT] [--bio TEXT] [--photo
 → {"updated": true}
 ```
 
-### Media
+### Media, stickers, GIFs and custom emoji
+
+Both v1 spellings still work (`tlgr dl`, `tlgr up`), and both answer with more
+than they used to — the two shape changes are in the CHANGELOG's table.
 
 ```
-tlgr media download <chat> <msg_id> [--out-dir PATH]
-→ {"path": "/path/to/file", "msg_id": 123}
+tlgr media get <chat> <msg_id>            # what it IS, without fetching a byte
+→ {"chat_id": …, "msg_id": …, "kind": "video", "mime": "video/mp4",
+   "size": …, "duration": 42, "width": 1280, "doc_id": …, "file_id": "…"}
 
-tlgr media upload <chat> <path> [--caption TEXT]
-→ {"id": 200, "chat_id": -100123}
+tlgr media download <chat> <msg_id>...    # --out/--out-dir, --thumb, --range,
+→ {"items": [{"msg_id": 123, "path": "/path/to/file", "bytes": …,
+              "kind": "video"}], "has_more": false}
+                                          # --resume, --connections, --verify,
+                                          # --all, --album, --read, --background
+
+tlgr media upload <chat> <path>...        # --as, --caption, --spoiler, --ttl,
+→ {"chat_id": …, "msg_id": 200, "msg_ids": [200], "kind": "photo"}
+                                          # --thumb, --album, --no-send, --dedupe
+
+tlgr media list <chat> --type photo       # the shared-media tabs, paginated
+tlgr media search <query> --type file     # across every chat
+tlgr media limit get                      # the server's own upload limits
+tlgr media transfer list                  # the Downloads panel
+
+tlgr sticker set get <set>                # every sticker, its emoji and index
+tlgr sticker set add|remove <set>...      # install / uninstall (not delete)
+tlgr sticker pack create <name> --add f:😀 # a pack you own; `pack` verbs need that
+tlgr gif list | gif send <chat> <index>
+tlgr emoji get <id>...                    # a custom emoji id → what it stands for
 ```
+
+Two rules worth knowing before scripting against these:
+
+- **`set` vs `pack`.** `sticker set remove` uninstalls somebody's set;
+  `sticker pack delete` destroys one you created, for everyone. Different
+  commands, different blast radius.
+- **A sticker is named `<set>/<index>` or `<set>/<emoji>`, never by a bare
+  document id.** A cached id carries a dead `file_reference`; naming the set
+  lets tlgr fetch a live one in the same call.
 
 ### Agent Helpers
 

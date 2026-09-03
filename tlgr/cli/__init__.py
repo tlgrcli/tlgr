@@ -235,14 +235,12 @@ from tlgr.cli.legacy.config_cmd import config_group  # noqa: E402
 from tlgr.cli.legacy.contact import contact_group  # noqa: E402
 from tlgr.cli.legacy.daemon_cmd import daemon_group  # noqa: E402
 from tlgr.cli.legacy.job import job_group  # noqa: E402
-from tlgr.cli.legacy.media import media_group  # noqa: E402
 from tlgr.cli.legacy.profile import profile_group  # noqa: E402
 from tlgr.cli.legacy.user import user_group  # noqa: E402
 from tlgr.cli.legacy.watch import watch_command  # noqa: E402
 
 cli.add_command(contact_group, "contact")
 cli.add_command(profile_group, "profile")
-cli.add_command(media_group, "media")
 cli.add_command(daemon_group, "daemon")
 cli.add_command(job_group, "job")
 cli.add_command(config_group, "config")
@@ -267,38 +265,6 @@ def shortcut_status(ctx: click.Context) -> None:
 def shortcut_contacts(ctx: click.Context) -> None:
     """List all contacts (shortcut for 'contact list')."""
     ctx.invoke(contact_group.commands["list"], account=ctx.obj.get("account"))
-
-
-@cli.command("dl")
-@click.argument("chat")
-@click.argument("msg_id", type=int)
-@click.option("--out-dir", default=None, help="Output directory.")
-@click.pass_context
-def shortcut_download(ctx: click.Context, chat: str, msg_id: int, out_dir: str | None) -> None:
-    """Download media (shortcut for 'media download')."""
-    ctx.invoke(
-        media_group.commands["download"],
-        chat=chat,
-        msg_id=msg_id,
-        out_dir=out_dir,
-        account=ctx.obj.get("account"),
-    )
-
-
-@cli.command("up")
-@click.argument("chat")
-@click.argument("path", type=click.Path(exists=True))
-@click.option("--caption", default="", help="Caption for the file.")
-@click.pass_context
-def shortcut_upload(ctx: click.Context, chat: str, path: str, caption: str) -> None:
-    """Upload a file (shortcut for 'media upload')."""
-    ctx.invoke(
-        media_group.commands["upload"],
-        chat=chat,
-        path=path,
-        caption=caption,
-        account=ctx.obj.get("account"),
-    )
 
 
 # ---------------------------------------------------------------------------

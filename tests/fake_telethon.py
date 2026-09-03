@@ -34,6 +34,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from telethon.tl import types
@@ -46,9 +47,14 @@ __all__ = [
     "fake_client_factory",
     "make_authorization",
     "make_channel",
+    "make_document",
     "make_kdf",
     "make_message",
+    "make_photo",
+    "make_sticker_document",
+    "make_sticker_set",
     "make_user",
+    "make_wallpaper",
     "make_web_authorization",
 ]
 
@@ -113,6 +119,104 @@ def make_message(
     if sender_id is not None:
         message.from_id = types.PeerUser(user_id=sender_id)
     return message
+
+
+def make_document(
+    doc_id: int,
+    *,
+    mime: str = "image/jpeg",
+    size: int = 1024,
+    attributes: list[Any] | None = None,
+    dc_id: int = 2,
+) -> types.Document:
+    """A real `types.Document`, so attribute-driven code is really exercised."""
+    return types.Document(
+        id=doc_id,
+        access_hash=doc_id * 3,
+        file_reference=f"ref{doc_id}".encode(),
+        date=datetime.now(timezone.utc),
+        mime_type=mime,
+        size=size,
+        dc_id=dc_id,
+        attributes=list(attributes or []),
+        thumbs=[types.PhotoStrippedSize(type="i", bytes=b"\x01\x02\x03")],
+    )
+
+
+def make_sticker_document(
+    doc_id: int, emoji: str = "\U0001f600", *, custom_emoji: bool = False, short_name: str = "pack"
+) -> types.Document:
+    """A sticker or custom-emoji document, with the attribute that decides which."""
+    stickerset = types.InputStickerSetShortName(short_name=short_name)
+    attribute: Any = (
+        types.DocumentAttributeCustomEmoji(alt=emoji, stickerset=stickerset, free=True)
+        if custom_emoji
+        else types.DocumentAttributeSticker(alt=emoji, stickerset=stickerset)
+    )
+    return make_document(
+        doc_id,
+        mime="application/x-tgsticker",
+        size=4096,
+        attributes=[attribute, types.DocumentAttributeImageSize(w=512, h=512)],
+    )
+
+
+def make_photo(photo_id: int = 900, *, dc_id: int = 2) -> types.Photo:
+    return types.Photo(
+        id=photo_id,
+        access_hash=photo_id * 3,
+        file_reference=f"pref{photo_id}".encode(),
+        date=datetime.now(timezone.utc),
+        sizes=[
+            types.PhotoStrippedSize(type="i", bytes=b"\x01\x02\x03"),
+            types.PhotoSize(type="x", w=1280, h=720, size=184320),
+        ],
+        dc_id=dc_id,
+        has_stickers=False,
+    )
+
+
+def make_sticker_set(
+    short_name: str,
+    *,
+    set_id: int = 111,
+    title: str = "Pack",
+    documents: list[Any] | None = None,
+    emojis: bool = False,
+    masks: bool = False,
+    installed: bool = True,
+    creator: bool = False,
+    archived: bool = False,
+) -> types.StickerSet:
+    return types.StickerSet(
+        id=set_id,
+        access_hash=set_id * 5,
+        title=title,
+        short_name=short_name,
+        count=len(documents or []),
+        hash=0,
+        installed_date=datetime.now(timezone.utc) if installed else None,
+        archived=archived,
+        official=False,
+        masks=masks,
+        emojis=emojis,
+        creator=creator,
+        thumbs=[],
+    )
+
+
+def make_wallpaper(slug: str, *, wallpaper_id: int = 555, pattern: bool = False) -> types.WallPaper:
+    return types.WallPaper(
+        id=wallpaper_id,
+        access_hash=wallpaper_id * 7,
+        slug=slug,
+        document=make_document(wallpaper_id, mime="image/jpeg", size=2048),
+        creator=False,
+        default=False,
+        pattern=pattern,
+        dark=False,
+        settings=types.WallPaperSettings(intensity=50, background_color=0xDBDDBB),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -249,6 +353,17 @@ class AuthWorld:
         )
 
 
+def _passes_filter(message: Any, media_filter: Any) -> bool:
+    """Does this message survive an `InputMessagesFilter*`?
+
+    Only the distinction the search tests turn on: an empty filter takes
+    everything, any other filter takes the messages that carry media.
+    """
+    if media_filter is None or isinstance(media_filter, types.InputMessagesFilterEmpty):
+        return True
+    return getattr(message, "media", None) is not None
+
+
 def _json_value(value: Any) -> Any:
     """A python value as the `JSONValue` tree `help.getAppConfig` returns."""
     if isinstance(value, dict):
@@ -356,6 +471,7 @@ class World:
     web_file: bytes = b"\x89PNG\r\n\x1a\nfake"
     webfile_dc_id: int = 4
     venue_search_username: str = "foursquare"
+    gif_search_username: str = "gif"
     #: Venues `messages.getInlineBotResults` should return for a geo query.
     venues: list[Any] = field(default_factory=list)
     #: Public posts `channels.searchPosts` should return.
@@ -364,6 +480,45 @@ class World:
     search_flood_stars: int = 10
     #: Sessions, the cloud password, websites, passkeys and Passport values.
     auth: AuthWorld = field(default_factory=AuthWorld)
+
+    # -- the media world ---------------------------------------------------
+    #
+    # Documents are real `types.Document` objects with real attributes, so a
+    # kind decided from them here is decided the same way it will be against
+    # Telegram. `file_bytes` is what `iter_download` actually serves, which is
+    # what makes a resumed or striped download testable at all.
+
+    #: document id → `types.Document`.
+    documents: dict[int, Any] = field(default_factory=dict)
+    #: document id → the bytes a download receives.
+    file_bytes: dict[int, bytes] = field(default_factory=dict)
+    #: short name → {"set": types.StickerSet, "documents": [...], "packs": [...]}
+    sticker_sets: dict[str, Any] = field(default_factory=dict)
+    installed_sets: list[str] = field(default_factory=list)
+    archived_sets: list[str] = field(default_factory=list)
+    featured_sets: list[str] = field(default_factory=list)
+    featured_unread: list[int] = field(default_factory=list)
+    my_sets: list[str] = field(default_factory=list)
+    faved: list[int] = field(default_factory=list)
+    recent_stickers: list[int] = field(default_factory=list)
+    saved_gifs: list[int] = field(default_factory=list)
+    #: slug → `types.WallPaper`.
+    wallpapers: dict[str, Any] = field(default_factory=dict)
+    saved_wallpapers: list[str] = field(default_factory=list)
+    installed_wallpaper: str | None = None
+    sensitive_enabled: bool = False
+    sensitive_can_change: bool = True
+    auto_download: dict[str, dict[str, Any]] = field(default_factory=dict)
+    auto_save: dict[str, Any] = field(default_factory=dict)
+    app_config: dict[str, Any] = field(default_factory=dict)
+    #: profile photo bytes, per marked chat id.
+    profile_photos: dict[int, bytes] = field(default_factory=dict)
+    #: story id → `types.MessageMediaDocument`-shaped media.
+    stories: dict[int, Any] = field(default_factory=dict)
+    inline_results: list[Any] = field(default_factory=list)
+    saved_gif_limit: int = 200
+    next_document_id: int = 7000
+    faved_limit: int = 5
 
     # -- behaviour knobs ---------------------------------------------------
 
@@ -427,6 +582,93 @@ class World:
         if media is not None:
             message.media = media
         self.history(chat_id).append(message)
+        return message
+
+    # -- the media world ---------------------------------------------------
+
+    def add_document(self, document: Any, content: bytes = b"") -> Any:
+        """Register a document and the bytes a download of it should return."""
+        self.documents[int(document.id)] = document
+        self.file_bytes[int(document.id)] = content or bytes(
+            (i % 251) for i in range(int(getattr(document, "size", 0) or 16))
+        )
+        return document
+
+    def add_sticker_set(
+        self,
+        short_name: str,
+        documents: list[Any],
+        *,
+        set_id: int = 111,
+        installed: bool = True,
+        emojis: bool = False,
+        masks: bool = False,
+        creator: bool = False,
+        archived: bool = False,
+        featured: bool = False,
+    ) -> Any:
+        for document in documents:
+            self.add_document(document)
+        entry = {
+            "set": make_sticker_set(
+                short_name,
+                set_id=set_id,
+                documents=documents,
+                emojis=emojis,
+                masks=masks,
+                installed=installed,
+                creator=creator,
+                archived=archived,
+            ),
+            "documents": list(documents),
+        }
+        self.sticker_sets[short_name] = entry
+        if installed and short_name not in self.installed_sets:
+            self.installed_sets.append(short_name)
+        if archived and short_name not in self.archived_sets:
+            self.archived_sets.append(short_name)
+        if creator and short_name not in self.my_sets:
+            self.my_sets.append(short_name)
+        if featured and short_name not in self.featured_sets:
+            self.featured_sets.append(short_name)
+        return entry["set"]
+
+    def set_for(self, stickerset: Any) -> Any:
+        """Resolve any `InputStickerSet*` spelling to a registered entry."""
+        name = getattr(stickerset, "short_name", None)
+        if name is not None:
+            return self.sticker_sets.get(str(name))
+        set_id = getattr(stickerset, "id", None)
+        if set_id is not None:
+            for entry in self.sticker_sets.values():
+                if entry["set"].id == int(set_id):
+                    return entry
+        emoticon = getattr(stickerset, "emoticon", None)
+        marker = f"system:{type(stickerset).__name__}" + (f":{emoticon}" if emoticon else "")
+        return self.sticker_sets.get(marker)
+
+    def add_media_message(
+        self,
+        chat_id: int,
+        *,
+        document: Any = None,
+        photo: Any = None,
+        message_id: int | None = None,
+        text: str = "",
+        noforwards: bool = False,
+        grouped_id: int | None = None,
+    ) -> Any:
+        """A message whose media is a real document or photo."""
+        if document is not None:
+            self.add_document(document)
+            media: Any = types.MessageMediaDocument(document=document)
+        else:
+            photo = photo if photo is not None else make_photo()
+            self.file_bytes[int(photo.id)] = b"jpegbytes" * 64
+            media = types.MessageMediaPhoto(photo=photo)
+        message = self.add_message(chat_id, text, message_id=message_id, media=media)
+        message.noforwards = noforwards
+        message.grouped_id = grouped_id
         return message
 
     def find(self, chat_id: int, message_id: int) -> types.Message | None:
@@ -682,7 +924,30 @@ class FakeTelegramClient:
         return self._updates(self._store(request))
 
     def _raw_UploadMediaRequest(self, request: Any) -> Any:
-        return request.media
+        """Turn an uploaded input media into the real media it becomes.
+
+        Returning the *input* would be a lie the album path immediately trips
+        over: `sendMultiMedia` needs the `InputDocument`/`InputPhoto` the
+        server minted, which only exists because this call happened.
+        """
+        media = request.media
+        name = type(media).__name__
+        if name == "InputMediaUploadedPhoto":
+            self.world.next_document_id += 1
+            photo = make_photo(self.world.next_document_id)
+            self.world.file_bytes[photo.id] = b"uploaded"
+            return types.MessageMediaPhoto(photo=photo)
+        if name == "InputMediaUploadedDocument":
+            self.world.next_document_id += 1
+            document = make_document(
+                self.world.next_document_id,
+                mime=getattr(media, "mime_type", "application/octet-stream"),
+                size=64,
+                attributes=list(getattr(media, "attributes", None) or []),
+            )
+            self.world.add_document(document)
+            return types.MessageMediaDocument(document=document)
+        return media
 
     def _raw_SaveFilePartRequest(self, request: Any) -> bool:
         return True
@@ -1342,6 +1607,8 @@ class FakeTelegramClient:
                     continue
                 if request.offset_id and message.id >= request.offset_id:
                     continue
+                if not _passes_filter(message, getattr(request, "filter", None)):
+                    continue
                 found.append(message)
         found.sort(key=lambda m: m.id, reverse=True)
         return self._slice(found[: int(request.limit)], next_rate=42)
@@ -1352,6 +1619,7 @@ class FakeTelegramClient:
             for history in self.world.messages.values()
             for message in history
             if getattr(message, "out", False)
+            and _passes_filter(message, getattr(request, "filter", None))
         ]
         return self._slice(found[: int(request.limit)])
 
@@ -1631,16 +1899,30 @@ class FakeTelegramClient:
             caption_length_max=1024,
             message_length_max=4096,
             webfile_dc_id=self.world.webfile_dc_id,
+            gif_search_username=self.world.gif_search_username,
             venue_search_username=self.world.venue_search_username,
             reactions_default=self.world.default_reaction,
         )
         return config
 
     def _raw_GetInlineBotResultsRequest(self, request: Any) -> Any:
+        """Two callers share this endpoint, told apart by the geo point.
+
+        `location venue` attaches one and wants the venue list; `gif search`
+        attaches none and wants whatever the GIF bot has.
+        """
+        if getattr(request, "geo_point", None) is not None:
+            return types.messages.BotResults(
+                query_id=1,
+                results=list(self.world.venues),
+                cache_time=0,
+                users=[],
+                next_offset=None,
+            )
         return types.messages.BotResults(
-            query_id=1,
-            results=list(self.world.venues),
-            cache_time=0,
+            query_id=987654321,
+            results=list(self.world.inline_results),
+            cache_time=300,
             users=[],
             next_offset=None,
         )
@@ -1927,14 +2209,21 @@ class FakeTelegramClient:
     # help.* ---------------------------------------------------------------
 
     def _raw_GetAppConfigRequest(self, request: Any) -> Any:
-        """`help.getAppConfig`, for both the auth world and the chat limits.
+        """`help.getAppConfig`, for the auth, chat and media worlds alike.
 
-        The chat group reads its dialog and channel limits out of the same
-        call the auth group reads its suggestions out of, so the defaults for
-        both are seeded here and a test overrides either through
+        One endpoint carries the suggestion list, the pin and channel limits
+        and the sticker/GIF limits, so the defaults for all three are seeded
+        here and a test overrides either through `world.app_config` or
         `world.auth.app_config`.
         """
-        config = dict(self.auth.app_config)
+        config: dict[str, Any] = {
+            "upload_max_fileparts_default": 4000,
+            "caption_length_limit_default": 1024,
+            "stickers_faved_limit_default": self.world.faved_limit,
+            "saved_gifs_limit_default": self.world.saved_gif_limit,
+            **self.world.app_config,
+            **self.auth.app_config,
+        }
         config.setdefault("pending_suggestions", list(self.auth.pending_suggestions))
         config.setdefault("dismissed_suggestions", list(self.auth.dismissed_suggestions))
         config.setdefault("dialogs_pinned_limit_default", 5)
@@ -2313,6 +2602,672 @@ class FakeTelegramClient:
             entities = entities[:limit]
         return _AsyncList(entities)
 
+    # -- files -------------------------------------------------------------
+    #
+    # `iter_download` serves the bytes registered in `world.file_bytes`, with
+    # the real offset/limit semantics: a test that asserts a resumed download
+    # continued at the right byte is asserting against the same arithmetic the
+    # server does.
+
+    def iter_download(
+        self,
+        location: Any,
+        *,
+        offset: int = 0,
+        request_size: int = 512 * 1024,
+        limit: int | None = None,
+        **_: Any,
+    ) -> Any:
+        doc_id = self._document_id(location)
+        data = self.world.file_bytes.get(doc_id, b"")
+        self.world.calls.append(
+            ("iter_download", {"doc_id": doc_id, "offset": offset, "limit": limit})
+        )
+        end = len(data) if limit is None else min(len(data), offset + limit)
+        chunks = [
+            data[start : min(start + request_size, end)]
+            for start in range(offset, end, request_size)
+        ]
+        return _AsyncList([chunk for chunk in chunks if chunk])
+
+    def _document_id(self, location: Any) -> int:
+        for attribute in ("id",):
+            value = getattr(location, attribute, None)
+            if isinstance(value, int):
+                return value
+            inner = getattr(value, "id", None)
+            if isinstance(inner, int):
+                return inner
+        return 0
+
+    async def download_media(
+        self, message: Any, file: Any = None, thumb: Any = None, **_: Any
+    ) -> Any:
+        media = getattr(message, "media", message)
+        document = getattr(media, "document", None) or getattr(media, "photo", None) or media
+        doc_id = self._document_id(document)
+        self.world.calls.append(("download_media", {"doc_id": doc_id, "thumb": thumb}))
+        data = self.world.file_bytes.get(doc_id, b"")
+        if thumb is not None:
+            data = b"thumbnail"
+        path = Path(str(file))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        return str(path)
+
+    async def download_profile_photo(self, entity: Any, file: Any = None, **kwargs: Any) -> Any:
+        chat_id = self._chat_id(entity)
+        self.world.calls.append(("download_profile_photo", {"chat_id": chat_id, **kwargs}))
+        data = self.world.profile_photos.get(chat_id)
+        if data is None:
+            return None
+        path = Path(str(file))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        return str(path)
+
+    def _raw_GetFileHashesRequest(self, request: Any) -> Any:
+        import hashlib
+
+        doc_id = self._document_id(request.location)
+        data = self.world.file_bytes.get(doc_id, b"")
+        return [types.FileHash(offset=0, limit=len(data), hash=hashlib.sha256(data).digest())]
+
+    def _raw_GetDocumentByHashRequest(self, request: Any) -> Any:
+        return None
+
+    # -- shared media ------------------------------------------------------
+
+    def _raw_GetSearchCountersRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        count = len([m for m in self.world.history(chat_id) if getattr(m, "media", None)])
+        return [types.messages.SearchCounter(filter=f, count=count) for f in request.filters]
+
+    def _raw_GetSearchResultsCalendarRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        history = [m for m in self.world.history(chat_id) if getattr(m, "media", None)]
+        return types.messages.SearchResultsCalendar(
+            count=len(history),
+            min_date=history[0].date if history else datetime.now(timezone.utc),
+            min_msg_id=history[0].id if history else 0,
+            periods=[
+                types.SearchResultsCalendarPeriod(
+                    date=message.date, min_msg_id=message.id, max_msg_id=message.id, count=1
+                )
+                for message in history
+            ],
+            messages=[],
+            chats=[],
+            users=[],
+        )
+
+    def _raw_GetSearchResultsPositionsRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        history = [m for m in self.world.history(chat_id) if getattr(m, "media", None)]
+        return types.messages.SearchResultsPositions(
+            count=len(history),
+            positions=[
+                types.SearchResultPosition(msg_id=message.id, date=message.date, offset=index)
+                for index, message in enumerate(history)
+            ],
+        )
+
+    def _raw_GetExtendedMediaRequest(self, request: Any) -> Any:
+        return self._updates()
+
+    def _raw_GetAttachedStickersRequest(self, request: Any) -> Any:
+        return [self._covered(entry) for entry in self.world.sticker_sets.values()][:1]
+
+    def _raw_ReadMessageContentsRequest(self, request: Any) -> Any:
+        return types.messages.AffectedMessages(pts=1, pts_count=len(request.id))
+
+    def _raw_ReportMusicListenRequest(self, request: Any) -> Any:
+        return True
+
+    def _raw_GetSponsoredMessagesRequest(self, request: Any) -> Any:
+        return types.messages.SponsoredMessagesEmpty()
+
+    def _raw_GetStoriesByIDRequest(self, request: Any) -> Any:
+        return _FakeStories([self.world.stories[i] for i in request.id if i in self.world.stories])
+
+    # -- sticker sets ------------------------------------------------------
+
+    def _covered(self, entry: Any) -> Any:
+        documents = entry["documents"]
+        return types.StickerSetCovered(
+            set=entry["set"], cover=documents[0] if documents else make_document(1)
+        )
+
+    def _sticker_set_reply(self, short_name: str) -> Any:
+        """The `messages.stickerSet` reply for one set, by name.
+
+        Every pack-authoring call answers with the set it changed, so they
+        reach for this rather than re-entering the request handler with a
+        hand-made request object.
+        """
+        return self._raw_GetStickerSetRequest(types.InputStickerSetShortName(short_name=short_name))
+
+    def _raw_GetStickerSetRequest(self, request: Any) -> Any:
+        stickerset = getattr(request, "stickerset", request)
+        entry = self.world.set_for(stickerset)
+        if entry is None:
+            from telethon.errors import StickersetInvalidError
+
+            raise StickersetInvalidError(request)
+        documents = entry["documents"]
+        packs: dict[str, list[int]] = {}
+        for document in documents:
+            for attribute in document.attributes:
+                emoji = getattr(attribute, "alt", None)
+                if emoji:
+                    packs.setdefault(emoji, []).append(document.id)
+        return types.messages.StickerSet(
+            set=entry["set"],
+            packs=[
+                types.StickerPack(emoticon=emoji, documents=ids) for emoji, ids in packs.items()
+            ],
+            keywords=[],
+            documents=documents,
+        )
+
+    def _installed_entries(self, kind: str) -> list[Any]:
+        out = []
+        for name in self.world.installed_sets:
+            entry = self.world.sticker_sets.get(name)
+            if entry is None:
+                continue
+            is_emoji = bool(getattr(entry["set"], "emojis", False))
+            is_mask = bool(getattr(entry["set"], "masks", False))
+            if kind == "emoji" and not is_emoji:
+                continue
+            if kind == "mask" and not is_mask:
+                continue
+            if kind == "sticker" and (is_emoji or is_mask):
+                continue
+            out.append(entry)
+        return out
+
+    def _raw_GetAllStickersRequest(self, request: Any) -> Any:
+        return types.messages.AllStickers(
+            hash=0, sets=[entry["set"] for entry in self._installed_entries("sticker")]
+        )
+
+    def _raw_GetMaskStickersRequest(self, request: Any) -> Any:
+        return types.messages.AllStickers(
+            hash=0, sets=[entry["set"] for entry in self._installed_entries("mask")]
+        )
+
+    def _raw_GetEmojiStickersRequest(self, request: Any) -> Any:
+        return types.messages.AllStickers(
+            hash=0, sets=[entry["set"] for entry in self._installed_entries("emoji")]
+        )
+
+    def _raw_GetArchivedStickersRequest(self, request: Any) -> Any:
+        entries = [self.world.sticker_sets[n] for n in self.world.archived_sets]
+        return types.messages.ArchivedStickers(
+            count=len(entries), sets=[self._covered(entry) for entry in entries]
+        )
+
+    def _raw_GetFeaturedStickersRequest(self, request: Any) -> Any:
+        entries = [self.world.sticker_sets[n] for n in self.world.featured_sets]
+        return types.messages.FeaturedStickers(
+            hash=0,
+            count=len(entries),
+            sets=[self._covered(entry) for entry in entries],
+            unread=list(self.world.featured_unread),
+            premium=False,
+        )
+
+    def _raw_GetFeaturedEmojiStickersRequest(self, request: Any) -> Any:
+        return self._raw_GetFeaturedStickersRequest(request)
+
+    def _raw_GetOldFeaturedStickersRequest(self, request: Any) -> Any:
+        entries = [self.world.sticker_sets[n] for n in self.world.featured_sets]
+        return types.messages.FeaturedStickers(
+            hash=0,
+            count=len(entries),
+            sets=[self._covered(entry) for entry in entries],
+            unread=[],
+            premium=False,
+        )
+
+    def _raw_ReadFeaturedStickersRequest(self, request: Any) -> Any:
+        self.world.featured_unread = [
+            i for i in self.world.featured_unread if i not in set(request.id)
+        ]
+        return True
+
+    def _raw_InstallStickerSetRequest(self, request: Any) -> Any:
+        entry = self.world.set_for(request.stickerset)
+        if entry is None:
+            from telethon.errors import StickersetInvalidError
+
+            raise StickersetInvalidError(request)
+        name = entry["set"].short_name
+        target = self.world.archived_sets if request.archived else self.world.installed_sets
+        if name not in target:
+            target.append(name)
+        return types.messages.StickerSetInstallResultSuccess()
+
+    def _raw_UninstallStickerSetRequest(self, request: Any) -> Any:
+        entry = self.world.set_for(request.stickerset)
+        if entry is not None:
+            name = entry["set"].short_name
+            if name in self.world.installed_sets:
+                self.world.installed_sets.remove(name)
+        return True
+
+    def _raw_ToggleStickerSetsRequest(self, request: Any) -> Any:
+        for stickerset in request.stickersets:
+            entry = self.world.set_for(stickerset)
+            if entry is None:
+                continue
+            name = entry["set"].short_name
+            if getattr(request, "archive", False):
+                if name in self.world.installed_sets:
+                    self.world.installed_sets.remove(name)
+                if name not in self.world.archived_sets:
+                    self.world.archived_sets.append(name)
+            elif getattr(request, "unarchive", False):
+                if name in self.world.archived_sets:
+                    self.world.archived_sets.remove(name)
+                if name not in self.world.installed_sets:
+                    self.world.installed_sets.append(name)
+            elif getattr(request, "uninstall", False) and name in self.world.installed_sets:
+                self.world.installed_sets.remove(name)
+        return True
+
+    def _raw_ReorderStickerSetsRequest(self, request: Any) -> Any:
+        by_id = {entry["set"].id: name for name, entry in self.world.sticker_sets.items()}
+        self.world.installed_sets = [by_id[i] for i in request.order if i in by_id] + [
+            n
+            for n in self.world.installed_sets
+            if self.world.sticker_sets[n]["set"].id not in set(request.order)
+        ]
+        return True
+
+    def _raw_SearchStickerSetsRequest(self, request: Any) -> Any:
+        matches = [
+            entry
+            for entry in self.world.sticker_sets.values()
+            if request.q.lower() in entry["set"].title.lower()
+            or request.q.lower() in entry["set"].short_name.lower()
+        ]
+        return types.messages.FoundStickerSets(
+            hash=0, sets=[self._covered(entry) for entry in matches]
+        )
+
+    def _raw_SearchEmojiStickerSetsRequest(self, request: Any) -> Any:
+        return self._raw_SearchStickerSetsRequest(request)
+
+    def _raw_GetMyStickersRequest(self, request: Any) -> Any:
+        entries = [self.world.sticker_sets[n] for n in self.world.my_sets]
+        return types.messages.MyStickers(
+            count=len(entries), sets=[self._covered(entry) for entry in entries]
+        )
+
+    def _raw_SearchStickersRequest(self, request: Any) -> Any:
+        stickers = [
+            document
+            for entry in self.world.sticker_sets.values()
+            for document in entry["documents"]
+        ]
+        return types.messages.FoundStickers(
+            hash=0, next_offset=None, stickers=stickers[: request.limit]
+        )
+
+    def _raw_GetStickersRequest(self, request: Any) -> Any:
+        stickers = [
+            document
+            for entry in self.world.sticker_sets.values()
+            for document in entry["documents"]
+            if any(getattr(a, "alt", None) == request.emoticon for a in document.attributes)
+        ]
+        return types.messages.Stickers(hash=0, stickers=stickers)
+
+    # -- favourites and recents -------------------------------------------
+
+    def _documents_by_id(self, ids: list[int]) -> list[Any]:
+        return [self.world.documents[i] for i in ids if i in self.world.documents]
+
+    def _raw_GetFavedStickersRequest(self, request: Any) -> Any:
+        return types.messages.FavedStickers(
+            hash=0, packs=[], stickers=self._documents_by_id(self.world.faved)
+        )
+
+    def _raw_FaveStickerRequest(self, request: Any) -> Any:
+        doc_id = int(request.id.id)
+        if request.unfave:
+            if doc_id in self.world.faved:
+                self.world.faved.remove(doc_id)
+        else:
+            if doc_id not in self.world.faved:
+                self.world.faved.append(doc_id)
+            while len(self.world.faved) > self.world.faved_limit:
+                self.world.faved.pop(0)
+        return True
+
+    def _raw_GetRecentStickersRequest(self, request: Any) -> Any:
+        return types.messages.RecentStickers(
+            hash=0, packs=[], stickers=self._documents_by_id(self.world.recent_stickers), dates=[]
+        )
+
+    def _raw_SaveRecentStickerRequest(self, request: Any) -> Any:
+        doc_id = int(request.id.id)
+        if request.unsave:
+            if doc_id in self.world.recent_stickers:
+                self.world.recent_stickers.remove(doc_id)
+        elif doc_id not in self.world.recent_stickers:
+            self.world.recent_stickers.append(doc_id)
+        return True
+
+    def _raw_ClearRecentStickersRequest(self, request: Any) -> Any:
+        self.world.recent_stickers = []
+        return True
+
+    # -- gifs --------------------------------------------------------------
+
+    def _raw_GetSavedGifsRequest(self, request: Any) -> Any:
+        return types.messages.SavedGifs(hash=0, gifs=self._documents_by_id(self.world.saved_gifs))
+
+    def _raw_SaveGifRequest(self, request: Any) -> Any:
+        doc_id = int(request.id.id)
+        if request.unsave:
+            if doc_id in self.world.saved_gifs:
+                self.world.saved_gifs.remove(doc_id)
+        else:
+            if doc_id not in self.world.saved_gifs:
+                self.world.saved_gifs.append(doc_id)
+            while len(self.world.saved_gifs) > self.world.saved_gif_limit:
+                self.world.saved_gifs.pop(0)
+        return True
+
+    def _raw_SendInlineBotResultRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        message = self.world.add_message(chat_id, "", out=True, sender_id=self.world.me.id)
+        return self._updates(message)
+
+    # -- custom emoji ------------------------------------------------------
+
+    def _raw_GetCustomEmojiDocumentsRequest(self, request: Any) -> Any:
+        return self._documents_by_id([int(i) for i in request.document_id])
+
+    def _raw_GetEmojiGroupsRequest(self, request: Any) -> Any:
+        return types.messages.EmojiGroups(
+            hash=0,
+            groups=[
+                types.EmojiGroup(
+                    title="Smileys", icon_emoji_id=1, emoticons=["\U0001f600", "\U0001f603"]
+                )
+            ],
+        )
+
+    def _raw_GetEmojiStickerGroupsRequest(self, request: Any) -> Any:
+        return self._raw_GetEmojiGroupsRequest(request)
+
+    def _raw_GetEmojiStatusGroupsRequest(self, request: Any) -> Any:
+        return self._raw_GetEmojiGroupsRequest(request)
+
+    def _raw_GetEmojiProfilePhotoGroupsRequest(self, request: Any) -> Any:
+        return self._raw_GetEmojiGroupsRequest(request)
+
+    def _raw_GetDefaultProfilePhotoEmojisRequest(self, request: Any) -> Any:
+        return types.EmojiList(hash=0, document_id=list(self.world.documents)[:2])
+
+    def _raw_GetDefaultGroupPhotoEmojisRequest(self, request: Any) -> Any:
+        return self._raw_GetDefaultProfilePhotoEmojisRequest(request)
+
+    def _raw_GetDefaultBackgroundEmojisRequest(self, request: Any) -> Any:
+        return self._raw_GetDefaultProfilePhotoEmojisRequest(request)
+
+    def _raw_GetEmojiKeywordsLanguagesRequest(self, request: Any) -> Any:
+        return [types.EmojiLanguage(lang_code="en")]
+
+    def _raw_GetEmojiKeywordsRequest(self, request: Any) -> Any:
+        return types.EmojiKeywordsDifference(
+            lang_code=request.lang_code,
+            from_version=0,
+            version=1,
+            keywords=[
+                types.EmojiKeyword(keyword="grinning", emoticons=["\U0001f600"]),
+                types.EmojiKeyword(keyword="cat", emoticons=["\U0001f431"]),
+            ],
+        )
+
+    def _raw_GetEmojiKeywordsDifferenceRequest(self, request: Any) -> Any:
+        return self._raw_GetEmojiKeywordsRequest(request)
+
+    def _raw_GetEmojiURLRequest(self, request: Any) -> Any:
+        return types.EmojiURL(url="https://telegram.org/emoji/suggest")
+
+    def _raw_SearchCustomEmojiRequest(self, request: Any) -> Any:
+        return types.EmojiList(
+            hash=0,
+            document_id=[
+                document.id
+                for entry in self.world.sticker_sets.values()
+                for document in entry["documents"]
+            ][:2],
+        )
+
+    # -- pack authoring ----------------------------------------------------
+
+    def _raw_SuggestShortNameRequest(self, request: Any) -> Any:
+        return types.stickers.SuggestedShortName(
+            short_name=request.title.lower().replace(" ", "_") + "_by_tlgr"
+        )
+
+    def _raw_CheckShortNameRequest(self, request: Any) -> Any:
+        return request.short_name not in self.world.sticker_sets
+
+    def _raw_CreateStickerSetRequest(self, request: Any) -> Any:
+        documents = [
+            self.world.documents.get(int(item.document.id), make_document(int(item.document.id)))
+            for item in request.stickers
+        ]
+        self.world.add_sticker_set(
+            request.short_name,
+            documents,
+            set_id=abs(hash(request.short_name)) % 10**12,
+            creator=True,
+            emojis=bool(getattr(request, "emojis", False)),
+            masks=bool(getattr(request, "masks", False)),
+        )
+        return self._sticker_set_reply(request.short_name)
+
+    def _raw_AddStickerToSetRequest(self, request: Any) -> Any:
+        entry = self.world.set_for(request.stickerset)
+        if entry is None:
+            from telethon.errors import StickersetInvalidError
+
+            raise StickersetInvalidError(request)
+        document = self.world.documents.get(
+            int(request.sticker.document.id), make_document(int(request.sticker.document.id))
+        )
+        entry["documents"].append(document)
+        entry["set"].count = len(entry["documents"])
+        return self._sticker_set_reply(entry["set"].short_name)
+
+    def _raw_ReplaceStickerRequest(self, request: Any) -> Any:
+        old_id = int(request.sticker.id)
+        for entry in self.world.sticker_sets.values():
+            documents = entry["documents"]
+            for index, document in enumerate(documents):
+                if document.id == old_id:
+                    documents[index] = self.world.documents.get(
+                        int(request.new_sticker.document.id),
+                        make_document(int(request.new_sticker.document.id)),
+                    )
+                    return self._sticker_set_reply(entry["set"].short_name)
+        from telethon.errors import StickersetInvalidError
+
+        raise StickersetInvalidError(request)
+
+    def _raw_RemoveStickerFromSetRequest(self, request: Any) -> Any:
+        doc_id = int(request.sticker.id)
+        for entry in self.world.sticker_sets.values():
+            before = len(entry["documents"])
+            entry["documents"] = [d for d in entry["documents"] if d.id != doc_id]
+            if len(entry["documents"]) != before:
+                entry["set"].count = len(entry["documents"])
+                return self._sticker_set_reply(entry["set"].short_name)
+        return True
+
+    def _raw_ChangeStickerPositionRequest(self, request: Any) -> Any:
+        return True
+
+    def _raw_ChangeStickerRequest(self, request: Any) -> Any:
+        return True
+
+    def _raw_RenameStickerSetRequest(self, request: Any) -> Any:
+        entry = self.world.set_for(request.stickerset)
+        if entry is None:
+            from telethon.errors import StickersetInvalidError
+
+            raise StickersetInvalidError(request)
+        entry["set"].title = request.title
+        return self._sticker_set_reply(entry["set"].short_name)
+
+    def _raw_SetStickerSetThumbRequest(self, request: Any) -> Any:
+        entry = self.world.set_for(request.stickerset)
+        if entry is None:
+            from telethon.errors import StickersetInvalidError
+
+            raise StickersetInvalidError(request)
+        return self._sticker_set_reply(entry["set"].short_name)
+
+    def _raw_DeleteStickerSetRequest(self, request: Any) -> Any:
+        entry = self.world.set_for(request.stickerset)
+        if entry is None:
+            from telethon.errors import StickersetInvalidError
+
+            raise StickersetInvalidError(request)
+        name = entry["set"].short_name
+        self.world.sticker_sets.pop(name, None)
+        for shelf in (self.world.installed_sets, self.world.archived_sets, self.world.my_sets):
+            if name in shelf:
+                shelf.remove(name)
+        return True
+
+    # -- wallpapers --------------------------------------------------------
+
+    def _raw_GetWallPapersRequest(self, request: Any) -> Any:
+        return types.account.WallPapers(hash=0, wallpapers=list(self.world.wallpapers.values()))
+
+    def _raw_GetWallPaperRequest(self, request: Any) -> Any:
+        slug = getattr(request.wallpaper, "slug", None)
+        found = self.world.wallpapers.get(str(slug))
+        if found is None:
+            from telethon.errors import WallpaperInvalidError
+
+            raise WallpaperInvalidError(request)
+        return found
+
+    def _raw_InstallWallPaperRequest(self, request: Any) -> Any:
+        slug = getattr(request.wallpaper, "slug", None)
+        self.world.installed_wallpaper = str(slug) if slug else "fill"
+        if slug and str(slug) not in self.world.saved_wallpapers:
+            self.world.saved_wallpapers.append(str(slug))
+        return True
+
+    def _raw_SaveWallPaperRequest(self, request: Any) -> Any:
+        slug = str(getattr(request.wallpaper, "slug", "") or "")
+        if request.unsave:
+            if slug in self.world.saved_wallpapers:
+                self.world.saved_wallpapers.remove(slug)
+        elif slug and slug not in self.world.saved_wallpapers:
+            self.world.saved_wallpapers.append(slug)
+        return True
+
+    def _raw_ResetWallPapersRequest(self, request: Any) -> Any:
+        self.world.saved_wallpapers = []
+        self.world.installed_wallpaper = None
+        return True
+
+    def _raw_UploadWallPaperRequest(self, request: Any) -> Any:
+        wallpaper = make_wallpaper("uploaded", wallpaper_id=777)
+        self.world.wallpapers["uploaded"] = wallpaper
+        return wallpaper
+
+    # -- settings ----------------------------------------------------------
+
+    def _auto_download(self, name: str) -> Any:
+        stored = self.world.auto_download.get(name, {})
+        return types.AutoDownloadSettings(
+            photo_size_max=stored.get("photo_size_max", 1048576),
+            video_size_max=stored.get("video_size_max", 10485760),
+            file_size_max=stored.get("file_size_max", 10485760),
+            video_upload_maxbitrate=stored.get("video_upload_maxbitrate", 100),
+            small_queue_active_operations_max=5,
+            large_queue_active_operations_max=2,
+            disabled=stored.get("disabled"),
+        )
+
+    def _raw_GetAutoDownloadSettingsRequest(self, request: Any) -> Any:
+        return types.account.AutoDownloadSettings(
+            low=self._auto_download("low"),
+            medium=self._auto_download("medium"),
+            high=self._auto_download("high"),
+        )
+
+    def _raw_SaveAutoDownloadSettingsRequest(self, request: Any) -> Any:
+        name = (
+            "low"
+            if getattr(request, "low", False)
+            else ("high" if getattr(request, "high", False) else "medium")
+        )
+        self.world.auto_download[name] = {
+            "photo_size_max": request.settings.photo_size_max,
+            "video_size_max": request.settings.video_size_max,
+            "file_size_max": request.settings.file_size_max,
+            "disabled": request.settings.disabled,
+        }
+        return True
+
+    def _raw_GetAutoSaveSettingsRequest(self, request: Any) -> Any:
+        def rule(name: str) -> Any:
+            stored = self.world.auto_save.get(name, {})
+            return types.AutoSaveSettings(photos=stored.get("photos"), videos=stored.get("videos"))
+
+        return types.account.AutoSaveSettings(
+            users_settings=rule("users"),
+            chats_settings=rule("chats"),
+            broadcasts_settings=rule("broadcasts"),
+            exceptions=[],
+            chats=[],
+            users=[],
+        )
+
+    def _raw_SaveAutoSaveSettingsRequest(self, request: Any) -> Any:
+        name = (
+            "users"
+            if getattr(request, "users", False)
+            else "chats"
+            if getattr(request, "chats", False)
+            else "broadcasts"
+            if getattr(request, "broadcasts", False)
+            else "peer"
+        )
+        self.world.auto_save[name] = {
+            "photos": request.settings.photos,
+            "videos": request.settings.videos,
+        }
+        return True
+
+    def _raw_DeleteAutoSaveExceptionsRequest(self, request: Any) -> Any:
+        self.world.auto_save.pop("peer", None)
+        return True
+
+    def _raw_GetContentSettingsRequest(self, request: Any) -> Any:
+        return types.account.ContentSettings(
+            sensitive_enabled=self.world.sensitive_enabled,
+            sensitive_can_change=self.world.sensitive_can_change,
+        )
+
+    def _raw_SetContentSettingsRequest(self, request: Any) -> Any:
+        self.world.sensitive_enabled = bool(request.sensitive_enabled)
+        return True
+
 
 class _AsyncFailure:
     """An async iterator that raises on the first step.
@@ -2438,3 +3393,8 @@ def fake_client_factory(world: World | None = None) -> Any:
 
     factory.world = shared  # type: ignore[attr-defined]
     return factory
+
+
+class _FakeStories:
+    def __init__(self, stories: list[Any]) -> None:
+        self.stories = stories

@@ -569,3 +569,84 @@ real accounts, a real session file, a real daemon socket. One did.
 `tests/conftest.py` now has an autouse fixture that points `TLGR_HOME` at a
 throwaway directory whenever it is unset, so forgetting the fixture costs a
 temp directory rather than somebody's session.
+## 2026-09-03 — `--stdout` spools, and `--play` is refused
+
+`media download --stdout` and `--play` both assume the process holding the
+connection is the process holding the terminal. In v2 it is not: the transfer
+runs inside the daemon and answers over a JSON socket, which has no byte
+channel. `--stdout` therefore spools the file and reports its path with a
+warning saying so, and `--play` is refused with `NOT_SUPPORTED` rather than
+having the daemon spawn a media player on the user's behalf — a daemon that
+starts processes for you is a different security surface than one that does
+not. `media.download-stream-stdout` is claimed as *partial* coverage with that
+note, not as full.
+
+## 2026-09-03 — a sticker is named `<set>/<index>`, never by a bare document id
+
+Every `faveSticker`, `saveRecentSticker` and `removeStickerFromSet` call needs
+an `InputDocument` with a live `file_reference`, and a document id printed an
+hour ago carries a dead one. Accepting a bare id would produce
+`FILE_REFERENCE_EXPIRED` for input that looks correct and *was* correct when
+it was printed. So the sticker reference grammar is `<set>/<index>`,
+`<set>/<emoji>` or `--from-message`: each of them names a source tlgr can
+re-fetch in the same call. A bare id is a USAGE error that says this.
+
+The same reasoning refuses a bare numeric *set* id: `InputStickerSetID` needs
+an access hash the id alone does not carry. `<id>:<hash>` is accepted, because
+that is what the listings print.
+
+## 2026-09-03 — three flags that collide with the transport keep their meaning under a different name
+
+Three work-list spellings could not be taken literally, and each rename is in
+the reference docs:
+
+* `media download --limit/-n` — `limit` is reserved for transport-level
+  pagination (registry lint L5) and `-n` belongs to it. The cap on
+  `--all` is `--max N`.
+* `media download --yes` for protected content — `--yes/-y` is the global
+  confirmation flag and binds to the same Click parameter name. Downloading
+  from a `noforwards` chat is `--allow-protected`, which also reads as what it
+  does rather than as "I confirm".
+* `media auto-save set --users/--groups/--channels` — the API takes exactly
+  one scope per call, so three independent booleans could contradict each
+  other. It is one `--scope users|groups|channels`, plus `--chat` for a
+  single-peer exception.
+
+## 2026-09-03 — the operation id is the command path, so `auto_download` is `auto-download`
+
+The work list spells three ids with underscores (`media.auto_download.get`,
+`media.auto_save.get`, `media.file_id.get`) while spelling their paths with
+hyphens. The id *is* the path in this registry — `spec.path` is the id split
+on dots — and lint L1 only accepts lowercase hyphenated segments. The
+hyphenated form wins: `media.auto-download.get`, `media.auto-save.get`,
+`media.file-id.get`.
+
+## 2026-09-03 — a striped download is not resumable, and says so by not offering it
+
+`--connections N` writes N contiguous stripes with `pwrite`, which is what
+makes parallel transfer worth anything. It also means the download has N
+frontiers rather than one, and a `.part` file recording a single offset would
+resume in the wrong place — silently, with a corrupt file at the end. So the
+striped path does not write a resume sidecar at all: `--resume` uses one
+connection, and the two flags are documented as alternatives rather than
+quietly producing a wrong answer together.
+
+## 2026-09-03 — `media paid list` reads, and never buys
+
+Unlocking paid media spends Stars. tlgr posts paid media (`media upload
+--paid-stars`) and re-prices it (`media edit --paid-stars`), but the buying
+verb is deliberately absent from the surface: spending a user's balance is a
+payment, and §7 of the plan keeps payments out of commands that could be
+scripted by an agent. `--msg-id` exists because `updateMessageExtendedMedia`
+carries no `pts`, so a client that was offline can only learn about a purchase
+made elsewhere by asking.
+
+## 2026-09-03 — the media_files domain keeps 22 ids it does not own
+
+The catalog groups by subject — anything that moves a file — while tlgr is
+organised by command group. A profile photo, a chat avatar, a notification
+sound and a cloud theme are all `media_files` ids and all belong to other
+groups' commands (`profile photo set`, `chat photo set`, `notify`,
+`settings`). Each of the 22 is waived to the PR that owns the command, rather
+than implemented here under a `media` noun where nobody would look for it.
+`media_files` is 84.6 % covered and 100 % accounted.

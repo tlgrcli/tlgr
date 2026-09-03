@@ -43,6 +43,7 @@ from tlgr.core.errors import (
 from tlgr.core.paths import TlgrPaths, write_private
 from tlgr.daemon import dispatch as dispatch_module
 from tlgr.daemon.events import EventBus
+from tlgr.daemon.files import TransferSlots
 from tlgr.daemon.idle import ActivityTracker, effective_idle_timeout
 from tlgr.daemon.jobs import JobRunner
 from tlgr.daemon.peercred import current_uid, peer_of, token_matches
@@ -50,6 +51,7 @@ from tlgr.daemon.policy import Policy
 from tlgr.daemon.preauth import PreAuthService
 from tlgr.daemon.sessions import SessionManager
 from tlgr.daemon.stream import NdjsonResponse, pump_events, walk_pages
+from tlgr.daemon.transfers import TransferStore
 from tlgr.daemon.webhook import WebhookPusher
 from tlgr.version import HEADER_PROTOCOL, HEADER_TOKEN, MIN_DAEMON_PROTOCOL, PROTOCOL
 
@@ -99,6 +101,11 @@ class Daemon:
         self.webhook_config = load_webhook_config(self.paths.base)
         self.webhook = WebhookPusher(self.webhook_config, self.paths.base)
         self._job_runner = JobRunner()
+        # Long file transfers: the ones `--background` hands over, and the
+        # per-DC budgets that stop one 2 GB download from starving five
+        # thumbnail fetches (§6.7).
+        self.transfers = TransferStore()
+        self.transfer_slots = TransferSlots()
         # Login runs in the daemon because the daemon owns the session files
         # (§6.8); a pending login holds one, so it counts as activity and the
         # idle monitor cannot stop the daemon out from under a half-finished
@@ -422,6 +429,10 @@ class Daemon:
 
         with contextlib.suppress(Exception):
             await self._job_runner.stop_all()
+        # A half-written download keeps its `.part` file, so the next
+        # `media download --resume` continues where the shutdown stopped it.
+        with contextlib.suppress(Exception):
+            await self.transfers.stop_all()
         with contextlib.suppress(Exception):
             await self.webhook.stop()
         await self.bus.stop()

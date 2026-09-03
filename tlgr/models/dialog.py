@@ -34,6 +34,7 @@ __all__ = [
     "ChatInfo",
     "ChatSwitches",
     "ChatTheme",
+    "ChatWallpaper",
     "ChatlistInvite",
     "ChatlistJoin",
     "ChatlistUpdates",
@@ -67,7 +68,6 @@ __all__ = [
     "TtlResult",
     "TypingResult",
     "UnreadResult",
-    "Wallpaper",
     "WallpaperResult",
 ]
 
@@ -314,7 +314,7 @@ class ChatTheme(Model):
     premium_required: bool = False
 
 
-class Wallpaper(Model):
+class ChatWallpaper(Model):
     id: int | None = None
     slug: str | None = None
     dark: bool = False
@@ -354,7 +354,7 @@ class ChatInfo(Model):
     draft: Draft | None = None
     ttl_period: int | None = None
     theme: ChatTheme | None = None
-    wallpaper: Wallpaper | None = None
+    wallpaper: ChatWallpaper | None = None
     translations_disabled: bool | None = None
     view_forum_as_messages: bool | None = None
     settings: ActionBar | None = None
@@ -434,7 +434,7 @@ class ThemeResult(Model):
 
 class WallpaperResult(Model):
     chat_id: int
-    wallpaper: Wallpaper | None = None
+    wallpaper: ChatWallpaper | None = None
     for_both: bool = False
     overridden: bool = False
 

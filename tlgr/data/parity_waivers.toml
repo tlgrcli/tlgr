@@ -28,11 +28,6 @@ pr = 5
 reason = "contact, user and blocking land in PR-5."
 
 [[domain]]
-name = "media_files"
-pr = 6
-reason = "media, sticker, gif and emoji land in PR-6; the pipelines exist already."
-
-[[domain]]
 name = "groups_channels_admin"
 pr = 7
 reason = "chat member/admin/invite/topic/permission land in PR-7."
@@ -675,3 +670,121 @@ reason = "A tg://oauth request is a bot authorization flow (messages.requestUrlA
 id = "auth.url-auth-bot-button"
 pr = 10
 reason = "Seamless Telegram Login is a bot keyboard button (messages.requestUrlAuth / acceptUrlAuth); it lands with the bots group in PR-10."
+# ---------------------------------------------------------------------------
+# media_files ids PR-6 does not own. The catalog groups by subject — anything
+# that moves a file — while tlgr is organised by command group, so a profile
+# photo is a `profile` command even though uploading one is a file transfer.
+# ---------------------------------------------------------------------------
+
+[[id]]
+id = "attach.file-download-check"
+pr = 10
+reason = "Mini-app download permission is the `webapp` surface (PR-10)."
+
+[[id]]
+id = "attach.menu-bots"
+pr = 10
+reason = "Attachment-menu bots are the `bot` group (PR-10)."
+
+[[id]]
+id = "attach.open-mini-app"
+pr = 10
+reason = "Opening a mini app is the `webapp` group (PR-10)."
+
+[[id]]
+id = "bot.media-previews"
+pr = 10
+reason = "A bot's Mini App previews are the `bot` group (PR-10)."
+
+[[id]]
+id = "bot.profile-photo-set"
+pr = 10
+reason = "Setting an owned bot's photo is the `bot` group (PR-10)."
+
+[[id]]
+id = "chat.photo-set"
+pr = 7
+reason = "A group or channel photo is `chat photo set` (PR-7)."
+
+[[id]]
+id = "emoji.status-channel"
+pr = 12
+reason = "A channel emoji status is a profile setting (PR-12)."
+
+[[id]]
+id = "emoji.status-lists"
+pr = 12
+reason = "Emoji status suggestions belong to `profile status` (PR-12)."
+
+[[id]]
+id = "emoji.status-set"
+pr = 12
+reason = "Setting your own emoji status is `profile status set` (PR-12)."
+
+
+[[id]]
+id = "profile.contact-personal-photo"
+pr = 12
+reason = "A personal photo for a contact is the `profile` group (PR-12)."
+
+[[id]]
+id = "profile.main-tab"
+pr = 12
+reason = "The profile tab layout is the `profile` group (PR-12)."
+
+[[id]]
+id = "profile.photo-fallback-public"
+pr = 12
+reason = "The public fallback photo is the `profile` group (PR-12)."
+
+[[id]]
+id = "profile.photo-set"
+pr = 12
+reason = "Setting your profile photo is `profile photo set` (PR-12)."
+
+[[id]]
+id = "profile.photo-set-as-main"
+pr = 12
+reason = "Promoting an older photo is the `profile` group (PR-12)."
+
+[[id]]
+id = "profile.photo-set-emoji-sticker"
+pr = 12
+reason = "An emoji avatar is the `profile` group (PR-12)."
+
+[[id]]
+id = "profile.photo-set-video"
+pr = 12
+reason = "A video avatar is the `profile` group (PR-12)."
+
+[[id]]
+id = "profile.photos-list-history"
+pr = 12
+reason = "Profile photo history is the `profile` group (PR-12)."
+
+[[id]]
+id = "profile.saved-music"
+pr = 12
+reason = "Music on a profile is the `profile` group (PR-12)."
+
+[[id]]
+id = "ringtone.manage"
+pr = 12
+reason = "Custom notification sounds are the `notify` group (PR-12)."
+
+[[id]]
+id = "ringtone.set-for-chat"
+pr = 12
+reason = "Per-chat notification sounds are the `notify` group (PR-12)."
+
+[[id]]
+id = "sticker.group-sticker-set"
+pr = 7
+reason = "A supergroup's sticker set is a chat setting (PR-7)."
+
+[[id]]
+id = "theme.cloud-themes"
+pr = 12
+reason = "Cloud themes are the `settings` group (PR-12)."
+
+

@@ -2,7 +2,7 @@
 
 # Command reference
 
-188 operations across 13 groups, generated from the operation registry. Groups still served by v1's hand-written commands are not listed here; they arrive with their own PR.
+244 operations across 17 groups, generated from the operation registry. Groups still served by v1's hand-written commands are not listed here; they arrive with their own PR.
 
 | Group | Operations | Reference |
 |---|---:|---|
@@ -11,13 +11,17 @@
 | `auth` | 11 | [auth.md](auth.md) |
 | `chat` | 34 | [chat.md](chat.md) |
 | `draft` | 3 | [draft.md](draft.md) |
+| `emoji` | 3 | [emoji.md](emoji.md) |
 | `folder` | 13 | [folder.md](folder.md) |
+| `gif` | 5 | [gif.md](gif.md) |
 | `location` | 9 | [location.md](location.md) |
+| `media` | 28 | [media.md](media.md) |
 | `message` | 39 | [message.md](message.md) |
 | `passport` | 5 | [passport.md](passport.md) |
 | `poll` | 9 | [poll.md](poll.md) |
 | `reaction` | 17 | [reaction.md](reaction.md) |
 | `search` | 3 | [search.md](search.md) |
+| `sticker` | 20 | [sticker.md](sticker.md) |
 | `todo` | 5 | [todo.md](todo.md) |
 
 - [PARITY.md](PARITY.md) — coverage against the Telegram feature catalog.

@@ -2,7 +2,7 @@
 
 # Command reference
 
-330 operations across 24 groups, generated from the operation registry. Groups still served by v1's hand-written commands are not listed here; they arrive with their own PR.
+341 operations across 26 groups, generated from the operation registry. Groups still served by v1's hand-written commands are not listed here; they arrive with their own PR.
 
 | Group | Operations | Reference |
 |---|---:|---|
@@ -23,8 +23,10 @@
 | `location` | 9 | [location.md](location.md) |
 | `media` | 28 | [media.md](media.md) |
 | `message` | 39 | [message.md](message.md) |
+| `net` | 5 | [net.md](net.md) |
 | `passport` | 5 | [passport.md](passport.md) |
 | `poll` | 9 | [poll.md](poll.md) |
+| `proxy` | 6 | [proxy.md](proxy.md) |
 | `reaction` | 17 | [reaction.md](reaction.md) |
 | `search` | 3 | [search.md](search.md) |
 | `sticker` | 20 | [sticker.md](sticker.md) |

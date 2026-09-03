@@ -209,6 +209,11 @@ class TlgrPaths:
         return self.base / "identity.json"
 
     @property
+    def proxies(self) -> Path:
+        """Saved proxies, including their passwords and MTProxy secrets (0600)."""
+        return self.base / "proxies.json"
+
+    @property
     def dead_letter(self) -> Path:
         return self.base / "dead_letter.jsonl"
 
@@ -292,6 +297,7 @@ _SECRET_GLOBS = (
     "ipc.token",
     "cursor.key",
     "webhook.toml",
+    "proxies.json",
 )
 
 _SECRET_MODE = 0o600

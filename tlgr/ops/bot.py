@@ -728,6 +728,7 @@ SPEC_START = OperationSpec(
     response=BotStarted,
     impl=start,
     summary="Start a bot, with a deep-link parameter or inside a group",
+    tags=frozenset({"visible-to-others"}),
     description=(
         "`--param` is the payload behind a `t.me/<bot>?start=…` link and is "
         "never written into the chat, which is the whole point of a deep "
@@ -1031,6 +1032,7 @@ SPEC_COMMAND_SEND = OperationSpec(
     response=CommandSent,
     impl=command_send,
     summary="Send a slash command to a bot",
+    tags=frozenset({"visible-to-others"}),
     description=(
         "Driving @BotFather's own conversation with this command and "
         "`bot press` is the only way to reach the toggles Telegram exposes "
@@ -1880,6 +1882,7 @@ SPEC_PRESS = OperationSpec(
     response=Pressed,
     impl=press,
     summary="Press a button on a message",
+    tags=frozenset({"visible-to-others"}),
     description=(
         "One dispatcher for every button kind, returning a typed answer: a "
         "callback toast, a URL, a signed mini-app session, inline results, a "
@@ -2415,6 +2418,7 @@ SPEC_ANSWER = OperationSpec(
     response=BotAnswer,
     impl=answer,
     summary="Answer a pending bot query",
+    tags=frozenset({"visible-to-others"}),
     description=(
         "Callback, inline, shipping, pre-checkout, guest, mini-app and "
         "webhook queries, one flag set per kind. Answering a pre-checkout "
@@ -2786,6 +2790,7 @@ SPEC_STREAM_SEND = OperationSpec(
     response=StreamProgress,
     impl=stream_send,
     summary="Stream a live draft into a chat",
+    tags=frozenset({"visible-to-others"}),
     mutating=True,
     rate_class="send",
     columns=("chat_id", "draft_id", "chunks_sent"),
@@ -3381,6 +3386,7 @@ SPEC_VERIFICATION_SET = OperationSpec(
     response=BotVerified,
     impl=verification_set,
     summary="Verify or unverify a peer with my verifier bot",
+    tags=frozenset({"visible-to-others"}),
     mutating=True,
     destructive=True,
     columns=("peer_id", "verified", "description"),
@@ -4519,6 +4525,7 @@ SPEC_GAME_SEND = OperationSpec(
     response=GameSent,
     impl=game_send,
     summary="Send an HTML5 game to a chat",
+    tags=frozenset({"visible-to-others"}),
     mutating=True,
     rate_class="send",
     columns=("chat_id", "msg_id", "short_name"),
@@ -4673,6 +4680,7 @@ SPEC_SCORE_SET = OperationSpec(
     response=ScoreSet,
     impl=score_set,
     summary="Report a game score for a user",
+    tags=frozenset({"visible-to-others"}),
     mutating=True,
     columns=("user_id", "score", "position"),
     headers=("User", "Score", "#"),

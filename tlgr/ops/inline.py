@@ -492,6 +492,7 @@ SPEC_SEND = OperationSpec(
     response=InlineSent,
     impl=send,
     summary="Send a chosen inline result to a chat",
+    tags=frozenset({"visible-to-others"}),
     description=(
         "`--paid-stars` agrees to a per-message Star fee. Naming the number "
         "is the consent: `--yes` is a CLI-level gate an operation never sees, "
@@ -761,6 +762,7 @@ SPEC_PREPARED_SEND = OperationSpec(
     response=InlineSent,
     impl=prepared_send,
     summary="Send a prepared inline message shared from a mini app",
+    tags=frozenset({"visible-to-others"}),
     mutating=True,
     rate_class="send",
     columns=("chat_id", "msg_id", "result_id"),

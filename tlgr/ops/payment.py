@@ -725,6 +725,7 @@ SPEC_INVOICE_SEND = OperationSpec(
     response=InvoiceSent,
     impl=invoice_send,
     summary="Send an invoice message to a user",
+    tags=frozenset({"visible-to-others"}),
     aliases=("pay.invoice.send",),
     mutating=True,
     rate_class="send",

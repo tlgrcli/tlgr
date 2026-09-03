@@ -70,8 +70,13 @@ __all__ = [
 ]
 
 MEDIA_NONE = "none"
-"""The only value `media` ever takes. Kept as a constant so the promise is
-made in one place and every op repeats it verbatim."""
+"""The only value `media` ever takes.
+
+Declared **without a default** on every model that carries it, because
+`Model` omits defaults from the JSON and a promise that disappears from the
+wire is not a promise. Every construction site therefore repeats
+`media=MEDIA_NONE` by hand, and mypy notices when a new one forgets.
+"""
 
 
 class CallRef(Model):
@@ -104,7 +109,7 @@ class Call(Model):
 
     call_id: int
     state: str
-    media: str = MEDIA_NONE
+    media: str
     video: bool = False
     peer: Peer | None = None
     access_hash: int | None = None
@@ -176,8 +181,8 @@ class CallLogEntry(Model):
     chat_id: int
     date: str
     date_unix: int
-    kind: str = "call"
-    direction: str = "in"
+    kind: str
+    direction: str
     peer: Peer | None = None
     call_id: int | None = None
     video: bool = False
@@ -255,8 +260,8 @@ class GroupCall(Model):
     """
 
     call: CallRef
+    media: str
     kind: str = "video-chat"
-    media: str = MEDIA_NONE
     title: str | None = None
     participants_count: int = 0
     join_muted: bool = False
@@ -328,12 +333,12 @@ class GroupCallCreated(Model):
 class GroupCallStarted(Model):
     call: CallRef
     chat_id: int
-    started: bool = True
+    started: bool
 
 
 class GroupCallEnded(Model):
     call: CallRef
-    ended: bool = True
+    ended: bool
     duration: int | None = None
 
 
@@ -353,20 +358,20 @@ class GroupCallSettings(Model):
 
 class GroupCallJoined(Model):
     call: CallRef
-    media: str = MEDIA_NONE
+    media: str
+    joined: bool
     source: int = 0
     mode: str = "webrtc"
     join_as: Peer | None = None
     can_self_unmute: bool = False
     params: dict[str, Any] | None = None
-    joined: bool = True
     experimental: bool = False
 
 
 class GroupCallLeft(Model):
     call: CallRef
+    left: bool
     source: int = 0
-    left: bool = True
 
 
 class GroupCallInvited(Model):
@@ -378,7 +383,7 @@ class GroupCallInvited(Model):
 
 
 class GroupCallLink(Model):
-    kind: str = "listener"
+    kind: str
     link: str | None = None
     invite_hash: str | None = None
     fallback: bool = False
@@ -426,17 +431,17 @@ class RtmpInfo(Model):
 
 class MuteState(Model):
     call: CallRef
+    media: str
+    muted: bool
     peer: Peer | None = None
-    muted: bool = False
     can_self_unmute: bool | None = None
     muted_by_you: bool = False
-    media: str = MEDIA_NONE
 
 
 class RaisedHand(Model):
     call: CallRef
+    raise_hand: bool
     peer: Peer | None = None
-    raise_hand: bool = False
     raise_hand_rating: int | None = None
 
 
@@ -449,7 +454,7 @@ class VolumeState(Model):
 
 class VideoState(Model):
     call: CallRef
-    media: str = MEDIA_NONE
+    media: str
     video_stopped: bool | None = None
     video_paused: bool | None = None
     presentation: bool | None = None
@@ -458,9 +463,9 @@ class VideoState(Model):
 
 class ParticipantRemoved(Model):
     chat_id: int
+    removed: bool
     peer: Peer | None = None
     banned: bool = False
-    removed: bool = True
 
 
 class InCallMessage(Model):
@@ -503,11 +508,11 @@ class StreamDownload(Model):
     """What `vc download` wrote to disk."""
 
     call: CallRef
+    media: str
     out: str = "-"
     bytes: int = 0
     chunks: int = 0
     mode: str = "stream"
-    media: str = MEDIA_NONE
     stream_dc_id: int | None = None
     first_time_ms: int | None = None
     last_time_ms: int | None = None
@@ -520,21 +525,21 @@ class StreamDownload(Model):
 
 class ConferenceCreated(Model):
     call: CallRef
+    media: str
+    joined: bool
     slug: str | None = None
     invite_link: str | None = None
     creator: bool = True
-    joined: bool = False
-    media: str = MEDIA_NONE
 
 
 class ConferenceInfo(Model):
     call: CallRef
+    conference: bool
     slug: str | None = None
     invite_link: str | None = None
     participants_count: int = 0
     creator: bool = False
     messages_enabled: bool = False
-    conference: bool = True
     title: str | None = None
     limits: dict[str, int] | None = None
     qr: str | None = None
@@ -549,7 +554,7 @@ class ConferenceInvited(Model):
 
 class ConferenceDeclined(Model):
     msg_id: int
-    declined: bool = True
+    declined: bool
 
 
 class ConferenceRemoved(Model):
@@ -561,21 +566,21 @@ class ConferenceRemoved(Model):
 
 class ConferenceRevoked(Model):
     call: CallRef
-    revoked: bool = True
+    revoked: bool
 
 
 class ConferenceRelayed(Model):
     """`conference send`: tlgr carried opaque bytes it cannot read."""
 
     call: CallRef
-    kind: str = "encrypted-message"
-    sent: bool = True
+    kind: str
+    sent: bool
 
 
 class ChainBlock(Model):
     """One block of the conference's E2E chain, base64, unvalidated."""
 
-    sub_chain_id: int = 0
-    height: int = 0
-    block: str = ""
+    sub_chain_id: int
+    height: int
+    block: str
     next_offset: int | None = None

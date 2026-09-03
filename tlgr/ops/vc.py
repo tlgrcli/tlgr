@@ -147,6 +147,7 @@ def _group_model(
     if type(call).__name__ == "GroupCallDiscarded":
         return GroupCall(
             call=_calls.call_ref_of(call),
+            media=MEDIA_NONE,
             discarded=True,
             duration=int(getattr(call, "duration", 0) or 0),
         )
@@ -338,7 +339,7 @@ async def start(ctx: OpContext, req: StartReq) -> GroupCallStarted:
     await _client(ctx)(fn.StartScheduledGroupCallRequest(call=handle.input))
     chat_id = _send.peer_id_of(handle.chat) if handle.chat is not None else 0
     ctx.emit("vc_started", {"call_id": handle.ref.id, "chat_id": chat_id})
-    return GroupCallStarted(call=handle.ref, chat_id=chat_id)
+    return GroupCallStarted(call=handle.ref, chat_id=chat_id, started=True)
 
 
 SPEC_START = OperationSpec(
@@ -425,13 +426,17 @@ async def get(ctx: OpContext, req: GetReq) -> GroupCall:
 
     if req.donors:
         stars = await _client(ctx)(fn.GetGroupCallStarsRequest(call=handle.input))
+        donors = _entities(stars)
         model.donors = {
-            "total": int(getattr(stars, "stars", 0) or 0),
+            "total": int(getattr(stars, "total_stars", 0) or 0),
             "top": [
-                (peer.title or peer.username or str(peer.id))
-                for peer in (
-                    _peer_model(item, _entities(stars))
-                    for item in (getattr(stars, "top_peers", None) or [])
+                {
+                    "peer": getattr(peer, "id", None),
+                    "stars": int(getattr(donor, "stars", 0) or 0),
+                }
+                for donor, peer in (
+                    (item, _peer_model(getattr(item, "peer", None), donors))
+                    for item in (getattr(stars, "top_donors", None) or [])
                 )
                 if peer is not None
             ],
@@ -868,6 +873,7 @@ async def join(ctx: OpContext, req: JoinReq) -> GroupCallJoined:
     return GroupCallJoined(
         call=handle.ref,
         media=MEDIA_NONE,
+        joined=True,
         source=source,
         mode=mode,
         join_as=_peer_model(getattr(call, "default_send_as", None), entities)
@@ -893,7 +899,13 @@ SPEC_JOIN = OperationSpec(
     mutating=True,
     rate_class="send",
     columns=("call.id", "source", "mode", "media"),
-    example={"call": _EXAMPLE_REF, "source": 1234567, "mode": "stream", "media": "none"},
+    example={
+        "call": _EXAMPLE_REF,
+        "media": "none",
+        "joined": True,
+        "source": 1234567,
+        "mode": "stream",
+    },
     example_args="vc join @newsroom --listen-only",
     covers=(
         "groupcall.detect-stream-mode",
@@ -1155,6 +1167,7 @@ async def remove(ctx: OpContext, req: RemoveReq) -> ParticipantRemoved:
     ctx.emit("vc_participant_removed", {"chat_id": _send.peer_id_of(chat)})
     return ParticipantRemoved(
         chat_id=_send.peer_id_of(chat),
+        removed=True,
         peer=Peer(id=_send.peer_id_of(target), raw_id=_send.peer_id_of(target), kind="user"),
         banned=req.ban,
     )
@@ -1232,6 +1245,7 @@ async def mute(ctx: OpContext, req: MuteReq) -> MuteState:
     ctx.emit("vc_muted", {"call_id": ref.id})
     return MuteState(
         call=ref,
+        media=MEDIA_NONE,
         peer=peer,
         muted=True,
         can_self_unmute=False if req.peer is not None and not req.for_me else None,
@@ -1282,6 +1296,7 @@ async def unmute(ctx: OpContext, req: UnmuteReq) -> MuteState:
         ctx.warn("this restores can_self_unmute; it does not open their microphone")
     return MuteState(
         call=ref,
+        media=MEDIA_NONE,
         peer=peer,
         muted=False,
         can_self_unmute=True,
@@ -1434,13 +1449,13 @@ async def set_video(ctx: OpContext, req: VideoReq) -> VideoState:
                 )
             )
             ctx.warn("tlgr presents nothing: the connection exists, the frames do not")
-            return VideoState(call=handle.ref, presentation=True)
+            return VideoState(call=handle.ref, media=MEDIA_NONE, presentation=True)
         if req.off:
             await client(fn.LeaveGroupCallPresentationRequest(call=handle.input))
-            return VideoState(call=handle.ref, presentation=False)
+            return VideoState(call=handle.ref, media=MEDIA_NONE, presentation=False)
         if req.pause or req.resume:
             ref, _, _ = await _edit_participant(ctx, req.call, None, presentation_paused=req.pause)
-            return VideoState(call=ref, presentation_paused=req.pause)
+            return VideoState(call=ref, media=MEDIA_NONE, presentation_paused=req.pause)
         raise UsageError("--screen needs --on, --off, --pause or --resume", field="screen")
 
     fields: dict[str, Any] = {}
@@ -1454,6 +1469,7 @@ async def set_video(ctx: OpContext, req: VideoReq) -> VideoState:
     ctx.warn("tlgr has no camera: this announces a state, it does not send video")
     return VideoState(
         call=ref,
+        media=MEDIA_NONE,
         video_stopped=fields.get("video_stopped"),
         video_paused=fields.get("video_paused"),
     )
@@ -1522,6 +1538,12 @@ async def participant_list(ctx: OpContext, req: ParticipantListReq) -> Page[Grou
 
     handle = await _calls.concrete_call(ctx, await _calls.resolve_call(ctx, req.call))
     ids = [await _send.resolve(ctx, reference) for reference in req.user]
+    # `phone.GroupParticipants` does not carry the call, and two of its flags
+    # change what the page *means* — `listeners_hidden` (this is not the
+    # audience) and `conference` (the states are different words). Asking for
+    # the call costs one read and is the difference between a correct answer
+    # and a confident wrong one.
+    call, _ = await _fetch_call(ctx, handle)
     result = await _client(ctx)(
         fn.GetGroupParticipantsRequest(
             call=handle.input,
@@ -1544,8 +1566,7 @@ async def participant_list(ctx: OpContext, req: ParticipantListReq) -> Page[Grou
     if req.video:
         items = [p for p in items if p.video or p.presentation]
 
-    call = getattr(result, "call", None)
-    if call is not None and getattr(call, "listeners_hidden", False):
+    if getattr(call, "listeners_hidden", False):
         ctx.warn(
             "listeners are hidden in this call: the page carries publishers only, and "
             "participants_count is the real audience"
@@ -2097,6 +2118,7 @@ async def download(ctx: OpContext, req: DownloadReq) -> StreamDownload:
     ctx.warn("recorded, not played: tlgr writes the segments and decodes nothing")
     return StreamDownload(
         call=handle.ref,
+        media=MEDIA_NONE,
         out=str(target),
         bytes=written,
         chunks=chunks,
@@ -2121,7 +2143,13 @@ SPEC_DOWNLOAD = OperationSpec(
     rate_class="file",
     timeout_s=900,
     columns=("call.id", "out", "bytes", "chunks", "mode"),
-    example={"call": _EXAMPLE_REF, "out": "/tmp/stream.ogg", "bytes": 1048576, "chunks": 1},
+    example={
+        "call": _EXAMPLE_REF,
+        "media": "none",
+        "out": "/tmp/stream.ogg",
+        "bytes": 1048576,
+        "chunks": 1,
+    },
     example_args="vc download @newsroom --out /tmp/stream.ogg",
     covers=("groupcall.download-stream", "livestory.join-as-viewer"),
     covers_partial=("stories.live-join",),

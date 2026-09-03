@@ -161,6 +161,18 @@ def _absorb(ctx: OpContext, phone_call: Any, *, out: bool = False) -> _calls.Liv
     return _calls.remember_call(ctx.account, live)
 
 
+def _group_call_of(result: Any) -> Any:
+    """The `groupCall` an `Updates` carries in its `updateGroupCall`."""
+    direct = getattr(result, "call", None)
+    if direct is not None and type(direct).__name__.startswith("GroupCall"):
+        return direct
+    for update in getattr(result, "updates", None) or []:
+        call = getattr(update, "call", None)
+        if call is not None and type(call).__name__.startswith("GroupCall"):
+            return call
+    return None
+
+
 def _phone_call_of(result: Any) -> Any:
     """The `phoneCall*` inside a `phone.PhoneCall` or an `Updates`."""
     direct = getattr(result, "phone_call", None)
@@ -1139,7 +1151,12 @@ async def invite(ctx: OpContext, req: InviteReq) -> CallUpgrade:
             else None,
         )
     )
-    call = getattr(created, "call", None) or _phone_call_of(created)
+    call = _group_call_of(created)
+    if call is None:
+        raise IndeterminateError(
+            "the conference was created but the server did not name it; the 1:1 call "
+            "was left alone rather than discarded into nothing"
+        )
     ref = _calls.call_ref_of(call)
     link = getattr(call, "invite_link", None)
     slug = link.rsplit("/", 1)[-1] if link else None

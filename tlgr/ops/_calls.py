@@ -199,6 +199,13 @@ def input_phone_call(ctx: OpContext, text: str) -> tuple[Any, LiveCall | None]:
                 "give it as id:access_hash, or run `tlgr call watch` to pick it up"
             )
         access_hash = known.access_hash
+    elif known is None:
+        # A caller who typed the access hash knows something the daemon does
+        # not; remembering it is what makes the *next* command work with the
+        # bare id, which is the whole point of the store.
+        known = remember_call(
+            ctx.account, LiveCall(id=call_id, access_hash=access_hash, state="unknown")
+        )
     return types.InputPhoneCall(id=call_id, access_hash=access_hash), known
 
 

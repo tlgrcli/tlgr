@@ -1314,9 +1314,7 @@ class FakeTelegramClient:
         return types.phone.PhoneCall(phone_call=call, users=list(self.world.users.values()))
 
     def _raw_RequestCallRequest(self, request: Any) -> Any:
-        call = self.world.add_phone_call(
-            video=bool(getattr(request, "video", False)), conference_supported=True
-        )
+        call = self.world.add_phone_call(video=bool(getattr(request, "video", False)))
         return self._phone_call(call)
 
     def _raw_AcceptCallRequest(self, request: Any) -> Any:
@@ -1424,9 +1422,9 @@ class FakeTelegramClient:
     def _raw_GetGroupCallRequest(self, request: Any) -> Any:
         call = self._call_of(request.call)
         if call is None:
-            from telethon.errors import RPCError
+            from telethon.errors.rpcerrorlist import GroupcallInvalidError
 
-            raise RPCError("GROUPCALL_INVALID")
+            raise GroupcallInvalidError(request)
         return types.phone.GroupCall(
             call=call,
             participants=self.world.participants.get(call.id, [])[:3],

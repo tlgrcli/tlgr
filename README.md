@@ -59,7 +59,7 @@ tlgr message get <chat> <msg_id>       # full metadata
 tlgr message delete <chat> <ids...>
 tlgr message search <chat> <query>     # --from, --media-type, --cursor
 tlgr message pin <chat> <msg_id>       # and: message unpin
-tlgr message react <chat> <id> <emoji>
+tlgr message react <chat> <id> <emoji>  # alias of `reaction add`, see Reactions
 tlgr message read <chat>               # --up-to
 tlgr message edit <chat> <id> <text>   # --typing N
 tlgr message forward <from> <ids...> --to <chat>
@@ -79,6 +79,42 @@ That is the everyday tenth of the group. It also has `preview`, `compose`,
 reference in [`docs/reference/message.md`](docs/reference/message.md).
 
 `msg` is an alias for `message` (e.g. `tlgr msg send @user "hello"`).
+
+### Polls, reactions, checklists and places
+
+```bash
+tlgr poll create <chat> "Lunch?" Pizza Sushi   # --quiz --correct N, --multiple,
+                                               # --public-voters, --duration 2h
+tlgr poll vote <chat> <msg_id> 0               # answers are addressed by index
+tlgr poll get <chat> <msg_id>                  # results, and why you cannot vote
+tlgr poll close <chat> <msg_id> --yes
+
+tlgr reaction add <chat> <msg_id> 👍           # keeps the reactions you already had
+tlgr reaction remove <chat> <msg_id>           # all of mine
+tlgr reaction user list <chat> <msg_id>        # who reacted, per emoji
+tlgr reaction chat set <chat> --some 👍,❤      # what this chat allows (admin)
+
+tlgr todo create <chat> "Release" "tag it" "ship it"
+tlgr todo toggle <chat> <msg_id> --done 1 --undone 2
+
+tlgr location send <chat> -- <lat> <lon>
+tlgr location live start <chat> -- <lat> <lon> --period 1h
+tlgr search global "release notes"             # every chat, one cursor
+```
+
+Three things worth knowing before scripting these. A poll answer is an opaque
+identifier on the wire, so tlgr resolves your index against the server's own
+copy — `--shuffle` cannot make index 1 mean two answers. `sendReaction` carries
+your *whole* reaction set, so `reaction add` reads what is there and resends
+it rather than replacing it, and `mine` in the reply is the set afterwards. A
+checklist task id is never renumbered, because completions are keyed by it.
+
+Anything that spends Stars — `reaction pay`, `search post` past its free quota
+— has no default amount and refuses to run without an explicit one.
+
+Generated reference: [`poll`](docs/reference/poll.md),
+[`reaction`](docs/reference/reaction.md), [`todo`](docs/reference/todo.md),
+[`location`](docs/reference/location.md), [`search`](docs/reference/search.md).
 
 ### Drafts
 

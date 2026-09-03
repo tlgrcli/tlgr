@@ -333,3 +333,104 @@ a whole `Message` — so a service event, a caption-less sticker and a genuinely
 blank message are three distinguishable things in the surface agents read
 first, instead of three empty strings. It is rows 8 and 9 of the
 CHANGELOG's breaking table; `--select chat.id,unread_count` is the migration.
+
+## 2026-09-03 — an alias that is a prefix of another command's path is dropped
+
+`build_click_tree` places an alias by walking its path and attaching a
+command at the leaf, so an alias that spells a *prefix* of a canonical
+three-segment path replaces the Click group sitting there: registering
+`poll stats` as an alias of `poll.stats.get` deletes the `poll stats` group
+and takes `poll stats get` with it. Five aliases from the command surface are
+therefore not registered — `poll stats`, `poll unread`, `reaction unread`,
+`location nearby` and `location venue` — because a shorthand is not worth the
+canonical path it would delete. The same rule already cost `message
+fact-check` in PR-1. Making them work needs a group that falls back to a
+default command, which is a change to the CLI generator, not to this group.
+
+## 2026-09-03 — cross-group aliases wait for the group they reach into
+
+`reaction tag list` wants `chat saved tags` and `location nearby list` wants
+`chat nearby`, both of which the command surface asks for. Registering either
+creates a generated `chat` group, and `build_cli` refuses to have `chat`
+defined by both the registry and `tlgr/cli/legacy` — correctly, because a
+half-migrated noun is exactly the silent disagreement §12.4 is about. The two
+aliases arrive when PR-3 migrates `chat`; until then the canonical paths are
+the only spelling, and no v1 path was lost to get there.
+
+## 2026-09-03 — `search global` and `search hashtag` are verb-first, so the lint learns two words
+
+Registry lint L1 checks that an id's last segment is in the STYLE vocabulary.
+`search` is one of COMMANDS.md's verb-first nouns (`search <scope>`), so
+`search global`'s tail names the scope, not an action, and there is nothing in
+an id for the lint to tell the two apart by. `global` and `hashtag` are added
+to `VERBS` with a comment saying why, rather than renaming the commands into
+`search message list`-shaped paths that no user would guess.
+
+## 2026-09-03 — `poll get --follow` blocks instead of streaming
+
+The work list marks `poll get` as a stream. A `stream=True` op in this
+architecture streams *unconditionally* — the CLI collects NDJSON item frames
+into a list — so `poll get` would answer with an array of polls whether or not
+anybody asked to follow one, and the op's own documented shape is an object.
+`--follow` therefore refreshes `messages.getPollResults` on an interval and
+returns the final state, bounded by `--follow-for` and by the op timeout,
+warning when it gave up while the poll was still open. That is the useful half
+of "watch this poll" for an agent, and it keeps one answer shape.
+
+## 2026-09-03 — the unread listings page as PARTICIPANTS, not HISTORY
+
+`poll unread list` and `reaction unread list` walk `getHistory`-shaped offsets
+(`offset_id`/`add_offset`), which is what `PageKind.HISTORY` describes. But
+HISTORY is in `DATE_OFFSET_KINDS`, so the CLI generator injects `--since` and
+`--until` — and `getUnreadPollVotes`/`getUnreadReactions` take no date bounds
+at all, so both flags would be accepted and silently dropped. They use
+`PageKind.PARTICIPANTS`, which is the same "an offset into a server-side
+listing" contract without the date promise. A flag that does nothing is worse
+than a cursor kind whose name is a shade off.
+
+## 2026-09-03 — layer-229 fields are refused by name, not silently ignored
+
+Three flags in the work list describe fields the pinned Telethon (layer 227)
+does not carry: `poll create --description`, `search global --community`, and
+the rich-body half of a checklist. Each raises `NOT_SUPPORTED` (exit 13)
+naming the field and the layer, rather than being dropped on the way to the
+request. Exit 13 rather than 1 because tlgr never asked Telegram — "this build
+cannot" and "Telegram said no" are different facts, and only one of them
+changes if you retry. `search hashtag --stories` is refused the same way for a
+different reason: it answers with stories, not messages, and pouring them into
+a `Page[Message]` would be a lie about what came back.
+
+## 2026-09-03 — `sendReaction` is read-modify-write, and `message react` moves group
+
+`messages.sendReaction` carries the whole desired reaction set. v1's `message
+react` sent the emoji alone, which the server reads as "replace everything",
+so reacting a second time silently removed the first reaction. `reaction add`
+reads the account's current reactions and resends them in `chosen_order` with
+the new one appended; `--replace` is the explicit way to ask for v1's
+behaviour. The op id moved from `message.react` to `reaction.add` because the
+`reaction` group owns the surface, and `message react`/`msg react` stay
+invocable as `legacy_paths` with the same `reacted`/`msg_id`/`emoji` keys.
+`test_parity.py` names the P0 id that changed hands, so the move is a line in
+a diff rather than a silent swap.
+
+## 2026-09-03 — the recently-searched hashtag list is tlgr's own state
+
+The catalog lists "recently searched hashtags" twice and both entries say the
+same thing: there is no MTProto method for it — the official clients keep the
+list locally. `search hashtag --recent` reads, and `--forget` prunes, a
+per-account JSON file under the account's own directory, written through
+`write_private`. Storing it server-side is not an option, and pretending the
+ids are unimplementable when every GUI ships the feature would be the wrong
+kind of honest.
+
+## 2026-09-03 — `reaction pay` and `search post` never spend by themselves
+
+Both commands can spend Stars. Neither has a default amount: `reaction pay`
+requires `--stars N` and validates the channel *before* anything is spent, and
+`search post` does free price discovery first (`--quota`), refuses to fall
+through to a paid search when the free quota is gone, and requires
+`--pay-stars N` that at least meets the quoted price. Both are `destructive`,
+so the ordinary confirmation applies. A failed payment is never retried
+automatically. `reaction pay` also builds the non-standard `random_id` the
+paid-reaction method wants — `(unixtime << 32) | random_uint32` — which is
+unlike every other send in the API.

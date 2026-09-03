@@ -419,63 +419,6 @@ class ClientWrapper:
             return {"reacted": True, "msg_id": msg_id, "emoji": emoji, "already": True}
         return {"reacted": True, "msg_id": msg_id, "emoji": emoji, "already": False}
 
-    async def list_participants(
-        self,
-        chat_id: int | str,
-        *,
-        limit: int | None = None,
-        admins_only: bool = False,
-        search: str | None = None,
-    ) -> list[dict[str, Any]]:
-        from telethon.tl.types import ChannelParticipantsAdmins
-
-        kwargs: dict[str, Any] = {}
-        if admins_only:
-            kwargs["filter"] = ChannelParticipantsAdmins
-        if search:
-            kwargs["search"] = search
-        users: list[dict[str, Any]] = []
-        async for u in self.client.iter_participants(chat_id, limit=limit, **kwargs):
-            if not isinstance(u, User):
-                continue
-            users.append(
-                {
-                    "id": u.id,
-                    "first_name": u.first_name or "",
-                    "last_name": u.last_name or "",
-                    "username": u.username,
-                    "is_bot": bool(u.bot),
-                    "is_deleted": bool(u.deleted),
-                    "is_contact": bool(u.contact),
-                    "is_self": bool(u.is_self),
-                }
-            )
-        return users
-
-    async def create_chat(
-        self,
-        name: str,
-        *,
-        chat_type: str = "group",
-        members: list[str] | None = None,
-    ) -> dict[str, Any]:
-        if chat_type == "channel":
-            from telethon.tl.functions.channels import CreateChannelRequest
-
-            result = await self.client(
-                CreateChannelRequest(
-                    title=name,
-                    about="",
-                    megagroup=False,
-                )
-            )
-            ch = result.chats[0]
-            return {"id": utils.get_peer_id(ch), "name": name, "type": "channel"}
-        else:
-            users = members or []
-            result = await self.client.create_group(name, users)
-            return {"id": result.id if hasattr(result, "id") else 0, "name": name, "type": "group"}
-
     async def get_profile(self) -> dict[str, Any]:
         me = await self.client.get_me()
         return {

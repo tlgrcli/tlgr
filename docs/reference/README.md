@@ -2,13 +2,14 @@
 
 # Command reference
 
-244 operations across 17 groups, generated from the operation registry. Groups still served by v1's hand-written commands are not listed here; they arrive with their own PR.
+257 operations across 18 groups, generated from the operation registry. Groups still served by v1's hand-written commands are not listed here; they arrive with their own PR.
 
 | Group | Operations | Reference |
 |---|---:|---|
 | `account` | 35 | [account.md](account.md) |
 | `agent` | 5 | [agent.md](agent.md) |
 | `auth` | 11 | [auth.md](auth.md) |
+| `call` | 13 | [call.md](call.md) |
 | `chat` | 34 | [chat.md](chat.md) |
 | `draft` | 3 | [draft.md](draft.md) |
 | `emoji` | 3 | [emoji.md](emoji.md) |

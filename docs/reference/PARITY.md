@@ -7,31 +7,31 @@ Coverage against the Telegram feature catalog, computed from the registry: every
 `covered` is implemented today. `acct%` is covered **plus** waived — an id that belongs to a group a later PR owns, named in `tlgr/data/parity_waivers.toml` with the PR that closes it. Ids whose feasibility is `not-applicable` or `prohibited` are excluded from the denominator once and never counted again.
 
 ```
-catalog 2026-09-02 — 244 operations, 356 invocable paths
+catalog 2026-09-02 — 257 operations, 370 invocable paths
 
 domain                        covered    req       %   acct%  ops
 auth_sessions_security             85     89   95.5%  100.0%  43
 bots_inline_payments               13    175    7.4%  100.0%  5
-calls_voicechats                    4    133    3.0%  100.0%  4
+calls_voicechats                   35    133   26.3%  100.0%  17
 contacts_users                     17    121   14.0%  100.0%  12
 dialogs_chats                     112    146   76.7%  100.0%  54
 groups_channels_admin              26    162   16.0%  100.0%  15
 media_files                       121    143   84.6%  100.0%  60
-messages_core                     157    167   94.0%  100.0%  52
+messages_core                     158    167   94.6%  100.0%  53
 polls_reactions_content           114    174   65.5%  100.0%  56
 profile_settings_privacy           20    178   11.2%  100.0%  19
 stories                             5    120    4.2%  100.0%  4
 updates_sync_network                4    189    2.1%  100.0%  3
 
 priority                      covered    req       %   acct%
-P0                                 86    178   48.3%  100.0%
-P1                                177    379   46.7%  100.0%
-P2                                210    610   34.4%  100.0%
-P3                                205    630   32.5%  100.0%
+P0                                 90    178   50.6%  100.0%
+P1                                185    379   48.8%  100.0%
+P2                                221    610   36.2%  100.0%
+P3                                214    630   34.0%  100.0%
 
-TOTAL                             678   1797   37.7%  100.0%
+TOTAL                             710   1797   39.5%  100.0%
 excluded: not-applicable 79, prohibited 40
-uncovered: 1119 (1119 waived with a PR number)
+uncovered: 1087 (1087 waived with a PR number)
 ```
 
 ## By domain
@@ -40,12 +40,12 @@ uncovered: 1119 (1119 waived with a PR number)
 |---|---:|---:|---:|---:|---:|
 | `auth_sessions_security` | 85 | 89 | 95.5% | 100.0% | 43 |
 | `bots_inline_payments` | 13 | 175 | 7.4% | 100.0% | 5 |
-| `calls_voicechats` | 4 | 133 | 3.0% | 100.0% | 4 |
+| `calls_voicechats` | 35 | 133 | 26.3% | 100.0% | 17 |
 | `contacts_users` | 17 | 121 | 14.0% | 100.0% | 12 |
 | `dialogs_chats` | 112 | 146 | 76.7% | 100.0% | 54 |
 | `groups_channels_admin` | 26 | 162 | 16.0% | 100.0% | 15 |
 | `media_files` | 121 | 143 | 84.6% | 100.0% | 60 |
-| `messages_core` | 157 | 167 | 94.0% | 100.0% | 52 |
+| `messages_core` | 158 | 167 | 94.6% | 100.0% | 53 |
 | `polls_reactions_content` | 114 | 174 | 65.5% | 100.0% | 56 |
 | `profile_settings_privacy` | 20 | 178 | 11.2% | 100.0% | 19 |
 | `stories` | 5 | 120 | 4.2% | 100.0% | 4 |
@@ -55,10 +55,10 @@ uncovered: 1119 (1119 waived with a PR number)
 
 | Priority | Covered | Required | % | Accounted % |
 |---|---:|---:|---:|---:|
-| P0 | 86 | 178 | 48.3% | 100.0% |
-| P1 | 177 | 379 | 46.7% | 100.0% |
-| P2 | 210 | 610 | 34.4% | 100.0% |
-| P3 | 205 | 630 | 32.5% | 100.0% |
+| P0 | 90 | 178 | 50.6% | 100.0% |
+| P1 | 185 | 379 | 48.8% | 100.0% |
+| P2 | 221 | 610 | 36.2% | 100.0% |
+| P3 | 214 | 630 | 34.0% | 100.0% |
 
 ## Partial coverage
 
@@ -67,6 +67,8 @@ uncovered: 1119 (1119 waived with a PR number)
 | `auth.passport-authorize` | `passport.form.get` | The request can be read in full; accepting it needs the Passport secure-value crypto Telethon does not provide (see `passport authorize`). |
 | `bots.rich-message-translate` | `message.translate` | Rich-body translation is layer 229 and refused with NOT_SUPPORTED. |
 | `bots.rich-message-view` | `message.get` | --rich is refused with NOT_SUPPORTED until Telethon carries layer 229. |
+| `calls.emoji-fingerprint` | `call.get` | the four verification values are reported as indices into Telegram's 333-emoji table; tlgr does not bundle the table, and guessing it for a security check would be worse than not printing it |
+| `calls.migrate-to-conference` | `call.invite` | the migration and the invitations are complete; creating the conference needs a signed e2e.chain block, which tlgr accepts (--block) but cannot build |
 | `contacts-users.contacts-sort` | `chat.list` | Peer search here is a substring match over the dialog list; the global one is `contact search`. `--sort` orders chats, not contacts. |
 | `contacts-users.user-leave-common-groups` | `chat.leave` | `--common-with` leaves the shared groups; listing them is `user chat list`. |
 | `dialogs.search-peers` | `chat.list` | Peer search here is a substring match over the dialog list; the global one is `contact search`. `--sort` orders chats, not contacts. |
@@ -98,7 +100,6 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `dialogs.block-stories` | P1 | Hide my stories from a user (story blocklist) | waived until PR-5: The story blocklist is a privacy surface on the user group (PR-5). |
 | `dialogs.dialog-exists` | P1 | Does a dialog with this peer exist | waived until PR-5: `user dialog-status` answers this and migrates with the user group (PR-5). |
 | `dialogs.notify-exceptions` | P1 | List notification exceptions | waived until PR-12: The exceptions *list* is `notify exceptions` (PR-12); one chat's exception is `chat notify`. |
-| `messages-core.delete-call-history` | P1 | Delete call-log messages | waived until PR-3: The call log is a chat-level history (PR-3). |
 | `messages-core.message-watch-events` | P1 | Live stream of new / edited / deleted messages and read receipts | waived until PR-4: The live message stream is the event bus surface (PR-4). |
 | `profile.photos-list-history` | P1 | View own / another user's profile photo history | waived until PR-12: Profile photo history is the `profile` group (PR-12). |
 | `stars.balance` | P1 | Telegram Stars balance | waived until PR-12: the Star balance and top-up packages are the `stars` surface (PR-12). |

@@ -1258,12 +1258,13 @@ class TestWatch:
 
         from telethon.tl import types
 
-        from tlgr.daemon.events import normalise_story
+        from tlgr.daemon.events import normalise_update
 
-        event_type, payload, chat_id = normalise_story(
+        event_type, payload, chat_id, _sender = normalise_update(
+            "work",
             types.UpdateStory(
                 peer=types.PeerUser(user_id=ALICE), story=types.StoryItemDeleted(id=42)
-            )
+            ),
         )
         assert (event_type, payload["kind"], chat_id) == ("story_new", "story.new", ALICE)
 
@@ -1278,10 +1279,10 @@ class TestWatch:
     def test_every_story_update_class_is_named(self):
         from telethon.tl import types
 
-        from tlgr.daemon.events import normalise_story
+        from tlgr.daemon.events import normalise_update
 
         kinds = {
-            normalise_story(update)[1]["kind"]
+            normalise_update("work", update)[1]["kind"]
             for update in (
                 types.UpdateStory(peer=types.PeerUser(user_id=1), story=None),
                 types.UpdateStoryID(id=1, random_id=2),
@@ -1307,9 +1308,14 @@ class TestWatch:
     def test_an_ordinary_update_is_not_a_story_event(self):
         from telethon.tl import types
 
-        from tlgr.daemon.events import normalise_story
+        from tlgr.daemon.events import normalise_update
 
-        assert normalise_story(types.UpdateNewMessage(message=None, pts=1, pts_count=1)) is None
+        # It is an ordinary message update, so it normalises as one — the
+        # story branch is keyed off the taxonomy, not off a substring.
+        event_type, _payload, _chat, _sender = normalise_update(
+            "work", types.UpdateNewMessage(message=None, pts=1, pts_count=1)
+        )
+        assert event_type == "message_new"
 
 
 # ---------------------------------------------------------------------------

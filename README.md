@@ -231,7 +231,7 @@ rather than the reply claiming "no such user".
 ```bash
 tlgr user get <user>                   # --full --translate-bio LANG --from-chat/--from-message
 tlgr user dialog-status <user>         # does THIS account have prior history with them?
-tlgr user hide-stories <user>...       # archive their stories for this account (--unhide)
+tlgr user hide-stories <user>...       # v1's spelling of `story hide` (--unhide)
 tlgr user block <user>                 # --stories --report-spam --delete-history
 tlgr user unblock <user>
 tlgr user can-message <user>...        # free | premium | paid (and the Stars price)
@@ -264,6 +264,28 @@ tlgr resolve cache get                 # inspect the per-account peer database
 `resolve link` never *acts*: it says what a link is and names the command
 that would follow it in `delegated_to`. A phone lookup that comes back empty
 exits 13, never 5 — no account and a privacy refusal are indistinguishable.
+
+### Stories
+
+```bash
+tlgr story feed list                   # the stories bar (--hidden, --unread-only)
+tlgr story list <chat>                 # active; --profile, --archive, --album ID
+tlgr story get <chat> <id>             # --views, --link, --areas-out, --translate
+tlgr story post <file>...              # --caption, --privacy, --allow, --exclude,
+                                       # --period, --pin, --album, --area-url, …
+tlgr story read <chat>                 # clears YOUR ring; --register-view to be seen
+tlgr story react|reply|share <chat> <id>
+tlgr story pin|unpin|hide|unhide <chat> [<id>...]
+tlgr story viewer list <chat> <id>     # --contacts, --q, --csv PATH
+tlgr story blocklist set <user>...     # "Hide my stories from"
+tlgr story album create|edit|list|delete|reorder <chat> …
+tlgr story can-post | stealth set | search | stats get | export | live start | watch
+```
+
+`story read` clears your own unread ring and tells the poster nothing;
+`--register-view` is what puts you in their viewer list, and it is opt-in.
+`--privacy` sets the base audience and `--allow`/`--exclude` layer exceptions
+on top, in that order, so "contacts, except Bob" is expressible.
 
 ### Media, stickers, GIFs and emoji
 

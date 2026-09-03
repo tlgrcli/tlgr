@@ -54,12 +54,19 @@ freezes are unchanged: `user dialog-status` is still three-valued and still
 exits 13 for "could not establish", and `user hide-stories` still reports
 `already` and sends nothing when there is nothing to do.
 
+`story` follows — 31 operations covering posting, the feed, viewers, albums,
+the story blocklist, stealth mode and live stories, where v1 had exactly one
+command (`user hide-stories`). That path still works, `--unhide` and bulk
+peers included: `story hide` is now the single implementation of the toggle
+and `user hide-stories` is a legacy path on it, so the two spellings cannot
+drift apart.
+
 ### Breaking
 
 Every change below applies **only to commands generated from the operation
 registry** — in this release that is the `message`, `draft`, `chat`,
 `folder`, `auth`, `account`, `passport`, `media`, `sticker`, `gif`, `emoji`,
-`events`, `watch`, `daemon`, `sync`, `net`, `proxy`, `config`, `job`,
+`story`, `events`, `watch`, `daemon`, `sync`, `net`, `proxy`, `config`, `job`,
 `webhook`, `export`, `contact`, `user` and `resolve` groups,
 `tlgr completion`, `tlgr status`, `tlgr schema` and the `agent` group. Commands still
 hand-written under `tlgr/cli/legacy/` behave exactly as they did in v1 until
@@ -142,6 +149,37 @@ Two more, outside the documented output shapes:
 
 ### Added
 
+- **The `story` group.** 31 operations covering the whole story surface:
+  posting (with the audience vector, media areas, albums, reposts and a
+  soundtrack), the stories bar, a peer's active/profile/archive/album grids,
+  reading, reacting, replying, sharing, pinning, hiding, viewers, the
+  story-only blocklist, stealth mode, hashtag and location search, statistics,
+  a bulk export and live stories. Four of Telegram's shapes drive the design
+  and are worth knowing before scripting against them:
+  - **Reading a story and being seen watching it are different calls.**
+    `story read` sends `stories.readStories`, which clears *your* unread ring
+    and tells the poster nothing; `--register-view` is what calls
+    `stories.incrementStoryViews` and puts you in their viewer list. It is
+    opt-in because an agent that silently appears there is a privacy bug.
+  - **The audience is an ordered vector**, `[base rule, allows…, disallows…]`,
+    which is the only way `--privacy contacts --exclude @bob` can mean
+    "contacts, except Bob". `--privacy selected` with no `--allow` is refused
+    rather than posted to nobody, and channel stories ignore the vector.
+  - **One id has three TL shapes.** A feed row can be a `storyItemSkipped`
+    placeholder and a gone story a `storyItemDeleted`; both come back with
+    `skipped: true` / `deleted: true` rather than as a story with no caption.
+    `story list` hydrates placeholders by default.
+  - **The feed pages on an opaque state, not an offset.**
+    `stories.getAllStories` returns a `state` that the next call sends back
+    with `next`; `--cursor` carries both, and `--refresh` re-sends the stored
+    state and reports `already: true` when nothing changed.
+- **`tlgr user hide-stories` is now `tlgr story hide`.** The v1 path, its
+  `--unhide` flag and its four keys (`user_id`, `username`, `hidden`,
+  `already`) are unchanged; `story unhide` is the canonical inverse and
+  `--all` collapses the whole stories bar.
+- **`story viewer list --csv PATH` and `story export`** are the two things the
+  official clients have no button for: the viewer list as a file, and every
+  story with its media on disk.
 - **The content groups: `poll`, `reaction`, `todo`, `location` and `search`.**
   43 operations covering polls and quizzes, the whole reaction surface,
   checklists, places and live locations, and search outside a single chat.
@@ -551,6 +589,11 @@ Two more, outside the documented output shapes:
   group answers with `models.reaction.ReactionResult`, which adds `mine` — the
   full set of reactions this account holds after the call, which is what the
   next `sendReaction` has to resend.
+
+- **`ClientWrapper.set_stories_hidden()` and the `/user/stories-hidden` IPC
+  route.** `story hide` replaces both, and `tlgr user hide-stories` is
+  declared as its legacy path rather than kept as a second implementation.
+  `tlgr user get` still reports `stories_hidden`.
 
 - The dead `jobs.toml` job engine in `core/config.py` (`load_jobs`,
   `save_jobs`, `JobConfig`, `DestinationConfig`, …). It had no callers left;

@@ -738,7 +738,7 @@ tlgr user dialog-status <user> [--max-dialogs N]
 → {"ref": ..., "id": ..., "username": ..., "resolved": true, "has_dialog": true,
    "message_count": 12, "source": "peer_dialogs", "reason": null}
 
-tlgr user hide-stories <user>... [--unhide] [--all on|off]
+tlgr user hide-stories <user>... [--unhide] [--all]   # v1's spelling of `story hide`
 → {"user_id": ..., "username": ..., "hidden": true, "already": false}
 # More than one peer fills `peers`; a single peer answers with exactly the
 # four keys above.
@@ -774,15 +774,11 @@ tlgr resolve cache get [--type KIND] [--stale 7d] [--refresh PEER] [--purge]
 # `access_hash_cached`; they are per login session and worthless elsewhere.
 ```
 
-`hide-stories` is Telegram's own "Hide Stories" menu item: the peer leaves the
-main stories bar for the collapsed Hidden list. Per-account and purely local —
-**the other side is never notified**, the chat, the contact entry and their
-access to you are untouched — so it is safe to apply in bulk to everyone an
-outreach campaign has contacted, which is what keeps a working account's story
-bar readable. Idempotent: it reads the fresh `stories_hidden` flag first and
-returns `already: true` without an RPC when there is nothing to do, so
-repeating a pass over hundreds of peers is nearly free. `tlgr user get` reports
-the same flag as `stories_hidden`, so the state can be audited without writing.
+`hide-stories` is now `tlgr story hide <peer>` (and `--unhide` is
+`tlgr story unhide <peer>`). The old path, the old flag and the four keys are
+unchanged — see **Stories** below for what it does and why it is free to
+repeat. `tlgr user get` still reports the current value as `stories_hidden`,
+so the state can be audited without writing.
 
 `dialog-status` is the ONLY correct way to ask "does this account have prior
 history with this person?". Three outcomes, never conflated:
@@ -936,6 +932,72 @@ a participant** and **sending inside** need a signed `e2e.chain` block built on
 the current tip; tlgr has no block builder, accepts one from an external
 implementation (`--block`, `--public-key`) and otherwise exits 2 naming exactly
 what is missing rather than sending a request that will fail.
+
+### Stories
+
+```
+tlgr story feed list                      # the stories bar; --hidden, --unread-only
+→ {"items": [{"peer_id": …, "max_read_id": 41, "unread_count": 1,
+              "has_unread": true}], "has_more": false}
+
+tlgr story list <chat>                    # active; --profile, --archive, --album ID
+→ {"items": [{"id": 42, "date": "…Z", "expire_date": "…Z", "caption": "…",
+              "media": {…}, "pinned": false}], "has_more": false}
+
+tlgr story get <chat> <id>...             # --views, --link, --areas-out, --translate
+tlgr story post <file>...                 # --caption, --privacy, --allow, --exclude,
+                                          # --period, --pin, --album, --area-*
+tlgr story edit <chat> <id>               # --caption, --file, --cover-ts, --privacy
+tlgr story delete <chat> <id>...          # irreversible; needs --yes off a TTY
+
+tlgr story read <chat> [<id>...]          # clears YOUR unread ring
+→ {"peer": …, "max_id": 43, "ids": [42, 43], "ok": true}
+tlgr story read <chat> <id> --register-view   # …and appear in their viewer list
+
+tlgr story react <chat> <id> 🔥           # --remove, --custom-emoji, --as-message
+tlgr story reply <chat> <id> "text"       # a private message carrying the story
+tlgr story share <chat> <id> --until <chat>   # sends a story card, not a copy
+
+tlgr story pin|unpin <chat> <id>...       # the profile page; --top for the top row
+tlgr story hide|unhide <chat>             # the stories bar; --all for the whole bar
+tlgr story viewer list <chat> <id>        # --contacts, --q, --csv PATH, --hide-from
+tlgr story blocklist list|set <user>...   # "Hide my stories from"; --remove, --replace
+tlgr story album create|edit|list|delete|reorder <chat> …
+tlgr story can-post                       # free slots, limits, Premium gates, --chats
+tlgr story stealth set --past --future    # Premium; --status only reads
+tlgr story search --hashtag berlin        # public stories only
+tlgr story stats get <chat> <id>          # graphs; --forwards for public reposts
+tlgr story export <chat> --out DIR        # the bulk export the GUI has no button for
+tlgr story live start --rtmp              # prints the ingest URL and key
+tlgr story watch                          # story.new / read / reaction / stealth
+```
+
+Four rules matter more than the flags:
+
+- **Reading is not being seen.** `story read` sends `stories.readStories`,
+  which clears the ring on *your* side and tells the poster nothing. Appearing
+  in their viewer list is `--register-view`, and it is opt-in on purpose.
+- **The audience is a base rule plus exceptions**, applied in that order:
+  `--privacy contacts --exclude @bob` is "contacts, except Bob". `--privacy
+  selected` with no `--allow` is refused, because it would post to nobody.
+  Channel stories ignore the vector entirely.
+- **A placeholder is not a story.** A feed row can come back as
+  `{"id": 99, "skipped": true}` and a gone story as `{"id": 99,
+  "deleted": true}`. `story list` hydrates placeholders by default;
+  `--no-hydrate` gives you the raw shape.
+- **Re-run `story can-post` immediately before posting.** The weekly and
+  monthly quotas move under you, and a refusal comes back as a named
+  `reason` (`STORY_SEND_FLOOD_WEEKLY`, `BOOSTS_REQUIRED`, …) with the
+  seconds or boosts still missing.
+
+`story hide` is Telegram's own "Hide Stories" menu item: the peer leaves the
+main stories bar for the collapsed Hidden list. Per-account and purely local —
+**the other side is never notified**, the chat, the contact entry and their
+access to you are untouched — so it is safe to apply in bulk to everyone an
+outreach campaign has contacted. Idempotent: it reads the fresh
+`stories_hidden` flag first and returns `already: true` without an RPC when
+there is nothing to do, so repeating a pass over hundreds of peers is nearly
+free.
 
 ### Agent Helpers
 

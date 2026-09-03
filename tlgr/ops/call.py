@@ -184,7 +184,7 @@ async def _dh_parameters(ctx: OpContext) -> tuple[int, int, bytes]:
         raise IndeterminateError(
             "the server did not send DH parameters, so no call key exchange could start"
         )
-    checks = _calls.validate_dh(p_bytes, g)
+    checks = _calls.dh_verdict(p_bytes, g)
     if not checks["ok"]:
         raise IndeterminateError(
             "the DH parameters the server sent did not validate "
@@ -1251,7 +1251,7 @@ async def config_get(ctx: OpContext, req: ConfigReq) -> CallConfig:
         config = await client(messages_fn.GetDhConfigRequest(version=0, random_length=0))
         p_bytes = bytes(getattr(config, "p", b"") or b"")
         g = int(getattr(config, "g", 0) or 0)
-        dh = {"version": int(getattr(config, "version", 0) or 0), **_calls.validate_dh(p_bytes, g)}
+        dh = {"version": int(getattr(config, "version", 0) or 0), **_calls.dh_verdict(p_bytes, g)}
 
     limits = await _calls.app_config(ctx)
     numeric = {k: int(v) for k, v in limits.items() if isinstance(v, (int, float))}

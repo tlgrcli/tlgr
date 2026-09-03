@@ -25,6 +25,7 @@ import base64
 import hashlib
 import secrets
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any
 
 from tlgr.core.errors import NotFoundError, UsageError
@@ -461,6 +462,7 @@ def _is_probable_prime(n: int, rounds: int = 16) -> bool:
     return True
 
 
+@lru_cache(maxsize=8)
 def validate_dh(p_bytes: bytes, g: int) -> dict[str, Any]:
     """Check the server's DH parameters instead of trusting them.
 
@@ -468,6 +470,10 @@ def validate_dh(p_bytes: bytes, g: int) -> dict[str, Any]:
     key exchange; it has accepted a key the server chose. The checks are the
     documented ones: 2048 bits, `p` and `(p-1)/2` prime, and the residue
     condition for the generator.
+
+    Cached: the parameters change roughly never, and two Miller-Rabin runs
+    over a 2048-bit number cost about half a second — worth paying once per
+    prime rather than once per call.
     """
     p = int.from_bytes(p_bytes, "big")
     checks: dict[str, Any] = {
@@ -488,6 +494,11 @@ def validate_dh(p_bytes: bytes, g: int) -> dict[str, Any]:
     checks["safe_prime"] = checks["prime"] and _is_probable_prime((p - 1) // 2)
     checks["ok"] = bool(checks["size_ok"] and checks["generator_ok"] and checks["safe_prime"])
     return checks
+
+
+def dh_verdict(p_bytes: bytes, g: int) -> dict[str, Any]:
+    """`validate_dh` as a fresh dict, so a caller may annotate it safely."""
+    return dict(validate_dh(p_bytes, g))
 
 
 def key_fingerprint(key: bytes) -> int:

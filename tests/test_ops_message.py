@@ -14,8 +14,13 @@ from typing import Any
 import pytest
 
 from tlgr.core.errors import (
+    EXIT_AUTH,
     EXIT_INDETERMINATE,
     EXIT_NOT_FOUND,
+    EXIT_PERMISSION,
+    EXIT_RATE_LIMITED,
+    EXIT_RETRYABLE,
+    EXIT_SPAM_FLAGGED,
     EXIT_USAGE,
     classify,
 )
@@ -524,3 +529,62 @@ class TestSmallSurfaces:
                 {"chat": "@alice", "msg_id": 1, "url": True},
             )
         assert classify(caught.value).code == "NOT_SUPPORTED"
+
+
+class TestTheErrorTableEndToEnd:
+    """§12.3 criterion 14: raise in the fake client, read the CLI's exit code.
+
+    `test_errors_map.py` proves the §7.2 table maps an exception name to a
+    code and an exit status. That is the mapping in isolation; this is the
+    path — a real Telethon exception raised inside a real request, through the
+    dispatcher, the error middleware, the socket, and the client's `classify`,
+    which is what the exit code is actually built from. One row per exit
+    status in the table, because the failure mode being guarded against is a
+    layer that swallows or relabels an error, not a wrong table entry.
+    """
+
+    ROWS = [
+        ("FloodWaitError", EXIT_RATE_LIMITED, "RATE_LIMITED"),
+        ("PeerFloodError", EXIT_SPAM_FLAGGED, "PEER_FLOOD"),
+        ("AuthKeyUnregisteredError", EXIT_AUTH, "SESSION_ERROR"),
+        ("ChatAdminRequiredError", EXIT_PERMISSION, "PERMISSION_DENIED"),
+        ("UsernameNotOccupiedError", EXIT_NOT_FOUND, "NOT_FOUND"),
+        ("MessageTooLongError", EXIT_USAGE, "USAGE"),
+        ("ServerError", EXIT_RETRYABLE, "RETRYABLE"),
+    ]
+
+    @pytest.mark.parametrize(("name", "exit_code", "code"), ROWS, ids=[r[0] for r in ROWS])
+    async def test_a_raise_in_the_client_arrives_as_its_exit_code(
+        self, live_daemon, client, in_thread, peers, name, exit_code, code
+    ):
+        import telethon.errors as tl_errors
+
+        klass = getattr(tl_errors, name)
+        try:
+            failure: BaseException = klass(request=None)
+        except TypeError:
+            # `ServerError` and friends are built from a server reply.
+            failure = klass(request=None, message=f"{name} raised", code=500)
+        peers.fail_next("SendMessageRequest", failure)
+
+        with pytest.raises(Exception) as caught:
+            await result(client, in_thread, "message.send", {"chat": "@alice", "text": "hi"})
+        body = classify(caught.value)
+        assert (body.code, body.exit_code) == (code, exit_code)
+
+    async def test_not_modified_is_success_and_says_already(
+        self, live_daemon, client, in_thread, history
+    ):
+        """The one row that is not a failure: the world already looks like that."""
+        import telethon.errors as tl_errors
+
+        history.fail_next("EditMessageRequest", tl_errors.MessageNotModifiedError(request=None))
+        envelope = await call(
+            client,
+            in_thread,
+            "message.edit",
+            {"chat": "@alice", "msg_id": 103, "text": "message 3"},
+        )
+        assert envelope["ok"] is True
+        assert envelope["result"]["already"] is True
+        assert envelope["meta"]["already"] is True

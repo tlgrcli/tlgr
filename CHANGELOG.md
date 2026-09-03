@@ -26,15 +26,21 @@ in, the Devices list, 2-step verification, connected websites, passkeys and
 Telegram Passport. `tlgr/cli/legacy/account.py`, `completion.py` and `agent.py`
 are deleted, not shadowed.
 
+`media`, `sticker`, `gif` and `emoji` follow — 56 operations where v1 had two
+(`media download` and `media upload`, one Telethon call each). The two v1
+paths and their `dl`/`up` shortcuts still work; `tlgr/cli/legacy/media.py`,
+the `/media/*` IPC routes and the two `ClientWrapper` methods behind them are
+deleted rather than shadowed.
+
 ### Breaking
 
 Every change below applies **only to commands generated from the operation
 registry** — in this release that is the `message`, `draft`, `chat`,
-`folder`, `auth`, `account` and `passport` groups, `tlgr completion`,
-`tlgr agent exit-codes`, `tlgr agent whoami`, `tlgr agent parity` and
-`tlgr schema`. Commands still hand-written under `tlgr/cli/legacy/` behave
-exactly as they did in v1 until their own migration PR, at which point these
-rules apply to them too.
+`folder`, `auth`, `account`, `passport`, `media`, `sticker`, `gif` and
+`emoji` groups, `tlgr completion`, `tlgr agent exit-codes`,
+`tlgr agent whoami`, `tlgr agent parity` and `tlgr schema`. Commands still
+hand-written under `tlgr/cli/legacy/` behave exactly as they did in v1 until
+their own migration PR, at which point these rules apply to them too.
 
 No documented command path disappears. Every migrated operation declares its
 v1 paths, so `tlgr send`, `tlgr msg list`, `tlgr message react` and the rest
@@ -57,6 +63,9 @@ thirteen changes in the table below, which is the whole list.
 | 11 | `account remove` | `{"removed": "work"}` — the alias as a string | `{"alias": "work", "removed": true, "server_logout": false}` | `--select alias` yields the old value. `removed` is now the answer to "did it happen", and `account logout` is the command that revokes the authorization server-side |
 | 12 | `account switch` / `account rename` | `{"active": "work"}` / `{"old": …, "new": …}` | `{"ok": true, "account": "work", "already": …}` / the same plus `old`/`new` | `old` and `new` are unchanged on `rename`; `--select account` replaces `active` |
 | 13 | An empty paginated result | `{"total": 0}` — a different shape from a non-empty page | `[]` under `result` (`{"items": [], …}` with `--results-only`) | this was a bug: `omit_defaults` dropped the empty `items` list, so "no results" and "some results" had different shapes. Nothing to migrate — the shape is now the one the non-empty case always had |
+
+| 8 | `media.download` | `{path, msg_id}` for one file | `Page[Downloaded]`: `{items: [{msg_id, path, bytes, kind, …}], has_more}` | both v1 keys survive on every item; one invocation can now name several ids, an album or `--all`. `--results-only \| jq -r '.items[0].path'` is the one-file case |
+| 9 | `media.upload` | `{id, chat_id}` | `{chat_id, msg_id, msg_ids, kind, …}` | rename only: `id` became `msg_id`, beside `msg_ids` for an album. `--select msg_id` reaches it |
 
 `tlgr agent whoami --json` reports `output_schema_version: 2`, so an agent can
 branch on the two sets without probing for each change.
@@ -182,13 +191,31 @@ Two more, outside the documented output shapes:
   stack (AES-256-CBC plus a SHA-512 KDF over the cloud password) that Telethon
   does not provide, and shipping a half-correct implementation of a format
   carrying identity documents is worse than not offering it.
+- **The `media`, `sticker`, `gif` and `emoji` groups.** 56 operations where v1
+  had two. `media download` gains ranged and resumable reads, parallel
+  connections, server-hash verification, thumbnails (including the stripped and
+  vector ones, which cost no request at all), profile photos, stories, web
+  files, map previews, albums, `--all` and background transfers; `media upload`
+  gains albums, every media kind, spoilers, self-destruct timers, video covers,
+  paid media, `--no-send` and a pre-flight against the server's own limits.
+  `media get` answers "what is this" without fetching a byte, `media list` and
+  `media search` are the shared-media tabs, `media export` archives a chat with
+  a resumable ledger, and `media transfer list/stop/retry` is the Downloads
+  panel. `sticker`/`emoji` cover sets (install, archive, reorder, search) and
+  packs you own (create, add, replace, reorder, delete); `gif` covers the saved
+  shelf and the inline search bot.
+- **A transfer is a thing with a lifetime.** `--background` hands a download or
+  upload to the daemon and returns a job id; the transfer keeps its `.part`
+  file when cancelled, and a retry re-fetches the source first because a queued
+  transfer is holding an expired `file_reference`.
 - **`tlgr agent parity`** — coverage of the pinned feature catalog by
   priority and domain, with every uncovered id either waived to a named PR or
   reported as a gap. `--uncovered` prints the full list; `docs/reference/PARITY.md`
   is the same report, generated. Neither number is hand-maintained.
 - **Generated reference docs.** `docs/reference/message.md`, `draft.md`,
-  `chat.md`, `folder.md`, `auth.md`, `account.md`, `passport.md`, `agent.md`
-  and `PARITY.md` come out of the registry via `make docs` / `make parity`;
+  `chat.md`, `folder.md`, `auth.md`, `account.md`, `passport.md`, `media.md`,
+  `sticker.md`, `gif.md`, `emoji.md`, `agent.md` and `PARITY.md` come out of
+  the registry via `make docs` / `make parity`;
   `tests/test_docs_fresh.py` fails the build on a stale page, so a flag cannot
   ship undocumented.
 - `tlgr agent whoami` reports `output_schema_version: 2` (§12.4), so an agent

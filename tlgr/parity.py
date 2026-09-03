@@ -23,11 +23,15 @@ Three rules keep it honest.
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import tomllib
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # pragma: no cover - exercised on the 3.10 CI leg
+    import tomli as tomllib
 
 __all__ = [
     "CatalogEntry",

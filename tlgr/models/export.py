@@ -40,7 +40,9 @@ class MessageRange(Model):
 
 
 class TakeoutStatus(Model):
-    active: bool = False
+    #: No default: "is an export open" is the question, and a `Model` omits a
+    #: field equal to its default.
+    active: bool
     takeout_id: int | None = None
     started_at: str | None = None
     scope: list[str] = []

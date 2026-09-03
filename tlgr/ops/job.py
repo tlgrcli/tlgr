@@ -328,7 +328,7 @@ async def job_add(ctx: OpContext, req: JobAddReq) -> Job:
     """
     if req.edit:
         _open_editor()
-        return Job(name=req.name or "", already=True)
+        return Job(name=req.name or "", enabled=True, already=True)
 
     document = _load_raw()
     entries = _entries_from(req)
@@ -533,7 +533,7 @@ async def job_remove(ctx: OpContext, req: JobNameReq) -> Job:
     if daemon is not None:
         with contextlib.suppress(Exception):
             await daemon.remove_job(req.name)
-    return Job(name=req.name, removed=True)
+    return Job(name=req.name, enabled=False, removed=True)
 
 
 SPEC_JOB_REMOVE = OperationSpec(
@@ -550,7 +550,7 @@ SPEC_JOB_REMOVE = OperationSpec(
     surface=Surface.DAEMON,
     rate_class="local",
     timeout_s=30,
-    example={"name": "archive", "removed": True},
+    example={"name": "archive", "enabled": False, "removed": True},
     example_args="job remove archive",
     covers_partial=("updates.stream-event-filtering",),
     coverage_note="deletes a rule; the filtering itself is the gateway's.",
@@ -589,11 +589,12 @@ async def job_reload(ctx: OpContext, req: JobReloadReq) -> Job:
                 problems.append(f"job {config.name!r} uses unknown action {action.name!r}")
 
     if req.validate_only or problems:
-        return Job(name="", loaded=len(configs), errors=problems)
+        return Job(name="", enabled=True, loaded=len(configs), errors=problems)
 
     result = await daemon.reload_jobs()
     return Job(
         name="",
+        enabled=True,
         reloaded=True,
         loaded=len(configs),
         added=sorted(result.get("added", [])),
@@ -615,7 +616,7 @@ SPEC_JOB_RELOAD = OperationSpec(
     surface=Surface.DAEMON,
     rate_class="local",
     timeout_s=60,
-    example={"name": "", "reloaded": True, "loaded": 3, "added": ["archive"]},
+    example={"name": "", "enabled": True, "reloaded": True, "loaded": 3, "added": ["archive"]},
     example_args="job reload --validate-only",
     covers_partial=("updates.stream-webhook-delivery",),
     coverage_note="reloads the consumers; delivery is the webhook pusher's.",

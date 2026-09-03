@@ -478,6 +478,15 @@ class World:
     read_inbox: dict[int, int] = field(default_factory=dict)
     read_outbox: dict[int, int] = field(default_factory=dict)
     pinned: dict[int, set[int]] = field(default_factory=dict)
+    #: The update state a session would hold: `{entity_id: (pts, qts, seq)}`,
+    #: with entity 0 as the common box. `sync status` and `sync reset` read
+    #: and write it exactly where Telethon's SQLiteSession keeps it.
+    update_state: dict[int, tuple[int, int, int]] = field(
+        default_factory=lambda: {0: (91824, 12, 4410)}
+    )
+    #: Peers the session has an access hash for. A channel missing from here
+    #: is one `catch_up()` silently skips.
+    entities: set[int] = field(default_factory=set)
     #: marked chat id → its dialog row. Ordered newest-first by top_message,
     #: which is how the server orders `messages.getDialogs`.
     dialogs_by_id: dict[int, DialogState] = field(default_factory=dict)
@@ -605,6 +614,10 @@ class World:
     catch_ups: int = 0
     connects: int = 0
     saves: int = 0
+    differences: int = 0
+    takeout_calls: list[str] = field(default_factory=list)
+    #: How far ahead of the local pts `updates.getState` answers.
+    server_ahead: int = 0
 
     def fail_next(self, request_name: str, exc: BaseException) -> None:
         """Make the next request of that type raise, once."""
@@ -923,7 +936,7 @@ class FakeTelegramClient:
 
     def __init__(self, world: World | None = None, session: Any = None, **_: Any) -> None:
         self.world = world or World()
-        self.session = _FakeSession()
+        self.session = _FakeSession(self.world)
         self.session_path = session
         self.flood_sleep_threshold = 120
         self._connected = False
@@ -1045,7 +1058,10 @@ class FakeTelegramClient:
             return handler
         default = getattr(self, f"_raw_{name}", None)
         if default is not None:
-            return default(request)
+            result = default(request)
+            if hasattr(result, "__await__"):
+                result = await result
+            return result
         return types.Updates(updates=[], users=[], chats=[], date=None, seq=0)
 
     # -- default raw handlers ---------------------------------------------
@@ -2348,29 +2364,33 @@ class FakeTelegramClient:
 
     def _raw_GetConfigRequest(self, request: Any) -> Any:
         config = types.Config(
-            date=0,
-            expires=0,
+            date=datetime(2026, 9, 3, 9, 0, 0, tzinfo=timezone.utc),
+            expires=datetime(2026, 9, 3, 10, 0, 0, tzinfo=timezone.utc),
             test_mode=False,
-            this_dc=2,
-            dc_options=[],
-            dc_txt_domain_name="",
+            this_dc=4,
+            dc_options=[
+                types.DcOption(id=4, ip_address="149.154.167.91", port=443),
+                types.DcOption(id=4, ip_address="2001:67c::b0e", port=443, ipv6=True),
+                types.DcOption(id=2, ip_address="149.154.167.51", port=443, media_only=True),
+            ],
+            dc_txt_domain_name="apv3.stel.com",
             chat_size_max=200,
             megagroup_size_max=200000,
             forwarded_count_max=100,
-            online_update_period_ms=1000,
-            offline_blur_timeout_ms=1000,
-            offline_idle_timeout_ms=1000,
-            online_cloud_timeout_ms=1000,
-            notify_cloud_delay_ms=1000,
-            notify_default_delay_ms=1000,
-            push_chat_period_ms=1000,
-            push_chat_limit=1,
+            online_update_period_ms=120000,
+            offline_blur_timeout_ms=5000,
+            offline_idle_timeout_ms=30000,
+            online_cloud_timeout_ms=300000,
+            notify_cloud_delay_ms=30000,
+            notify_default_delay_ms=1500,
+            push_chat_period_ms=60000,
+            push_chat_limit=2,
             edit_time_limit=172800,
             revoke_time_limit=172800,
             revoke_pm_time_limit=172800,
-            rating_e_decay=1,
+            rating_e_decay=2419200,
             stickers_recent_limit=200,
-            channels_read_media_period=1,
+            channels_read_media_period=604800,
             call_receive_timeout_ms=20000,
             call_ring_timeout_ms=90000,
             call_connect_timeout_ms=30000,
@@ -2708,6 +2728,9 @@ class FakeTelegramClient:
         config.setdefault("dismissed_suggestions", list(self.auth.dismissed_suggestions))
         config.setdefault("dialogs_pinned_limit_default", 5)
         config.setdefault("channels_limit_default", 500)
+        config.setdefault("reactions_user_max_default", 1)
+        config.setdefault("freeze_appeal_url", "https://t.me/spambot")
+        config.setdefault("stories_pinned_to_top_count_max", 3)
         return types.help.AppConfig(hash=1, config=_json_value(config))
 
     def _raw_GetPromoDataRequest(self, request: Any) -> Any:
@@ -2830,9 +2853,82 @@ class FakeTelegramClient:
     # updates --------------------------------------------------------------
 
     def _raw_GetStateRequest(self, request: Any) -> Any:
+        from datetime import datetime, timezone
+
+        pts, qts, seq = self.world.update_state.get(0, (0, 0, 0))
         return types.updates.State(
-            pts=90210, qts=0, date=datetime.now(timezone.utc), seq=0, unread_count=0
+            pts=pts + self.world.server_ahead,
+            qts=qts,
+            date=datetime(2026, 9, 3, 9, 14, 7, tzinfo=timezone.utc),
+            seq=seq,
+            unread_count=0,
         )
+
+    # -- the sync, network and takeout world -------------------------------
+
+    def _raw_GetNearestDcRequest(self, request: Any) -> Any:
+        return types.NearestDc(country="GB", this_dc=4, nearest_dc=4)
+
+    def _raw_GetDifferenceRequest(self, request: Any) -> Any:
+        from datetime import datetime, timezone
+
+        self.world.differences += 1
+        return types.updates.DifferenceEmpty(
+            date=datetime(2026, 9, 3, 9, 14, 7, tzinfo=timezone.utc), seq=4410
+        )
+
+    def _raw_GetChannelDifferenceRequest(self, request: Any) -> Any:
+        self.world.differences += 1
+        return types.updates.ChannelDifferenceEmpty(pts=42, final=True, timeout=30)
+
+    def _raw_GetCountriesListRequest(self, request: Any) -> Any:
+        return types.help.CountriesList(
+            countries=[
+                types.help.Country(
+                    iso2="GB",
+                    default_name="United Kingdom",
+                    name="United Kingdom",
+                    country_codes=[
+                        types.help.CountryCode(
+                            country_code="44", prefixes=["7"], patterns=["XXXX XXXXXX"]
+                        )
+                    ],
+                ),
+                types.help.Country(
+                    iso2="ES",
+                    default_name="Spain",
+                    country_codes=[types.help.CountryCode(country_code="34")],
+                ),
+            ],
+            hash=0,
+        )
+
+    def _raw_GetTimezonesListRequest(self, request: Any) -> Any:
+        return types.help.TimezonesList(
+            timezones=[types.Timezone(id="Europe/London", name="London", utc_offset=0)],
+            hash=0,
+        )
+
+    def _raw_InitTakeoutSessionRequest(self, request: Any) -> Any:
+        return types.account.Takeout(id=1234567890)
+
+    def _raw_FinishTakeoutSessionRequest(self, request: Any) -> bool:
+        return True
+
+    def _raw_GetSplitRangesRequest(self, request: Any) -> Any:
+        return [types.MessageRange(min_id=1, max_id=1000)]
+
+    async def _raw_InvokeWithTakeoutRequest(self, request: Any) -> Any:
+        """Unwrap and run the inner request, recording that it was wrapped.
+
+        Recording the wrapping is the point: a takeout that forgets
+        `invokeWithTakeout` on one call gets a *smaller* export rather than an
+        error, so the test has to be able to assert it was there.
+        """
+        self.world.takeout_calls.append(type(request.query).__name__)
+        return await self(request.query)
+
+    # -- entities ----------------------------------------------------------
 
     # -- entities ----------------------------------------------------------
 
@@ -3844,13 +3940,18 @@ class _QrLogin:
 
 
 class _FakeSession:
-    """Enough of a Telethon session that `StringSession.save()` works on it.
+    """Enough of `SQLiteSession` that both worlds can read what they read.
 
     `account export` reads the live session rather than the file on disk, so
-    a fake without an auth key would make that operation untestable.
+    a fake without an auth key would make that operation untestable. `sync
+    status`, `sync reset` and `daemon save-state` go through
+    `telethon_compat`, which reaches into the session's `update_state` and
+    `entities` tables because Telethon 1.44 exposes no accessor for either.
+    Faking the tables rather than the compat layer is what makes those tests
+    prove the real read path.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, world: Any = None) -> None:
         from telethon.crypto import AuthKey
 
         self.saved = 0
@@ -3859,9 +3960,40 @@ class _FakeSession:
         self.port = 443
         self.auth_key = AuthKey(bytes(range(256)))
         self.takeout_id = None
+        self._world = world
 
     def save(self) -> None:
         self.saved += 1
+
+    def get_update_states(self) -> list[tuple[int, Any]]:
+        from datetime import datetime, timezone
+
+        if self._world is None:
+            return []
+        out = []
+        for entity_id, (pts, qts, seq) in self._world.update_state.items():
+            out.append(
+                (
+                    entity_id,
+                    types.updates.State(
+                        pts=pts,
+                        qts=qts,
+                        date=datetime(2026, 9, 3, 9, 14, 7, tzinfo=timezone.utc),
+                        seq=seq,
+                        unread_count=0,
+                    ),
+                )
+            )
+        return out
+
+    def set_update_state(self, entity_id: int, state: Any) -> None:
+        if self._world is None:
+            return
+        self._world.update_state[int(entity_id)] = (
+            int(getattr(state, "pts", 0) or 0),
+            int(getattr(state, "qts", 0) or 0),
+            int(getattr(state, "seq", 0) or 0),
+        )
 
 
 def fake_client_factory(world: World | None = None) -> Any:

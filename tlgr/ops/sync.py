@@ -376,7 +376,7 @@ async def sync_difference(ctx: OpContext, req: DifferenceReq) -> DifferenceResul
     low, high = _COMMON_LIMIT
     depth = max(low, min(high, req.depth))
     state = await _resolve_common_state(client, req)
-    result = DifferenceResult(kind="common", dry_run=not req.apply)
+    result = DifferenceResult(kind="common", final=True, dry_run=not req.apply)
 
     for _ in range(64):  # a slice loop with a bound, never an open one
         request = functions.updates.GetDifferenceRequest(
@@ -386,11 +386,11 @@ async def sync_difference(ctx: OpContext, req: DifferenceReq) -> DifferenceResul
         reply = await client(request)
         name = type(reply).__name__
 
-        if name == "UpdatesDifferenceEmpty":
+        if name == "DifferenceEmpty":
             result.final = True
             result.new_seq = int(getattr(reply, "seq", 0) or 0)
             break
-        if name == "UpdatesDifferenceTooLong":
+        if name == "DifferenceTooLong":
             result.too_long = True
             result.final = True
             result.new_pts = int(getattr(reply, "pts", 0) or 0)
@@ -412,7 +412,7 @@ async def sync_difference(ctx: OpContext, req: DifferenceReq) -> DifferenceResul
         result.new_seq = int(getattr(final_state, "seq", 0) or 0)
         result.new_date = _fmt(getattr(final_state, "date", None))
 
-        if name == "UpdatesDifference":
+        if name == "Difference":
             result.final = True
             break
         # `updates.differenceSlice`: keep going from the intermediate state.
@@ -480,7 +480,7 @@ async def _channel_difference(ctx: OpContext, client: Any, req: DifferenceReq) -
         marked = _send.peer_id_of(peer)
         stored_pts = channels.get(abs(marked) % 10_000_000_000, 1)
 
-    result = DifferenceResult(kind="channel", dry_run=not req.apply)
+    result = DifferenceResult(kind="channel", final=True, dry_run=not req.apply)
     deadline = time.monotonic() + (req.follow or 0)
 
     while True:
@@ -496,7 +496,7 @@ async def _channel_difference(ctx: OpContext, client: Any, req: DifferenceReq) -
         name = type(reply).__name__
         result.timeout = getattr(reply, "timeout", None)
 
-        if name == "UpdatesChannelDifferenceTooLong":
+        if name == "ChannelDifferenceTooLong":
             result.too_long = True
             result.final = True
             ctx.warn(
@@ -504,7 +504,7 @@ async def _channel_difference(ctx: OpContext, client: Any, req: DifferenceReq) -
                 "with `tlgr sync backfill <chat>`"
             )
             break
-        if name == "UpdatesChannelDifferenceEmpty":
+        if name == "ChannelDifferenceEmpty":
             result.final = bool(getattr(reply, "final", True))
             result.new_pts = int(getattr(reply, "pts", 0) or 0)
         else:

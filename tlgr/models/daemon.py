@@ -192,7 +192,9 @@ class FloodRecord(Model):
     """One remembered rate-limit deadline."""
 
     account: str
-    kind: str = "flood_wait"
+    #: No default: `Model` omits a field equal to its default, and a record
+    #: whose kind is absent reads as one that has no kind.
+    kind: str
     method: str = ""
     chat: str | None = None
     wait_seconds: int = 0
@@ -255,8 +257,11 @@ class Job(Model):
     """The result of a job mutation."""
 
     name: str
+    #: No default at all: this is the answer `job enable`/`job disable` was
+    #: asked for, and `Model` drops a field equal to its default — so either
+    #: value would sometimes be missing from the reply.
+    enabled: bool
     account: str = ""
-    enabled: bool = False
     events: list[str] = []
     removed: bool = False
     reloaded: bool = False

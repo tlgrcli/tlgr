@@ -69,8 +69,11 @@ class DifferenceResult(Model):
     so running it cannot create the gap it was meant to diagnose.
     """
 
-    kind: str = "common"
-    final: bool = True
+    #: `common` or `channel`. No default: the discriminator must never be the
+    #: field `omit_defaults` drops.
+    kind: str
+    #: Nor this one: "was that the whole difference" is what a caller loops on.
+    final: bool
     new_pts: int | None = None
     new_qts: int | None = None
     new_seq: int | None = None

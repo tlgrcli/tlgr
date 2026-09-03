@@ -279,11 +279,14 @@ class Daemon:
         }
 
     def status(self) -> dict[str, Any]:
-        """v1's `/daemon/status` body, unchanged (it is a documented shape).
+        """v1's `/daemon/status` body. The route is gone; the shape is not.
 
-        `connections` and `healthy` exist because the wrapper existing and the
+        `daemon status` is a registry operation now and answers from
+        `/v1/status`, so nothing serves this over HTTP any more. It stays
+        because `connections`/`healthy` are the COR-37 fix stated at the level
+        the `ClientWrapper` bridge works at — the wrapper existing and the
         wrapper being usable are different facts, and v1 reported only the
-        first — a fully dead daemon looked healthy.
+        first — and both go together at PR-12.
         """
         uptime = int(time.time() - self._start_time)
         connections = {alias: client.is_connected for alias, client in self._clients.items()}

@@ -1235,3 +1235,90 @@ it. The close-friends list and the live story's call — comments, RTMP key,
 send-as identity — were on that list too until PR-5 and PR-11 landed ahead of
 this one and covered them outright. `stories` is 94.2 % covered and 100 %
 accounted.
+
+## 2026-09-04 — an operation that only refuses claims no catalog coverage
+
+Five layer-229 commands (`bot ephemeral send|delete`, `bot welcome
+list|set|delete`) are registered and exit 13. They are registered because
+"unavailable in this build" and "no such command" are different answers and an
+agent has to be able to tell them apart. They claim **nothing** in the parity
+catalog, because a `covers_partial` on an operation that cannot run would
+raise the coverage number while doing no work. Registry lint L13 gained a
+second exemption tag, `not-supported`, so the two facts can both be true: the
+op exists, and it counts for nothing.
+
+The nine catalog ids they would have claimed are waived to PR-12 with the layer
+named in the reason. The same rule removed `bots.ephemeral-callback-press` and
+`bots.rich-message-buttons` from `bot press`, and `bots.chat-join-webview` from
+`webapp open`: each is one flag on an otherwise working command, and the flag
+exits 13.
+
+## 2026-09-04 — a confirmation an *operation* must see is spelled as its own flag
+
+`--yes/-y` is a CLI-level gate: `cli/gen.py` reads it out of the Click context
+and uses it for the `destructive` confirmation. It never reaches the daemon, so
+an implementation cannot ask whether the user typed it. Three work-list items
+asked for exactly that, and each is spelled differently:
+
+* **`bot press` consent.** The consent flag *is* the consent: `--share-phone`,
+  `--share-geo`, `--poll`, `--peers`. Requiring `--yes` on top would be a
+  second word for the same decision, and pressing an ordinary button would
+  start prompting.
+* **`bot score set --yes` ("allow the score to decrease")** is Telegram's
+  `force`, and is now `--allow-lower` — which says what it does.
+* **`webapp download --yes` ("actually download")** is `--fetch`. Checking is
+  the default and the fetch is a separate verb, not a confirmation of the check.
+* **`inline send --paid-stars N`** names the amount, and naming it is the
+  consent. There is no flag that agrees to an unspecified charge.
+
+Where `--yes` genuinely fits — the whole operation is destructive — the spec
+says `destructive=True` and the existing gate does the work: `bot url-auth
+accept`, `bot token export`, `bot stop`, `bot affiliate revoke|unset`,
+`bot attach toggle`, `bot preview delete`, `bot verification set`,
+`payment info get|delete`, `payment subscription set`.
+
+## 2026-09-04 — `bot id` is a sub-noun, so the alias cannot also be a command
+
+The work list gives `bot.id.get` the alias `bot id`. It cannot have one: the
+canonical path already puts a *group* at `bot id`, and placing a hidden command
+there replaces the group, which takes `bot id get` with it. The alias is
+dropped. The same collision decided `pay saved-info`: `payment info get` and
+`payment info delete` are aliased `pay saved-info get` and `pay saved-info
+clear`, so both live under one group instead of one of them replacing it.
+
+## 2026-09-04 — `bot connection invoke` is registered and refuses
+
+Wrapping an arbitrary tlgr command in `invokeWithBusinessConnection` would mean
+re-entering the daemon's dispatcher from inside an operation, and `ops/` may
+not import `daemon/` (§2.2) — the import lint checks the AST, so a
+function-level import does not help either. The wrapper itself *is*
+implemented: it is `--business-connection` on `bot command send`, `bot press`
+and `inline send`, where it is built, sent to the connection's own DC through
+an exported sender, and tested. The command exists so that the gap has a name
+and a pointer; it exits 13.
+
+## 2026-09-04 — the reply-markup schema is one vocabulary, read and write
+
+`models/message.ReplyMarkup` was declared by PR-1 and never populated, which
+made `bots.inline-keyboard-render` and `bots.reply-keyboard-render` — both P0 —
+true only on paper. `message_to_model` now fills it, and `models/bot.Keyboard`
+is the write side of the *same* button-type vocabulary, so a keyboard read out
+of `message get --json` can be pressed with `bot press --button <n>` and sent
+back through `--keyboard`. Two schemas for one object is how a button that can
+be read stops being a button that can be pressed.
+
+Each button carries `n`, the flat row-major index, with a default of `-1`:
+`omit_defaults` would otherwise drop the index of the first button and only the
+first button. The same reasoning moved every decision-carrying boolean —
+`payable_here`, `available`, `restricted`, `allowed`, `cancelled` — to a
+tri-state, so that "false" is emitted rather than inferred from an absence.
+
+## 2026-09-04 — `bot game get` reports what the method actually returns
+
+The work list describes `messages.getEmojiGameInfo` as returning stakes and
+payouts. It takes no arguments and returns `emojiGameDiceInfo(game_hash,
+prev_stake, current_streak, params, plays_left)` or `emojiGameUnavailable`.
+tlgr reports those fields under those names rather than inventing
+`stakes`/`payouts` over an opaque `params` vector, and keeps `--emoji` as a
+label echoed back on the answer so a caller can tell which game they asked
+about. Staking TON on one is a financial action and is not implemented.

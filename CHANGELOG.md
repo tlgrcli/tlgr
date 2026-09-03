@@ -61,13 +61,45 @@ peers included: `story hide` is now the single implementation of the toggle
 and `user hide-stories` is a legacy path on it, so the two spellings cannot
 drift apart.
 
+`bot`, `inline`, `webapp` and `payment` follow — 79 operations where v1 had
+none. The whole bot surface as a person uses it (profile cards, `/start` with a
+hidden deep-link payload, slash commands, every kind of button, Telegram
+Login), the whole surface a bot uses (answering queries, publishing commands,
+the menu button, inline results, invoices), mini apps, and payments read
+end to end. Nothing is deleted, because there was no v1 bot code to delete.
+
+Three deliberate absences in that group are worth naming here.
+
+* **tlgr never spends money.** `payments.sendPaymentForm`, `sendStarsForm`,
+  `validateRequestedInfo` and `fulfillStarsSubscription` are not behind a flag
+  or an environment variable — they are not on the surface at all.
+  `payment form get` returns `payable_here: false` with the reason in the
+  payload, and a test asserts the property against the registry rather than
+  against a list of commands.
+* **`webapp open` prints the mini-app URL and stops.** There is no `--open`:
+  the URL carries the user's signed init data and is a credential.
+* **A button that discloses something is not pressed without its flag.**
+  `--share-phone`, `--share-geo`, `--poll`, `--peers`; without one, `bot press`
+  prints what it would have sent and exits 2. A Pay button exits 6.
+
+Five commands (`bot ephemeral send|delete`, `bot welcome list|set|delete`) are
+registered and exit 13 `NOT_SUPPORTED`: they need API layer 229, which the
+pinned Telethon does not speak. They exist so that "unavailable in this build"
+is a different answer from "no such command".
+
+One bug fix rides along: `message get --json` now actually prints
+`reply_markup`. PR-1 declared the shape and nothing ever populated it, which
+made its two keyboard-rendering P0 ids true only on paper — a caller could see
+no button, so a caller could press none.
+
 ### Breaking
 
 Every change below applies **only to commands generated from the operation
 registry** — in this release that is the `message`, `draft`, `chat`,
 `folder`, `auth`, `account`, `passport`, `media`, `sticker`, `gif`, `emoji`,
 `story`, `events`, `watch`, `daemon`, `sync`, `net`, `proxy`, `config`, `job`,
-`webhook`, `export`, `contact`, `user` and `resolve` groups,
+`webhook`, `export`, `contact`, `user`, `resolve`, `bot`, `inline`,
+`webapp` and `payment` groups,
 `tlgr completion`, `tlgr status`, `tlgr schema` and the `agent` group. Commands still
 hand-written under `tlgr/cli/legacy/` behave exactly as they did in v1 until
 their own migration PR, at which point these rules apply to them too.

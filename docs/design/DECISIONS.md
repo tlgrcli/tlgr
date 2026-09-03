@@ -650,6 +650,151 @@ groups' commands (`profile photo set`, `chat photo set`, `notify`,
 `settings`). Each of the 22 is waived to the PR that owns the command, rather
 than implemented here under a `media` noun where nobody would look for it.
 `media_files` is 84.6 % covered and 100 % accounted.
+## 2026-09-03 — the event taxonomy lives in `core/`, not in the bus
+
+`daemon/events.py` owned the starter vocabulary, which was fine while the bus
+was its only reader. PR-4 has three: `ops/events.py` prints it, the bus
+normalises against it, and `tools/gen_docs.py` renders it — and none of those
+three may import another (§2.2). The table is therefore `core/eventtypes.py`,
+a pure data module with no Telethon import, and `daemon/events.py` re-exports
+what it needs. `tl_to_builtins` and `peer_marked_id` moved to `core/tl.py` for
+the same reason, and `sign_body` to `core/signing.py`.
+
+## 2026-09-03 — the daemon subscribes with one `events.Raw` handler
+
+The foundation registered six high-level Telethon builders. They cannot carry
+the taxonomy: `events.NewMessage` drops service messages, `ChatAction` models
+a subset of the action kinds and silently discards the rest, and neither
+carries a topic id. A `watch` built on them can only ever show a subset of
+what the GUI shows, which is the opposite of this project's goal. One
+`events.Raw` handler plus a constructor table reaches all 163 of them.
+`normalise()` still accepts the high-level event objects, because the gateway
+and the v1 code path hand them over and dropping that would break them for
+nothing.
+
+## 2026-09-03 — `--events` is validated, and an unknown selector is exit 2
+
+`jobs.yaml` filtered its `events:` list against a hard-coded set and dropped
+anything unrecognised, so a typo produced a job that never fired and never
+said why. Every event selector — in `watch`, `events replay`, `job add`,
+`webhook set` and `config validate` — now goes through
+`eventtypes.resolve_selectors`, and an unknown one is a `USAGE` error naming
+the vocabulary. A watch that silently matches nothing is indistinguishable
+from a broken daemon.
+
+## 2026-09-03 — `OperationSpec` gained `needs_client`
+
+Reading the event bus, the flood store, the dead-letter file or the job table
+are daemon operations that need no Telegram client, and the dispatcher's
+`ensure()` would have connected an account to answer a question about the
+daemon. `needs_client=False` skips the session acquisition but still attaches
+the resolver when the account happens to be connected — so `watch --chat
+@alice` resolves a username without dialling Telegram as a side effect. It is
+also what lets `--account all` be expressed at all: there is no single session
+to acquire.
+
+## 2026-09-03 — registry lint L16: an alias may not name a command group
+
+The work list gives `config app get` the alias `config app`, `net usage get`
+the alias `net usage`, and `export account download` the alias `export
+account`. Each would be placed as a *command* where a *group* already stands,
+replacing it and deleting the canonical path with it — the failure this file
+already records for `message fact-check`. Rather than refuse them one at a
+time again, the registry now refuses the whole class at import. Five aliases
+from the work list are dropped: `config app`, `config info`, `config server`,
+`config promo`, `net usage`, `export account`, `export messages`. Every one of
+them is one word away from a path that works.
+
+## 2026-09-03 — `events list` gets no `schema events` alias
+
+Same rule, one level up: `schema` is a bare top-level command (v1's `tlgr
+schema`), so an alias at `schema events` would turn it into a group and take
+it with it. `tlgr schema events` reaches the same taxonomy as `agent.schema`'s
+own positional instead, which is the spelling the work list asked for and
+costs nothing.
+
+## 2026-09-03 — `watch --sender`, not `--since`, for the actor filter
+
+The work list spells the sender filter `--since <user>` beside a `--since
+<seq>` on the same command. Two flags cannot share a name, and a `--since`
+that means a sequence number on `events replay` and a user on `watch` would be
+worse than either. The actor filter is `--sender`.
+
+## 2026-09-03 — `sync difference --follow` loops rather than streaming
+
+The work list marks it a stream. It is not: one difference is one object, and
+`--follow` re-runs it while honouring the `timeout` the server returns. A
+stream of one-object frames would make the caller reassemble what the command
+already knows, and re-invoking a *final* channel difference faster than the
+server's own pacing is exactly the polling Telegram asks clients not to do.
+
+## 2026-09-03 — `GET /v1/events` is a GET-shaped alias of `events.watch`
+
+The endpoint predates the operation, and §12.4 keeps its query names working
+(`types`, `chats`, `timeout`). Rather than two implementations reading the
+same bus with two ideas of what a filter means, the route now decodes its
+query into the `events.watch` request struct and runs the same implementation
+through the same dispatcher. The one deliberate difference is the default: the
+endpoint's is `all`, the CLI's is v1's `new_message`.
+
+## 2026-09-03 — process control moved from `daemon/` to `core/`
+
+`daemon start` cannot import `tlgr.daemon` (§2.2), and `lifecycle.py`,
+`launchd.py` and `systemd.py` never needed the daemon application — they are
+pid files, double-forking and service units. They are now `core/process.py`,
+`core/launchd.py` and `core/systemd.py`. `daemon start --foreground` spawns
+the daemon as a subprocess and waits, rather than running it in the CLI's
+process: a daemon sharing this process's file descriptors, signal handlers and
+event loop is not the process a supervisor would start later.
+
+## 2026-09-03 — a `.production` marker refuses a development build
+
+A worktree build started a daemon against the live `~/.tlgr` and broke a
+running install: two processes on one home share session files, and Telegram
+treats a second client on one auth key as a compromised session and revokes
+it. `TlgrPaths` now refuses a home carrying a `.production` file unless
+`TLGR_ALLOW_PRODUCTION_HOME=1`, the daemon turns that refusal into exit 10
+before it takes the lock, and the test suite's autouse fixture points
+`TLGR_HOME` at a temp directory so a test that forgot to ask for one cannot
+reach the real home either.
+
+## 2026-09-03 — four models drop `omit_defaults` for one field each
+
+`Model` omits a field equal to its default, which is right for "not applicable
+or not requested" and wrong for a field that *is* the answer: `job enable`
+returning nothing where `enabled: true` belongs, a `DifferenceResult` with no
+`final`, a `FloodRecord` with no `kind`, a `TakeoutStatus` with no `active`.
+Those four are declared without a default so they are always present. The rule
+this suggests — a discriminator or a direct answer is never defaulted — is
+worth applying to the groups still to come.
+
+## 2026-09-03 — `net dc list --resolve` reports NOT_SUPPORTED
+
+The DNS-over-HTTPS config fallback means fetching Telegram's payload,
+verifying its RSA signature and feeding the `dcOptions` into the session.
+Telethon has none of it and only retries the hard-coded addresses. A
+`--resolve` that quietly did nothing would be worse than one that says so, so
+the flag exists, is documented, and answers exit 13 with the working
+alternative (a configured MTProxy).
+
+## 2026-09-03 — an encrypted push payload is decrypted, a wrong key is exit 13
+
+`events decode --push` implements the MTProto 2.0 derivation and tries both
+direction bytes, keeping the one whose recomputed `msg_key` matches. That
+check is what makes the failure honest: a wrong key produces "could not be
+decrypted" rather than plausible rubbish. tlgr still does not *register* for
+push — the daemon holds a socket — so this exists for a phone-relay setup and
+for reading `DC_UPDATE`/`SESSION_REVOKE`, the two payloads that are security
+events.
+
+## 2026-09-03 — `job test` reports actions, never runs them
+
+The work list gives it `--run-actions`. Executing a rule's actions against
+real chats is what enabling the job is for; a "test" that sends messages is a
+foot-gun with a reassuring name. The flag is accepted and answers with a note
+saying so, and `filter_trace` — every filter node, and why it passed or
+rejected — is the part that actually diagnoses "the job never fires".
+
 ## 2026-09-04 — the call groups say `media: none` on the wire, not in a footnote
 
 tlgr speaks the signalling half of calls and has no tgcalls binding, so

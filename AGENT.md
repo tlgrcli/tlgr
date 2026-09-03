@@ -727,38 +727,82 @@ what is missing rather than sending a request that will fail.
 
 ```
 tlgr agent whoami
-→ {"account": "main", "user_id": 123, "username": "me", "daemon_running": true, ...}
+→ {"output_schema_version": 2, "account": "main", "user_id": 123,
+   "daemon_running": true, "daemon_healthy": true, "layer": 227, ...}
 
-tlgr agent exit-codes
-→ {"exit_codes": {...}}
+tlgr agent capabilities [--section protocol|policy|gates|events|limits]
+→ {"layer": 227, "event_types": 114, "unsupported_constructors": [...],
+   "prohibited": [{"action": "...", "reason": "..."}],
+   "premium_gated": [...], "bot_only": [...], "admin_only": [...]}
+
+tlgr agent exit-codes [--errors] [--search TEXT]
+→ {"exit_codes": {...}, "errors": [{"name": "FloodWaitError", "code":
+   "RATE_LIMITED", "exit": 7, "retryable": true, "extra": "wait_seconds"}]}
 
 tlgr agent parity [--uncovered] [--domain NAME]
-→ {"catalog_version": "...", "required": 1797, "covered": 306, "percent": 17.0,
-   "by_priority": {...}, "by_domain": {...}, "uncovered": [...], "waivers": 1491}
+→ {"catalog_version": "...", "required": 1797, "covered": 1010, "percent": 56.2,
+   "by_priority": {...}, "by_domain": {...}, "uncovered": [...], "waivers": 787}
 
-tlgr schema [command_path...]
-→ {"schema_version": 2, "build": "2.0.0", "command": {...}}
+tlgr schema [commands|events|config|errors|exit-codes|all|<command path>...]
+→ {"schema_version": 2, "build": "2.0.0", "ops": {...}}
+
+tlgr status [--check]
+→ {"account": "main", "connected": true, "daemon_healthy": true,
+   "behind_seconds": 3, "problems": []}
 ```
+
+`agent capabilities` is the one to read before planning. It separates three
+different answers that all look like "no": what this **build** cannot do (a
+constructor newer than the pinned Telethon layer), what this **account** may
+not reach (premium, bot-only, admin-only), and what tlgr **will not** do —
+fake a read receipt, suppress typing status, misrepresent online status, pass
+a device-integrity attestation, or execute a payment — each with its reason.
+Only the first is a gap somebody might close.
 
 `agent parity` reports coverage of the pinned Telegram feature catalog: what
 tlgr can do today, per priority and per domain, with every gap either waived
-to a named later PR or listed. Use it to find out whether a capability exists
-before writing a workaround. Nothing in it is hand-maintained.
+to a named later PR or listed. Nothing in it is hand-maintained.
+
+`status --check` exits non-zero when anything is wrong, and is the cheapest
+thing for a monitor to run: a frozen account, an open send circuit breaker, an
+outstanding flood deadline and a daemon that is up but not ready are the
+states in which every *other* command starts failing.
 
 ### Daemon
 
 ```
-tlgr daemon start [--foreground]
-tlgr daemon stop
-tlgr daemon status
-→ {"running": true, "ready": true, "pid": 12345, "uptime_seconds": 3600,
-   "accounts": ["main"], "connections": {"main": true}, "disconnected": [],
-   "healthy": true, "version": "2.0.0", "protocol": 2}
+tlgr daemon start [--foreground] [--catch-up/--no-catch-up] [--wait 30s]
+tlgr daemon stop [--grace 10s]
+tlgr daemon restart
+tlgr daemon status [--check]
+→ {"running": true, "ready": true, "healthy": true, "pid": 12345,
+   "uptime_seconds": 3600, "version": "2.0.0", "protocol": 2, "layer": 227,
+   "accounts": [{"alias": "main", "state": "online", "pts": 91824,
+                 "behind_seconds": 0, "reconnects": 0}],
+   "connections": {"main": true}, "disconnected": []}
+
+tlgr daemon reconnect [--reset-proxy] [--no-catch-up]
+tlgr daemon save-state
+tlgr daemon logs [--follow] [--lines 50] [--level warning] [--grep TEXT]
+tlgr daemon flood list [--include-expired]
+tlgr daemon flood clear --every
+tlgr daemon dead-letter list | send | delete
+tlgr daemon install [--supervisor auto|launchd|systemd] | uninstall
 ```
 
-`running` means a process is alive; `ready` means it can actually serve. A
-daemon that is up but cannot reach Telegram reports `healthy: false` and names
-the accounts in `disconnected` — check `ready`, not `running`.
+`running` means a process is alive; `ready` means it can serve; `healthy`
+means the accounts are actually working. A daemon that is up but cannot reach
+Telegram reports `healthy: false` and names the accounts in `disconnected` —
+check `healthy`, not `running`.
+
+`daemon flood list` is the persistent store of rate-limit deadlines. Telethon
+remembers a `FLOOD_WAIT` in memory and forgets it on exit; tlgr writes it per
+`(account, method, peer)`, so a fresh process does not immediately re-trip a
+wait — which is how a short wait becomes a long one.
+
+`daemon dead-letter *` is the store of events no consumer could be given. A
+re-drive reuses the original delivery id, so a receiver keyed on
+`Idempotency-Key` sees a duplicate rather than a new event.
 
 **Protocol v2.** The CLI talks to the daemon over `~/.tlgr/daemon.sock`, mode
 `srw-------`, with the peer's uid checked on every connection. Four things
@@ -780,12 +824,99 @@ follow that are worth knowing as a caller:
   session goes `needs_login` and answers exit 4. `tlgr daemon stop` drains
   in-flight work instead of cancelling it.
 
+A tlgr home containing a `.production` marker file is refused by the daemon
+and by `daemon start`/`restart`/`install` unless `TLGR_ALLOW_PRODUCTION_HOME=1`
+is set. Two processes on one home share session files, and Telegram treats a
+second client on one auth key as a compromised session and revokes it.
+
+### Events and sync
+
+```
+tlgr events list [--group message|read|presence|...] [--available] [--raw]
+→ Page[EventType] — 114 types, every Update* constructor accounted for
+
+tlgr events get message_new [--json-schema]
+→ {"type": "message_new", "group": "message", "box": "pts",
+   "sources": ["UpdateNewMessage", ...], "payload": {...}, "example": {...}}
+
+tlgr events replay --since 91820 [--events TYPES] [--chat CHAT]
+tlgr events decode [FILE|-] [--push] [--key-env TLGR_PUSH_KEY]
+
+tlgr sync status [--channels] [--refresh]
+→ {"pts": 91824, "qts": 12, "seq": 4410, "behind_seconds": 3,
+   "channels": [{"chat_id": -100…, "pts": 42, "access_hash_known": true}]}
+
+tlgr sync catch-up            # updates.getDifference — replay what was missed
+tlgr sync difference [--chat CHAT] [--follow 30]   # diagnostics, read-only
+tlgr sync reset               # give up on the gap and re-baseline
+tlgr sync backfill CHAT --from-id 91800 --to-id 91900
+```
+
+`sync catch-up` **replays** a gap; `sync reset` **gives up on** one —
+everything before the new baseline is marked seen and is not recoverable. They
+are not interchangeable, and neither is `chat catchup`, which is the unread
+digest a human reads.
+
+`sync status --channels` reports `access_hash_known`. A channel without an
+access hash in the session is *skipped* by catch-up — Telethon will not call
+`getChannelDifference` without one — so it looks idle rather than broken.
+
+### Network and proxies
+
+```
+tlgr net status [--no-ping]
+→ {"connected": true, "phase": "online", "dc_id": 4, "transport": "...",
+   "ping_ms": 41.2, "layer": 227, "time_offset_seconds": 0}
+
+tlgr net ping [--probes 3] [--via nearest-dc|get-state]
+tlgr net dc list [--ipv6] [--media-only] [--cdn] [--test]
+tlgr net dc nearest
+tlgr net usage get
+
+tlgr proxy add 'tg://proxy?server=…&port=…&secret=…' [--set]
+tlgr proxy list | set <id|none|system> | remove <id> | test [--every] | link <id>
+```
+
+`time_offset_seconds` is worth reading when requests fail for no visible
+reason: MTProto derives `msg_id` from the local clock, and the server drops
+anything outside its window without an error the client can see. A drift over
+30 seconds is reported as a warning.
+
+Proxy credentials live in `~/.tlgr/proxies.json` (mode 0600) and are never
+printed by `proxy list`; `proxy link` is the one command that emits them and
+says so.
+
 ### Streaming
 
 ```
-tlgr watch [--chat CHAT1 --chat CHAT2]
-→ newline-delimited JSON to stdout, one event per line
+tlgr watch [--events TYPES] [--exclude TYPES] [--chat CHAT] [--sender USER]
+           [--since SEQ] [--no-follow] [--account all] [--print-cursor]
+→ newline-delimited JSON to stdout, one frame per line
 ```
+
+Push-driven from the daemon's event bus — nothing is polled. `--events`
+accepts an event type, a group name (`message`, `read`, `presence`, `peer`,
+`member`, `dialog`, `story`, `collection`, `call`, `bot`, `stars`, `secret`,
+`account`, `sync`), a `raw:UpdateFoo` constructor name, `all`, or v1's names
+(`new_message`, `chat_action`, `message_read`, …). An unknown selector is a
+usage error, never an empty watch. Run `tlgr events list` for the vocabulary.
+
+Each event frame is the envelope:
+
+```json
+{"seq": 91824, "ts": "2026-09-03T09:14:07Z", "account": "main",
+ "type": "message_new", "payload": {...}, "chat_id": -1001234567890,
+ "sender_id": 4242, "self_origin": false}
+```
+
+Control frames share the stream and are distinguishable by `type`: `meta`
+first, `end` last, and `heartbeat`, `gap` and `lag` in between. A `gap` frame
+means the replay window has passed and events were lost — a number, not
+silence. `--results-only` prints v1's line shape
+(`{event_type, chat_id, data}`) and drops the control frames.
+
+`--since <seq>` replays the daemon's ring buffer first; `seq` is per account,
+monotonic and persisted, so it survives a daemon restart.
 
 ## Error Response Shape
 

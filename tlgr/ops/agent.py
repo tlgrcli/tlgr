@@ -10,8 +10,9 @@ from __future__ import annotations
 import contextlib
 from typing import Annotated, Any
 
-from tlgr.core.errors import EXIT_CODE_MAP, UsageError
+from tlgr.core.errors import EXIT_CODE_MAP, DaemonError, DaemonNotRunningError, UsageError
 from tlgr.models.base import Model, Request
+from tlgr.models.daemon import HealthSummary
 from tlgr.ops._params import arg, choice, opt
 from tlgr.ops._spec import OpContext, OperationSpec, Surface
 
@@ -21,6 +22,7 @@ __all__ = [
     "SPEC_EXIT_CODES",
     "SPEC_PARITY",
     "SPEC_SCHEMA",
+    "SPEC_STATUS",
     "SPEC_WHOAMI",
     "Capabilities",
     "CompletionScript",
@@ -405,6 +407,10 @@ async def whoami(ctx: OpContext, req: WhoAmIReq) -> WhoAmI:
     return info
 
 
+def _telethon_layer() -> int:
+    return _layer()
+
+
 def _layer() -> int:
     with contextlib.suppress(Exception):
         from telethon.tl.alltlobjects import LAYER
@@ -419,6 +425,11 @@ def _telethon_version() -> str:
 
         return telethon_version()
     return ""
+
+
+def _probe() -> dict[str, Any] | None:
+    """`/v1/status`, or None. Never starts a daemon to answer for it."""
+    return _daemon_status()
 
 
 def _daemon_status() -> dict[str, Any] | None:
@@ -736,6 +747,125 @@ SPEC_CAPABILITIES = OperationSpec(
     coverage_note=(
         "states the policy and the layer bound; the switches themselves are "
         "`config set`, and recovery is `daemon reconnect`."
+    ),
+    tags=frozenset({"agent-safe"}),
+)
+
+
+# ---------------------------------------------------------------------------
+# status — the one-screen summary
+# ---------------------------------------------------------------------------
+
+
+class HealthReq(Request):
+    check: Annotated[bool, opt("--check", help="Exit non-zero when anything is unhealthy.")] = False
+
+
+async def account_status(ctx: OpContext, req: HealthReq) -> HealthSummary:
+    """One screen: account, connection, sync lag, daemon, floods.
+
+    Deliberately the union of several groups rather than a link to them. The
+    states it surfaces — frozen, terms not accepted, an unconfirmed new login,
+    a flood the account still owes — are the ones in which *every other
+    command* starts failing, and a user whose sends are being refused should
+    not have to know which of five nouns to ask first.
+    """
+    from tlgr.core.accounts import AccountManager
+    from tlgr.core.paths import default_base
+
+    base = default_base()
+    manager = AccountManager(base)
+    alias = ctx.account or manager.get_active() or ""
+    account = manager.get_account(alias) if alias else None
+
+    summary = HealthSummary(
+        account=alias,
+        user_id=account.user_id if account else None,
+        username=account.username if account else None,
+        layer=_telethon_layer(),
+    )
+
+    status = _probe()
+    if status is None:
+        summary.problems.append("the daemon is not running (tlgr daemon start)")
+        if req.check:
+            raise DaemonNotRunningError("the daemon is not answering on its socket")
+        return summary
+
+    daemon = status.get("daemon", {})
+    summary.daemon_running = True
+    summary.jobs_running = len([j for j in (status.get("jobs") or []) if j.get("running")])
+    summary.webhook_enabled = bool((status.get("webhook") or {}).get("enabled"))
+
+    rows = [row for row in (status.get("accounts") or []) if not alias or row.get("alias") == alias]
+    row = rows[0] if rows else {}
+    state = str(row.get("state", "unknown"))
+    summary.authorized = state not in ("needs_login", "unknown", "not_connected")
+    summary.connected = state == "online"
+    summary.dc_id = row.get("dc_id")
+    summary.proxy = row.get("proxy")
+    summary.behind_seconds = row.get("behind_seconds")
+    summary.flood_waits = int(row.get("flood_entries") or 0)
+    summary.daemon_healthy = bool(daemon.get("ready")) and state == "online"
+
+    if state == "needs_login":
+        summary.problems.append(f"{alias} needs to log in again (tlgr account add)")
+    if state == "frozen":
+        summary.frozen = {"state": "frozen", "reason": row.get("reason") or ""}
+        summary.problems.append(
+            f"{alias} is frozen by Telegram; see `tlgr config app get --frozen` for the appeal link"
+        )
+    if str(row.get("circuit", "closed")) != "closed":
+        summary.problems.append(
+            f"the send circuit breaker is open for {alias}: {row.get('circuit_reason') or 'spam flagged'}"
+        )
+    if summary.flood_waits:
+        summary.problems.append(
+            f"{summary.flood_waits} rate-limit deadline(s) outstanding (tlgr daemon flood list)"
+        )
+    if not daemon.get("ready"):
+        summary.problems.append("the daemon is running but not ready")
+
+    if req.check and summary.problems:
+        raise DaemonError("; ".join(summary.problems))
+    return summary
+
+
+SPEC_STATUS = OperationSpec(
+    id="agent.status",
+    request=HealthReq,
+    response=HealthSummary,
+    impl=account_status,
+    summary="One-screen health summary: account, connection, sync lag, daemon, floods",
+    description=(
+        "The union of several groups on purpose. A frozen account, an open "
+        "circuit breaker, an outstanding flood deadline and a daemon that is "
+        "up but not ready are the states in which every *other* command "
+        "starts failing, and `--check` turns them into an exit code a monitor "
+        "can read."
+    ),
+    legacy_paths=("status",),
+    needs_account=False,
+    needs_auth=False,
+    needs_client=False,
+    surface=Surface.LOCAL,
+    idempotent=True,
+    rate_class="local",
+    timeout_s=30,
+    columns=("account", "connected", "daemon_healthy", "behind_seconds", "problems"),
+    example={
+        "account": "work",
+        "authorized": True,
+        "connected": True,
+        "daemon_running": True,
+        "daemon_healthy": True,
+        "layer": 227,
+    },
+    example_args="status --check",
+    covers=("updates.invoke-with-layer",),
+    covers_partial=("updates.config-account-frozen", "updates.net-flood-wait"),
+    coverage_note=(
+        "surfaces the states; the detail is `config app get --frozen` and `daemon flood list`."
     ),
     tags=frozenset({"agent-safe"}),
 )

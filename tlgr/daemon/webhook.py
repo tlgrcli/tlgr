@@ -24,8 +24,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import hashlib
-import hmac
 import json
 import logging
 import os
@@ -39,6 +37,7 @@ import msgspec
 
 from tlgr.core.config import CONFIG_DIR, WebhookConfig
 from tlgr.core.paths import write_private
+from tlgr.core.signing import sign_body
 from tlgr.models.event import EventEnvelope
 
 log = logging.getLogger("tlgr.webhook")
@@ -51,17 +50,6 @@ DEAD_LETTER_FILE = CONFIG_DIR / "dead_letter.jsonl"
 #: that an endpoint that has been down for a week cannot fill a disk.
 _DEAD_LETTER_MAX_BYTES = 16 * 1024 * 1024
 _DEAD_LETTER_BACKUPS = 3
-
-
-def sign_body(secret: str, body: bytes) -> str:
-    """`sha256=<hex>` over the exact bytes that go on the wire.
-
-    Over the *bytes*, not over a re-encoded dict: a receiver verifies what it
-    received, and any re-encoding (key order, whitespace, escaping) makes an
-    honest signature fail.
-    """
-    digest = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
-    return f"sha256={digest}"
 
 
 class WebhookPusher:

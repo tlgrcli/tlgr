@@ -7,7 +7,7 @@ Coverage against the Telegram feature catalog, computed from the registry: every
 `covered` is implemented today. `acct%` is covered **plus** waived — an id that belongs to a group a later PR owns, named in `tlgr/data/parity_waivers.toml` with the PR that closes it. Ids whose feasibility is `not-applicable` or `prohibited` are excluded from the denominator once and never counted again.
 
 ```
-catalog 2026-09-02 — 346 operations, 517 invocable paths
+catalog 2026-09-02 — 355 operations, 532 invocable paths
 
 domain                        covered    req       %   acct%  ops
 auth_sessions_security             87     89   97.8%  100.0%  44
@@ -19,19 +19,19 @@ groups_channels_admin              26    162   16.0%  100.0%  15
 media_files                       121    143   84.6%  100.0%  60
 messages_core                     159    167   95.2%  100.0%  54
 polls_reactions_content           117    174   67.2%  100.0%  57
-profile_settings_privacy           21    178   11.8%  100.0%  20
+profile_settings_privacy           25    178   14.0%  100.0%  24
 stories                            12    120   10.0%  100.0%  9
-updates_sync_network              185    189   97.9%  100.0%  58
+updates_sync_network              188    189   99.5%  100.0%  66
 
 priority                      covered    req       %   acct%
 P0                                116    178   65.2%  100.0%
 P1                                240    379   63.3%  100.0%
-P2                                316    610   51.8%  100.0%
-P3                                331    630   52.5%  100.0%
+P2                                320    610   52.5%  100.0%
+P3                                334    630   53.0%  100.0%
 
-TOTAL                            1003   1797   55.8%  100.0%
+TOTAL                            1010   1797   56.2%  100.0%
 excluded: not-applicable 79, prohibited 40
-uncovered: 794 (794 waived with a PR number)
+uncovered: 787 (787 waived with a PR number)
 ```
 
 ## By domain
@@ -47,9 +47,9 @@ uncovered: 794 (794 waived with a PR number)
 | `media_files` | 121 | 143 | 84.6% | 100.0% | 60 |
 | `messages_core` | 159 | 167 | 95.2% | 100.0% | 54 |
 | `polls_reactions_content` | 117 | 174 | 67.2% | 100.0% | 57 |
-| `profile_settings_privacy` | 21 | 178 | 11.8% | 100.0% | 20 |
+| `profile_settings_privacy` | 25 | 178 | 14.0% | 100.0% | 24 |
 | `stories` | 12 | 120 | 10.0% | 100.0% | 9 |
-| `updates_sync_network` | 185 | 189 | 97.9% | 100.0% | 58 |
+| `updates_sync_network` | 188 | 189 | 99.5% | 100.0% | 66 |
 
 ## By priority
 
@@ -57,8 +57,8 @@ uncovered: 794 (794 waived with a PR number)
 |---|---:|---:|---:|---:|
 | P0 | 116 | 178 | 65.2% | 100.0% |
 | P1 | 240 | 379 | 63.3% | 100.0% |
-| P2 | 316 | 610 | 51.8% | 100.0% |
-| P3 | 331 | 630 | 52.5% | 100.0% |
+| P2 | 320 | 610 | 52.5% | 100.0% |
+| P3 | 334 | 630 | 53.0% | 100.0% |
 
 ## Partial coverage
 
@@ -91,9 +91,6 @@ uncovered: 794 (794 waived with a PR number)
 | `richmsg.tasks` | `message.edit` | Checklist tasks live in a layer-229 rich body; --toggle-task is refused. |
 | `richmsg.translate` | `message.translate` | Rich-body translation is layer 229 and refused with NOT_SUPPORTED. |
 | `stories.live-join` | `vc.download` | watching a live story as a viewer is owned by `story live get` |
-| `updates.invoke-with-layer` | `agent.capabilities` | states the policy and the layer bound; the switches themselves are `config set`, and recovery is `daemon reconnect`. |
-| `updates.stream-webhook-delivery` | `daemon.dead-letter.delete` | the disposal half; delivery is the webhook pusher's. |
-| `updates.sync-duplicate-suppression` | `events.replay` | replays a range; following it live is `watch`, and de-duplication is the consumer's job through the envelope's stable seq. |
 
 ## Gaps in a migrated domain
 
@@ -157,8 +154,6 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `profile.photo-set-video` | P2 | Animated profile photo (video avatar) | waived until PR-12: A video avatar is the `profile` group (PR-12). |
 | `profile.saved-music` | P2 | Music on profile (save songs to profile, list, reorder) | waived until PR-12: Music on a profile is the `profile` group (PR-12). |
 | `sticker.group-sticker-set` | P2 | Group sticker set and group custom-emoji set (supergroup admin) | waived until PR-7: A supergroup's sticker set is a chat setting (PR-7). |
-| `updates.takeout-export-run` | P2 | Run a full account export | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
-| `updates.takeout-session` | P2 | Start/finish a data-export (takeout) session | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
 | `attach.file-download-check` | P3 | Mini-app file download permission check | waived until PR-10: Mini-app download permission is the `webapp` surface (PR-10). |
 | `attach.open-mini-app` | P3 | Open an attachment-menu mini app in a chat | waived until PR-10: Opening a mini app is the `webapp` group (PR-10). |
 | `auction.acquired-gifts` | P3 | Gifts I won in an auction | waived until PR-12: collectible-gift auctions are the `gift` surface (PR-12). |
@@ -232,4 +227,3 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `stars.topup-options` | P3 | Star purchase packages | waived until PR-12: the Star balance and top-up packages are the `stars` surface (PR-12). |
 | `theme.cloud-themes` | P3 | Cloud themes (list, install, create, update, upload theme file) | waived until PR-12: Cloud themes are the `settings` group (PR-12). |
 | `updates.invoke-business-connection` | P3 | Act on behalf of a connected business account | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |
-| `updates.takeout-split-ranges` | P3 | Paginate an export by message ranges | waived until PR-4: events, watch, daemon, sync, proxy and export land in PR-4. |

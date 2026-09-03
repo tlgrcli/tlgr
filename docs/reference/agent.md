@@ -2,7 +2,7 @@
 
 # `tlgr agent`
 
-6 operations. Every one takes the global flags (`--json`, `--plain`, `-a/--account`, `--results-only`, `--select`, `--dry-run`, `--yes`, `--no-input`, `--flood-wait-max`, `-v`) anywhere on the line.
+7 operations. Every one takes the global flags (`--json`, `--plain`, `-a/--account`, `--results-only`, `--select`, `--dry-run`, `--yes`, `--no-input`, `--flood-wait-max`, `-v`) anywhere on the line.
 
 | Command | Summary |
 |---|---|
@@ -11,6 +11,7 @@
 | [`agent exit-codes`](#tlgr-agent-exit-codes) | Print the stable exit codes, and the RPC error to exit-code mapping |
 | [`agent parity`](#tlgr-agent-parity) | Report feature-parity coverage against the Telegram catalog |
 | [`agent schema`](#tlgr-agent-schema) | Print the machine-readable schema of the CLI |
+| [`agent status`](#tlgr-agent-status) | One-screen health summary: account, connection, sync lag, daemon, floods |
 | [`agent whoami`](#tlgr-agent-whoami) | Report the active account, daemon health and client identity |
 
 ### `agent capabilities`
@@ -139,6 +140,38 @@ Also invocable as: `tlgr schema`
 ```console
 $ tlgr schema message --json
 ```
+
+### `agent status`
+
+One-screen health summary: account, connection, sync lag, daemon, floods.
+
+The union of several groups on purpose. A frozen account, an open circuit breaker, an outstanding flood deadline and a daemon that is up but not ready are the states in which every *other* command starts failing, and `--check` turns them into an exit code a monitor can read.
+
+```
+tlgr agent status [OPTIONS]
+```
+
+**idempotent (reports `already`) · runs without an account · returns `HealthSummary`**
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--check` | flag |  | Exit non-zero when anything is unhealthy. |
+
+Also invocable as: `tlgr status`
+
+```console
+$ tlgr status --check --json
+```
+
+<details><summary>Catalog coverage (1 full, 2 partial)</summary>
+
+Full: `updates.invoke-with-layer`
+
+Partial: `updates.config-account-frozen`, `updates.net-flood-wait`
+
+surfaces the states; the detail is `config app get --frozen` and `daemon flood list`.
+
+</details>
 
 ### `agent whoami`
 

@@ -2,7 +2,7 @@
 
 # Command reference
 
-257 operations across 18 groups, generated from the operation registry. Groups still served by v1's hand-written commands are not listed here; they arrive with their own PR.
+280 operations across 19 groups, generated from the operation registry. Groups still served by v1's hand-written commands are not listed here; they arrive with their own PR.
 
 | Group | Operations | Reference |
 |---|---:|---|
@@ -24,6 +24,7 @@
 | `search` | 3 | [search.md](search.md) |
 | `sticker` | 20 | [sticker.md](sticker.md) |
 | `todo` | 5 | [todo.md](todo.md) |
+| `vc` | 23 | [vc.md](vc.md) |
 
 - [PARITY.md](PARITY.md) — coverage against the Telegram feature catalog.
 - `tlgr schema --json` — the same information as JSON Schema draft 2020-12.

@@ -7,31 +7,31 @@ Coverage against the Telegram feature catalog, computed from the registry: every
 `covered` is implemented today. `acct%` is covered **plus** waived — an id that belongs to a group a later PR owns, named in `tlgr/data/parity_waivers.toml` with the PR that closes it. Ids whose feasibility is `not-applicable` or `prohibited` are excluded from the denominator once and never counted again.
 
 ```
-catalog 2026-09-02 — 244 operations, 356 invocable paths
+catalog 2026-09-02 — 289 operations, 429 invocable paths
 
 domain                        covered    req       %   acct%  ops
 auth_sessions_security             85     89   95.5%  100.0%  43
 bots_inline_payments               13    175    7.4%  100.0%  5
-calls_voicechats                    4    133    3.0%  100.0%  4
+calls_voicechats                  126    133   94.7%  100.0%  49
 contacts_users                     17    121   14.0%  100.0%  12
 dialogs_chats                     112    146   76.7%  100.0%  54
 groups_channels_admin              26    162   16.0%  100.0%  15
 media_files                       121    143   84.6%  100.0%  60
-messages_core                     157    167   94.0%  100.0%  52
+messages_core                     158    167   94.6%  100.0%  53
 polls_reactions_content           114    174   65.5%  100.0%  56
 profile_settings_privacy           20    178   11.2%  100.0%  19
-stories                             5    120    4.2%  100.0%  4
+stories                            12    120   10.0%  100.0%  9
 updates_sync_network                4    189    2.1%  100.0%  3
 
 priority                      covered    req       %   acct%
-P0                                 86    178   48.3%  100.0%
-P1                                177    379   46.7%  100.0%
-P2                                210    610   34.4%  100.0%
-P3                                205    630   32.5%  100.0%
+P0                                 95    178   53.4%  100.0%
+P1                                201    379   53.0%  100.0%
+P2                                256    610   42.0%  100.0%
+P3                                256    630   40.6%  100.0%
 
-TOTAL                             678   1797   37.7%  100.0%
+TOTAL                             808   1797   45.0%  100.0%
 excluded: not-applicable 79, prohibited 40
-uncovered: 1119 (1119 waived with a PR number)
+uncovered: 989 (989 waived with a PR number)
 ```
 
 ## By domain
@@ -40,25 +40,25 @@ uncovered: 1119 (1119 waived with a PR number)
 |---|---:|---:|---:|---:|---:|
 | `auth_sessions_security` | 85 | 89 | 95.5% | 100.0% | 43 |
 | `bots_inline_payments` | 13 | 175 | 7.4% | 100.0% | 5 |
-| `calls_voicechats` | 4 | 133 | 3.0% | 100.0% | 4 |
+| `calls_voicechats` | 126 | 133 | 94.7% | 100.0% | 49 |
 | `contacts_users` | 17 | 121 | 14.0% | 100.0% | 12 |
 | `dialogs_chats` | 112 | 146 | 76.7% | 100.0% | 54 |
 | `groups_channels_admin` | 26 | 162 | 16.0% | 100.0% | 15 |
 | `media_files` | 121 | 143 | 84.6% | 100.0% | 60 |
-| `messages_core` | 157 | 167 | 94.0% | 100.0% | 52 |
+| `messages_core` | 158 | 167 | 94.6% | 100.0% | 53 |
 | `polls_reactions_content` | 114 | 174 | 65.5% | 100.0% | 56 |
 | `profile_settings_privacy` | 20 | 178 | 11.2% | 100.0% | 19 |
-| `stories` | 5 | 120 | 4.2% | 100.0% | 4 |
+| `stories` | 12 | 120 | 10.0% | 100.0% | 9 |
 | `updates_sync_network` | 4 | 189 | 2.1% | 100.0% | 3 |
 
 ## By priority
 
 | Priority | Covered | Required | % | Accounted % |
 |---|---:|---:|---:|---:|
-| P0 | 86 | 178 | 48.3% | 100.0% |
-| P1 | 177 | 379 | 46.7% | 100.0% |
-| P2 | 210 | 610 | 34.4% | 100.0% |
-| P3 | 205 | 630 | 32.5% | 100.0% |
+| P0 | 95 | 178 | 53.4% | 100.0% |
+| P1 | 201 | 379 | 53.0% | 100.0% |
+| P2 | 256 | 610 | 42.0% | 100.0% |
+| P3 | 256 | 630 | 40.6% | 100.0% |
 
 ## Partial coverage
 
@@ -67,6 +67,15 @@ uncovered: 1119 (1119 waived with a PR number)
 | `auth.passport-authorize` | `passport.form.get` | The request can be read in full; accepting it needs the Passport secure-value crypto Telethon does not provide (see `passport authorize`). |
 | `bots.rich-message-translate` | `message.translate` | Rich-body translation is layer 229 and refused with NOT_SUPPORTED. |
 | `bots.rich-message-view` | `message.get` | --rich is refused with NOT_SUPPORTED until Telethon carries layer 229. |
+| `calls.emoji-fingerprint` | `call.get` | the four verification values are reported as indices into Telegram's 333-emoji table; tlgr does not bundle the table, and guessing it for a security check would be worse than not printing it |
+| `calls.migrate-to-conference` | `call.invite` | the migration and the invitations are complete; creating the conference needs a signed e2e.chain block, which tlgr accepts (--block) but cannot build |
+| `conference.broadcast-nonce` | `conference.send` | tlgr is the transport: it carries a payload an external E2E implementation produced, and cannot encrypt or sign one itself |
+| `conference.create-and-join` | `conference.create` | creating the link is complete; joining at creation needs a signed e2e.chain block, which tlgr accepts (--block) but cannot build |
+| `conference.encrypted-message` | `conference.send` | tlgr is the transport: it carries a payload an external E2E implementation produced, and cannot encrypt or sign one itself |
+| `conference.join-by-invite-message` | `conference.join` | the request is built and sent; the signed join block it needs is an e2e.chain builder tlgr does not have and accepts from outside instead |
+| `conference.kick-participant` | `conference.remove` | the request is built and sent; the removal block that rotates the shared key is an e2e.chain builder tlgr does not have and accepts from outside |
+| `conference.link-qr` | `conference.get` | `--qr` returns the exact text to encode; drawing the code needs a QR encoder tlgr does not bundle |
+| `conference.prune-left` | `conference.remove` | the request is built and sent; the removal block that rotates the shared key is an e2e.chain builder tlgr does not have and accepts from outside |
 | `contacts-users.contacts-sort` | `chat.list` | Peer search here is a substring match over the dialog list; the global one is `contact search`. `--sort` orders chats, not contacts. |
 | `contacts-users.user-leave-common-groups` | `chat.leave` | `--common-with` leaves the shared groups; listing them is `user chat list`. |
 | `dialogs.search-peers` | `chat.list` | Peer search here is a substring match over the dialog list; the global one is `contact search`. `--sort` orders chats, not contacts. |
@@ -81,6 +90,7 @@ uncovered: 1119 (1119 waived with a PR number)
 | `richmsg.send` | `message.send` | A layer-229 rich body is refused with NOT_SUPPORTED: the pinned Telethon speaks layer 227 and cannot serialise inputRichMessage*. |
 | `richmsg.tasks` | `message.edit` | Checklist tasks live in a layer-229 rich body; --toggle-task is refused. |
 | `richmsg.translate` | `message.translate` | Rich-body translation is layer 229 and refused with NOT_SUPPORTED. |
+| `stories.live-join` | `vc.download` | watching a live story as a viewer is owned by `story live get` |
 
 ## Gaps in a migrated domain
 
@@ -88,17 +98,18 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 
 | Catalog id | Priority | Feature | Closed by |
 |---|---|---|---|
+| `calls.privacy-who-can-call` | P0 | Privacy: who can call me | waived until PR-12: inputPrivacyKeyPhoneCall is a privacy rule, set with `privacy set` in the privacy group (PR-12); `call start` already reports the peer's side of it. |
 | `dialogs.block-user` | P0 | Block user | waived until PR-5: Blocking is `user block` (PR-5); `chat report --block` calls it. |
 | `dialogs.resolve-peer` | P0 | Resolve @username / phone / t.me link to a chat | waived until PR-5: Turning a @username, a phone number or a t.me link into a chat is `resolve` (PR-5); the chat group consumes the resolver rather than exposing it. |
 | `dialogs.unblock-user` | P0 | Unblock user | waived until PR-5: Unblocking is `user unblock` (PR-5). |
 | `profile.photo-set` | P0 | Set profile photo | waived until PR-12: Setting your profile photo is `profile photo set` (PR-12). |
+| `calls.privacy-p2p` | P1 | Privacy: peer-to-peer calls | waived until PR-12: inputPrivacyKeyPhoneP2P is the same account.setPrivacy surface as every other privacy key (PR-12). |
 | `chat.photo-set` | P1 | Set group / channel photo (photo, video or emoji/sticker avatar) | waived until PR-7: A group or channel photo is `chat photo set` (PR-7). |
 | `contact.receive-card` | P1 | Add a received contact card to your address book | waived until PR-5: contact cards, notes and birthdays are the `contact` surface (PR-5). |
 | `dialogs.actionbar-add-contact` | P1 | Add to contacts from the action bar | waived until PR-5: The bar's Add-contact button is `contact add` (PR-5). |
 | `dialogs.block-stories` | P1 | Hide my stories from a user (story blocklist) | waived until PR-5: The story blocklist is a privacy surface on the user group (PR-5). |
 | `dialogs.dialog-exists` | P1 | Does a dialog with this peer exist | waived until PR-5: `user dialog-status` answers this and migrates with the user group (PR-5). |
 | `dialogs.notify-exceptions` | P1 | List notification exceptions | waived until PR-12: The exceptions *list* is `notify exceptions` (PR-12); one chat's exception is `chat notify`. |
-| `messages-core.delete-call-history` | P1 | Delete call-log messages | waived until PR-3: The call log is a chat-level history (PR-3). |
 | `messages-core.message-watch-events` | P1 | Live stream of new / edited / deleted messages and read receipts | waived until PR-4: The live message stream is the event bus surface (PR-4). |
 | `profile.photos-list-history` | P1 | View own / another user's profile photo history | waived until PR-12: Profile photo history is the `profile` group (PR-12). |
 | `stars.balance` | P1 | Telegram Stars balance | waived until PR-12: the Star balance and top-up packages are the `stars` surface (PR-12). |
@@ -134,6 +145,9 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `giveaway.gift-code-received` | P2 | Receive a giveaway gift code | waived until PR-12: giveaways and channel boosts are the `giveaway`/`boost` surface (PR-12). |
 | `giveaway.info` | P2 | Giveaway status / did I win? | waived until PR-12: giveaways and channel boosts are the `giveaway`/`boost` surface (PR-12). |
 | `giveaway.join-by-boosting` | P2 | Join a giveaway by boosting the channel | waived until PR-12: giveaways and channel boosts are the `giveaway`/`boost` surface (PR-12). |
+| `groupcall.admin-log` | P2 | Video chat events in the admin log | waived until PR-7: channels.getAdminLog is one command with one filter vocabulary; the video-chat events are read through `chat admin log` (PR-7). |
+| `groupcall.admin-right-manage-call` | P2 | Grant the 'Manage video chats' admin right | waived until PR-7: manage_call is one keyword in the admin-rights vocabulary owned by `chat admin promote` (PR-7). |
+| `livestory.start-rtmp` | P2 | Start an RTMP live story | waived until PR-8: Starting a live story is stories.startLive (PR-8); the RTMP credentials half is already covered here by `vc rtmp get --live-story`. |
 | `messages-core.message-statistics` | P2 | Post statistics and public forwards (channel admins) | waived until PR-4: Post statistics and public forwards are the `stats` surface (PR-4). |
 | `messages-core.quick-reply-list` | P2 | Quick replies (business shortcuts): list shortcuts and their messages | waived until PR-12: Business quick-reply shortcuts are a business setting (PR-12); `message send --quick-reply` uses one. |
 | `messages-core.quick-reply-manage` | P2 | Create/edit/reorder/delete quick reply shortcuts and their messages | waived until PR-12: Business quick-reply shortcuts are a business setting (PR-12). |
@@ -154,6 +168,8 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `auth.prelogin-language` | P3 | Suggested interface language on the login screen | waived until PR-4: The suggested login-screen language comes from the language pack, which is the `config`/langpack surface in PR-4. |
 | `bot.media-previews` | P3 | Manage a bot's Mini App media previews (owned bots) | waived until PR-10: A bot's Mini App previews are the `bot` group (PR-10). |
 | `bot.profile-photo-set` | P3 | Set profile photo of an owned bot | waived until PR-10: Setting an owned bot's photo is the `bot` group (PR-10). |
+| `calls.reset-top-caller` | P3 | Remove a peer from call suggestions | waived until PR-5: contacts.resetTopPeerRating is the same surface as top-callers (PR-5). |
+| `calls.top-callers` | P3 | Frequently-called contacts suggestions | waived until PR-5: contacts.getTopPeers is the contact group's suggestion surface (PR-5); the phone-calls category is one flag on it. |
 | `contact.birthday-accept` | P3 | Accept a suggested birthday | waived until PR-5: contact cards, notes and birthdays are the `contact` surface (PR-5). |
 | `contact.birthdays` | P3 | Contacts' birthdays (gift prompts) | waived until PR-5: contact cards, notes and birthdays are the `contact` surface (PR-5). |
 | `dialogs.blocked-set-bulk` | P3 | Replace the whole blocklist | waived until PR-5: Replacing the whole blocklist is `user block --from-file` (PR-5). |

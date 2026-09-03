@@ -25,10 +25,10 @@ ROOT = Path(__file__).resolve().parent.parent
 #: Every P0 catalog id the landed PRs claim. Raised by each group PR, never
 #: lowered. ARCHITECTURE §1.3: "P0 coverage may never decrease and must reach
 #: 100 % before 2.0.0 final".
-P0_FLOOR = 86
+P0_FLOOR = 95
 
 #: The floor for total covered ids. Same rule, weaker guarantee.
-COVERED_FLOOR = 678
+COVERED_FLOOR = 808
 
 #: Every P0 catalog id PR-1's own operations cover, named rather than
 #: counted, so a swap (one dropped, one added) cannot pass a count check
@@ -74,6 +74,21 @@ PR1_P0_IDS = frozenset(
     }
 )
 
+#: Every P0 catalog id PR-11's `call`/`vc`/`conference` operations cover. Same
+#: rule as `PR1_P0_IDS`: named rather than counted, so a swap cannot pass.
+PR11_P0_IDS = frozenset(
+    {
+        "calls.decline-call",
+        "calls.hangup",
+        "calls.history-list",
+        "calls.incoming-signalling",
+        "groupcall.create-video-chat",
+        "groupcall.get",
+        "groupcall.leave",
+        "groupcall.list-participants",
+        "groupcall.mute-self",
+    }
+)
 
 #: The P0 ids PR-3's own operations cover, named for the same reason: a swap
 #: must not pass a count check.
@@ -168,6 +183,7 @@ P0_OWNERS = (
     (("chat.", "folder."), PR3_P0_IDS),
     (("media.", "sticker.", "gif.", "emoji."), PR6_P0_IDS),
     (("poll.", "reaction.", "todo.", "location.", "search."), PR9_P0_IDS),
+    (("call.", "vc.", "conference."), PR11_P0_IDS),
 )
 
 
@@ -239,7 +255,7 @@ class TestTheGate:
         assert missing == [], f"a landed PR dropped coverage of {missing}"
 
     @pytest.mark.parametrize(
-        "prefixes,expected", P0_OWNERS, ids=["pr1", "pr2", "pr3", "pr6", "pr9"]
+        "prefixes,expected", P0_OWNERS, ids=["pr1", "pr2", "pr3", "pr6", "pr9", "pr11"]
     )
     def test_the_floor_is_the_whole_truth(self, prefixes, expected):
         """Each named list is exactly the P0 set its own groups claim.
@@ -280,6 +296,17 @@ class TestTheGate:
         stats = report.by_domain["auth_sessions_security"]
         assert stats["accounted_percent"] == 100.0
         assert stats["covered"] >= 85
+
+    def test_calls_voicechats_is_fully_accounted_for(self, report):
+        """PR-11's own domain: implemented, or waived to a named other PR.
+
+        The nine waivers left in it are all ids whose *subject* belongs to
+        another group — privacy keys, admin rights, the admin log, top peers —
+        not calls work nobody did.
+        """
+        stats = report.by_domain["calls_voicechats"]
+        assert stats["accounted_percent"] == 100.0
+        assert stats["covered"] >= 124
 
     def test_messages_core_is_fully_accounted_for(self, report):
         """PR-1's own domain: implemented, or waived to a named later PR."""

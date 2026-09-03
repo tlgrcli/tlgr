@@ -32,6 +32,7 @@ return value.
 from __future__ import annotations
 
 import asyncio
+import base64
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -40,6 +41,8 @@ from typing import Any
 from telethon.tl import types
 
 __all__ = [
+    "DH_G",
+    "DH_PRIME",
     "AuthWorld",
     "DialogState",
     "FakeTelegramClient",
@@ -57,6 +60,43 @@ __all__ = [
     "make_wallpaper",
     "make_web_authorization",
 ]
+
+#: A real 2048-bit safe prime (`openssl dhparam 2048`, generator 2).
+#:
+#: It has to be a real one: `ops/_calls.validate_dh` refuses to place a call on
+#: parameters it cannot verify, so a made-up prime would mean the call tests
+#: only ever exercised the refusal. Generating one per test run costs about
+#: forty seconds, which is why it is checked in instead.
+DH_PRIME = base64.b64decode(
+    "2g+3RJXZHhI9MewrU3whtSPnTbG+SLjAXxxP3+VJWLdkYnVDmWKFY5QDjyDsSYtUWBAgyyLEqu99"
+    "QpjIvDiDsYIEYJNjKUhm8dEvl9Zz3W19TCg+OADBCu+O/qr0zbMNALT0B+zZHxcUDtGOAGq8ClKu"
+    "B69vWNmwGwo3aQ4WQZWmjc24mY2hbVJBNRLGFRkvGUKYXqBX3Z4nmM6SchvAjKkVtdiJbJehjFVq"
+    "D1jFMi0NSFn/9+IHF38RK2pzmE1W0NQeekeSEHsr285hvNSVxt3HfKkOq/2TpVKvdAYBnzYEca02"
+    "EqyHyJRYMMmgTpicwNulUGFO2w1LUPVt6aZ9Jw=="
+)
+DH_G = 2
+
+
+class _FullUser:
+    """`users.getFullUser`, reduced to the three call-availability flags."""
+
+    def __init__(self, available: bool, users: list[Any]) -> None:
+        self.full_user = _FullUserInner(available)
+        self.users = users
+        self.chats: list[Any] = []
+
+
+class _FullUserInner:
+    def __init__(self, available: bool) -> None:
+        self.phone_calls_available = available
+        self.video_calls_available = available
+        self.phone_calls_private = not available
+
+
+def _json_object(mapping: dict[str, Any]) -> Any:
+    return types.JsonObject(
+        value=[types.JsonObjectValue(key=key, value=_json_value(v)) for key, v in mapping.items()]
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -510,7 +550,6 @@ class World:
     sensitive_can_change: bool = True
     auto_download: dict[str, dict[str, Any]] = field(default_factory=dict)
     auto_save: dict[str, Any] = field(default_factory=dict)
-    app_config: dict[str, Any] = field(default_factory=dict)
     #: profile photo bytes, per marked chat id.
     profile_photos: dict[int, bytes] = field(default_factory=dict)
     #: story id → `types.MessageMediaDocument`-shaped media.
@@ -519,6 +558,42 @@ class World:
     saved_gif_limit: int = 200
     next_document_id: int = 7000
     faved_limit: int = 5
+
+    # -- the call world ----------------------------------------------------
+    #
+    # Calls are held the way Telegram holds them: a group call belongs to a
+    # chat (or to nobody, for a conference), a 1:1 call exists only as the
+    # constructor an update carried. A test therefore says "this chat has a
+    # video chat" and the ops resolve it exactly as they would in production.
+
+    #: call id → `types.GroupCall`.
+    group_calls: dict[int, Any] = field(default_factory=dict)
+    #: marked chat id → the group call id running in it.
+    chat_calls: dict[int, int] = field(default_factory=dict)
+    #: call id → its `types.GroupCallParticipant` list.
+    participants: dict[int, list[Any]] = field(default_factory=dict)
+    #: call id → the `phoneCall*` constructor a 1:1 call is currently in.
+    phone_calls: dict[int, Any] = field(default_factory=dict)
+    #: The service messages `messages.search` returns for the Calls tab.
+    call_log: list[Any] = field(default_factory=list)
+    #: `help.getAppConfig`, reduced to the keys the call surface reads.
+    app_config: dict[str, Any] = field(
+        default_factory=lambda: {
+            "call_requests_disabled": False,
+            "conference_call_size_limit": 200,
+            "group_call_message_length_limit": 128,
+            "group_call_message_ttl": 10,
+            "groupcall_video_participants_max": 30,
+        }
+    )
+    #: The E2E chain, newest last, as raw blocks.
+    chain_blocks: list[bytes] = field(default_factory=lambda: [b"block-0", b"block-1"])
+    #: What one `upload.getFile` against a stream location returns.
+    stream_chunk: bytes = b"OggS" + b"\0" * 60
+    rtmp_url: str = "rtmps://dc4-1.rtmp.t.me/s/"
+    rtmp_key: str = "0123456789abcdef"
+    #: Set when the peer should look uncallable to `call start --check`.
+    calls_available: bool = True
 
     # -- behaviour knobs ---------------------------------------------------
 
@@ -719,6 +794,110 @@ class World:
         )
         self.filters.append(folder)
         return folder
+
+    # -- the call world ----------------------------------------------------
+
+    def add_group_call(
+        self,
+        call_id: int = 900100,
+        *,
+        chat_id: int | None = None,
+        title: str | None = "standup",
+        participants_count: int = 2,
+        **flags: Any,
+    ) -> types.GroupCall:
+        """Put a group call in the world, optionally running in a chat."""
+        call = types.GroupCall(
+            id=call_id,
+            access_hash=call_id * 3,
+            participants_count=participants_count,
+            unmuted_video_limit=flags.pop("unmuted_video_limit", 10),
+            version=flags.pop("version", 1),
+            title=title,
+            **flags,
+        )
+        self.group_calls[call_id] = call
+        if chat_id is not None:
+            self.chat_calls[chat_id] = call_id
+        return call
+
+    def add_participant(
+        self, call_id: int, user_id: int, *, source: int = 0, **flags: Any
+    ) -> types.GroupCallParticipant:
+        participant = types.GroupCallParticipant(
+            peer=types.PeerUser(user_id=user_id),
+            date=datetime.now(timezone.utc),
+            source=source or user_id,
+            **flags,
+        )
+        self.participants.setdefault(call_id, []).append(participant)
+        return participant
+
+    def add_phone_call(
+        self, call_id: int = 4815162342, *, state: str = "Waiting", **flags: Any
+    ) -> Any:
+        """A `phoneCall*` constructor the daemon can be told about."""
+        common = {
+            "id": call_id,
+            "access_hash": call_id * 5,
+            "date": datetime.now(timezone.utc),
+            "admin_id": flags.pop("admin_id", self.me.id),
+            "participant_id": flags.pop("participant_id", 4242),
+            "protocol": types.PhoneCallProtocol(
+                min_layer=65, max_layer=92, library_versions=["2.4.4"]
+            ),
+        }
+        if state == "Requested":
+            call = types.PhoneCallRequested(g_a_hash=b"\x01" * 32, **common, **flags)
+        elif state == "Accepted":
+            call = types.PhoneCallAccepted(g_b=(2**2047).to_bytes(256, "big"), **common, **flags)
+        else:
+            call = types.PhoneCallWaiting(**common, **flags)
+        self.phone_calls[call_id] = call
+        return call
+
+    def add_call_log_entry(
+        self,
+        message_id: int,
+        *,
+        chat_id: int = 4242,
+        video: bool = False,
+        reason: str = "hangup",
+        duration: int = 42,
+        out: bool = False,
+        conference: bool = False,
+    ) -> Any:
+        """One Calls-tab row: a service message with a call action."""
+        reasons = {
+            "hangup": types.PhoneCallDiscardReasonHangup(),
+            "missed": types.PhoneCallDiscardReasonMissed(),
+            "busy": types.PhoneCallDiscardReasonBusy(),
+        }
+        action: Any
+        if conference:
+            action = types.MessageActionConferenceCall(
+                call_id=message_id * 10,
+                video=video,
+                duration=duration,
+                missed=reason == "missed",
+                other_participants=[types.PeerUser(user_id=4243)],
+            )
+        else:
+            action = types.MessageActionPhoneCall(
+                call_id=message_id * 10,
+                video=video,
+                reason=reasons[reason],
+                duration=duration,
+            )
+        message = types.MessageService(
+            id=message_id,
+            peer_id=types.PeerUser(user_id=abs(chat_id)),
+            date=datetime.now(timezone.utc),
+            out=out,
+            action=action,
+        )
+        self.call_log.append(message)
+        return message
 
 
 class _Dialog:
@@ -1065,6 +1244,278 @@ class FakeTelegramClient:
             chats=[],
             users=[],
             state=types.updates.State(pts=1, qts=0, date=None, seq=0, unread_count=0),
+        )
+
+    # -- calls, video chats and conferences --------------------------------
+    #
+    # The call ops build raw requests and read structured answers, so the fake
+    # answers with the real `phone.*` result types rather than with `Updates`.
+    # A test then asserts on a *decoded* answer, which is the only way the
+    # serialisers get exercised at all.
+
+    def _raw_GetDhConfigRequest(self, request: Any) -> Any:
+        return types.messages.DhConfig(
+            g=DH_G, p=DH_PRIME, version=2, random=b"\x11" * (request.random_length or 0)
+        )
+
+    def _raw_GetCallConfigRequest(self, request: Any) -> Any:
+        return types.DataJSON(data='{"audio_max_bitrate": 32000}')
+
+    def _phone_call(self, call: Any) -> Any:
+        return types.phone.PhoneCall(phone_call=call, users=list(self.world.users.values()))
+
+    def _raw_RequestCallRequest(self, request: Any) -> Any:
+        call = self.world.add_phone_call(video=bool(getattr(request, "video", False)))
+        return self._phone_call(call)
+
+    def _raw_AcceptCallRequest(self, request: Any) -> Any:
+        call = self.world.phone_calls.get(request.peer.id) or self.world.add_phone_call(
+            request.peer.id
+        )
+        return self._phone_call(call)
+
+    def _raw_ConfirmCallRequest(self, request: Any) -> Any:
+        call = types.PhoneCall(
+            id=request.peer.id,
+            access_hash=request.peer.access_hash,
+            date=datetime.now(timezone.utc),
+            admin_id=self.world.me.id,
+            participant_id=4242,
+            g_a_or_b=b"\x02" * 256,
+            key_fingerprint=1,
+            protocol=request.protocol,
+            connections=[],
+            start_date=datetime.now(timezone.utc),
+            conference_supported=True,
+        )
+        self.world.phone_calls[request.peer.id] = call
+        return self._phone_call(call)
+
+    def _raw_ReceivedCallRequest(self, request: Any) -> bool:
+        return True
+
+    def _raw_DiscardCallRequest(self, request: Any) -> types.Updates:
+        discarded = types.PhoneCallDiscarded(
+            id=request.peer.id,
+            need_rating=True,
+            need_debug=False,
+            reason=request.reason,
+            duration=request.duration,
+        )
+        self.world.phone_calls[request.peer.id] = discarded
+        return types.Updates(
+            updates=[types.UpdatePhoneCall(phone_call=discarded)],
+            users=[],
+            chats=[],
+            date=datetime.now(timezone.utc),
+            seq=0,
+        )
+
+    def _raw_SetCallRatingRequest(self, request: Any) -> types.Updates:
+        return self._updates()
+
+    def _raw_SaveCallDebugRequest(self, request: Any) -> bool:
+        return True
+
+    def _raw_SaveCallLogRequest(self, request: Any) -> bool:
+        return True
+
+    def _raw_SendSignalingDataRequest(self, request: Any) -> bool:
+        return True
+
+    def _raw_GetFullUserRequest(self, request: Any) -> Any:
+        available = self.world.calls_available
+        return _FullUser(available, list(self.world.users.values())[:1])
+
+    # -- group calls -------------------------------------------------------
+
+    def _call_of(self, ref: Any) -> Any:
+        """The stored `groupCall` an `InputGroupCall*` names."""
+        name = type(ref).__name__
+        if name == "InputGroupCallSlug":
+            for call in self.world.group_calls.values():
+                if (getattr(call, "invite_link", "") or "").endswith(ref.slug):
+                    return call
+            return next(iter(self.world.group_calls.values()), None)
+        if name == "InputGroupCallInviteMessage":
+            return next(iter(self.world.group_calls.values()), None)
+        return self.world.group_calls.get(getattr(ref, "id", 0))
+
+    def _group_updates(self, call: Any) -> types.Updates:
+        return types.Updates(
+            updates=[types.UpdateGroupCall(call=call)],
+            users=[],
+            chats=[],
+            date=datetime.now(timezone.utc),
+            seq=0,
+        )
+
+    def _raw_CreateGroupCallRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.peer)
+        call = self.world.add_group_call(
+            900200,
+            chat_id=chat_id,
+            title=request.title,
+            schedule_date=request.schedule_date,
+            rtmp_stream=getattr(request, "rtmp_stream", None),
+        )
+        return self._group_updates(call)
+
+    def _raw_GetGroupCallRequest(self, request: Any) -> Any:
+        call = self._call_of(request.call)
+        if call is None:
+            from telethon.errors.rpcerrorlist import GroupcallInvalidError
+
+            raise GroupcallInvalidError(request)
+        return types.phone.GroupCall(
+            call=call,
+            participants=self.world.participants.get(call.id, [])[:3],
+            participants_next_offset="",
+            chats=list(self.world.chats.values()),
+            users=list(self.world.users.values()),
+        )
+
+    def _raw_GetGroupParticipantsRequest(self, request: Any) -> Any:
+        call = self._call_of(request.call)
+        everyone = self.world.participants.get(getattr(call, "id", 0), [])
+        offset = int(request.offset or 0)
+        window = everyone[offset : offset + request.limit]
+        next_offset = str(offset + len(window)) if offset + len(window) < len(everyone) else ""
+        return types.phone.GroupParticipants(
+            count=len(everyone),
+            participants=window,
+            next_offset=next_offset,
+            chats=list(self.world.chats.values()),
+            users=list(self.world.users.values()),
+            version=1,
+        )
+
+    def _raw_JoinGroupCallRequest(self, request: Any) -> types.Updates:
+        return types.Updates(
+            updates=[
+                types.UpdateGroupCallConnection(params=types.DataJSON(data='{"stream": true}'))
+            ],
+            users=[],
+            chats=[],
+            date=datetime.now(timezone.utc),
+            seq=0,
+        )
+
+    def _raw_DiscardGroupCallRequest(self, request: Any) -> types.Updates:
+        call = self._call_of(request.call)
+        discarded = types.GroupCallDiscarded(
+            id=getattr(call, "id", 0), access_hash=getattr(call, "access_hash", 0), duration=900
+        )
+        self.world.group_calls[discarded.id] = discarded
+        return self._group_updates(discarded)
+
+    def _raw_EditGroupCallTitleRequest(self, request: Any) -> types.Updates:
+        call = self._call_of(request.call)
+        if call is not None:
+            call.title = request.title
+        return self._group_updates(call) if call is not None else self._updates()
+
+    def _raw_ToggleGroupCallSettingsRequest(self, request: Any) -> types.Updates:
+        call = self._call_of(request.call)
+        if call is not None:
+            for name in ("join_muted", "messages_enabled", "send_paid_messages_stars"):
+                value = getattr(request, name, None)
+                if value is not None:
+                    setattr(call, name, value)
+        return self._group_updates(call) if call is not None else self._updates()
+
+    def _raw_ToggleGroupCallRecordRequest(self, request: Any) -> types.Updates:
+        call = self._call_of(request.call)
+        if call is not None:
+            call.record_start_date = datetime.now(timezone.utc) if request.start else None
+            call.record_video_active = bool(request.video) if request.start else False
+        return self._group_updates(call) if call is not None else self._updates()
+
+    def _raw_ExportGroupCallInviteRequest(self, request: Any) -> Any:
+        suffix = "speaker" if getattr(request, "can_self_unmute", False) else "listener"
+        return types.phone.ExportedGroupCallInvite(link=f"https://t.me/c/5150?voicechat={suffix}")
+
+    def _raw_GetGroupCallStreamRtmpUrlRequest(self, request: Any) -> Any:
+        return types.phone.GroupCallStreamRtmpUrl(url=self.world.rtmp_url, key=self.world.rtmp_key)
+
+    def _raw_GetGroupCallStreamChannelsRequest(self, request: Any) -> Any:
+        return types.phone.GroupCallStreamChannels(
+            channels=[types.GroupCallStreamChannel(channel=1, scale=0, last_timestamp_ms=5000)]
+        )
+
+    def _raw_GetGroupCallJoinAsRequest(self, request: Any) -> Any:
+        return types.phone.JoinAsPeers(
+            peers=[types.PeerUser(user_id=self.world.me.id)],
+            chats=list(self.world.chats.values()),
+            users=[self.world.me],
+        )
+
+    def _raw_CheckGroupCallRequest(self, request: Any) -> list[int]:
+        return list(request.sources[:1])
+
+    def _raw_GetGroupCallStarsRequest(self, request: Any) -> Any:
+        return types.phone.GroupCallStars(
+            total_stars=250, top_donors=[], chats=[], users=list(self.world.users.values())
+        )
+
+    def _raw_SendGroupCallMessageRequest(self, request: Any) -> types.Updates:
+        message = types.MessageService(
+            id=77,
+            peer_id=types.PeerUser(user_id=self.world.me.id),
+            date=datetime.now(timezone.utc),
+        )
+        return types.Updates(
+            updates=[types.UpdateNewMessage(message=message, pts=1, pts_count=1)],
+            users=[],
+            chats=[],
+            date=datetime.now(timezone.utc),
+            seq=0,
+        )
+
+    def _raw_GetGroupCallChainBlocksRequest(self, request: Any) -> types.Updates:
+        blocks = self.world.chain_blocks
+        if request.offset == -1:
+            blocks = blocks[-request.limit :]
+        return types.Updates(
+            updates=[
+                types.UpdateGroupCallChainBlocks(
+                    call=request.call,
+                    sub_chain_id=request.sub_chain_id,
+                    blocks=list(blocks),
+                    next_offset=len(self.world.chain_blocks),
+                )
+            ],
+            users=[],
+            chats=[],
+            date=datetime.now(timezone.utc),
+            seq=0,
+        )
+
+    def _raw_CreateConferenceCallRequest(self, request: Any) -> types.Updates:
+        call = self.world.add_group_call(
+            900300,
+            title=None,
+            conference=True,
+            creator=True,
+            invite_link="https://t.me/call/AbCdEf",
+        )
+        return self._group_updates(call)
+
+    def _raw_DeletePhoneCallHistoryRequest(self, request: Any) -> Any:
+        removed = [row.id for row in self.world.call_log]
+        self.world.call_log.clear()
+        return types.messages.AffectedFoundMessages(
+            pts=1, pts_count=len(removed), offset=0, messages=removed
+        )
+
+    def _raw_GetFileRequest(self, request: Any) -> Any:
+        return types.upload.File(
+            type=types.storage.FileUnknown(), mtime=0, bytes=self.world.stream_chunk
+        )
+
+    def _raw_ExportChatInviteRequest(self, request: Any) -> Any:
+        return types.ChatInviteExported(
+            link="https://t.me/+fallback", admin_id=self.world.me.id, date=None
         )
 
     def _raw_SendReactionRequest(self, request: Any) -> types.Updates:
@@ -1624,6 +2075,8 @@ class FakeTelegramClient:
         return self._slice(found[: int(request.limit)])
 
     def _raw_SearchRequest(self, request: Any) -> Any:
+        if type(getattr(request, "filter", None)).__name__ == "InputMessagesFilterPhoneCalls":
+            return self._call_log_search(request)
         chat_id = self._chat_id(request.peer)
         found = [
             message
@@ -1631,6 +2084,23 @@ class FakeTelegramClient:
             if not request.q or request.q.lower() in (message.message or "").lower()
         ]
         return self._slice(sorted(found, key=lambda m: m.id, reverse=True)[: int(request.limit)])
+
+    def _call_log_search(self, request: Any) -> Any:
+        """The Calls tab: `messages.search` under `inputMessagesFilterPhoneCalls`."""
+        rows = list(self.world.call_log)
+        if getattr(request.filter, "missed", False):
+            rows = [
+                row
+                for row in rows
+                if type(getattr(row.action, "reason", None)).__name__
+                == "PhoneCallDiscardReasonMissed"
+            ]
+        if request.offset_id:
+            rows = [row for row in rows if row.id < request.offset_id]
+        rows = sorted(rows, key=lambda row: row.id, reverse=True)[: request.limit]
+        return types.messages.Messages(
+            messages=rows, topics=[], chats=[], users=list(self.world.users.values())
+        )
 
     def _raw_SearchPostsRequest(self, request: Any) -> Any:
         return self._slice(list(self.world.public_posts)[: int(request.limit)], next_rate=7)
@@ -1644,6 +2114,14 @@ class FakeTelegramClient:
         )
 
     # -- reaction policy, tags and paid reactions --------------------------
+
+    def _running_call(self, chat_id: int) -> Any:
+        """The `inputGroupCall` a chat's full info advertises, if one is running."""
+        call_id = self.world.chat_calls.get(chat_id)
+        call = self.world.group_calls.get(call_id) if call_id else None
+        if call is None:
+            return None
+        return types.InputGroupCall(id=call.id, access_hash=call.access_hash)
 
     def _full_channel(self, chat_id: int) -> Any:
         return types.ChannelFull(
@@ -1659,6 +2137,7 @@ class FakeTelegramClient:
             available_reactions=self.world.chat_reactions.get(chat_id) or types.ChatReactionsNone(),
             reactions_limit=self.world.reactions_limit.get(chat_id),
             paid_reactions_available=self.world.paid_enabled.get(chat_id),
+            call=self._running_call(chat_id),
         )
 
     def _raw_GetFullChannelRequest(self, request: Any) -> Any:
@@ -1676,6 +2155,7 @@ class FakeTelegramClient:
                 available_reactions=self.world.chat_reactions.get(-chat_id)
                 or types.ChatReactionsNone(),
                 reactions_limit=self.world.reactions_limit.get(-chat_id),
+                call=self._running_call(-chat_id),
             ),
             chats=[],
             users=[],
@@ -1775,7 +2255,7 @@ class FakeTelegramClient:
         return types.channels.SendAsPeers(
             peers=[types.SendAsPeer(peer=types.PeerUser(user_id=self.world.me.id))],
             chats=[],
-            users=[],
+            users=[self.world.me],
         )
 
     def _raw_GetMessagesReactionsRequest(self, request: Any) -> types.Updates:
@@ -1891,10 +2371,10 @@ class FakeTelegramClient:
             rating_e_decay=1,
             stickers_recent_limit=200,
             channels_read_media_period=1,
-            call_receive_timeout_ms=1,
-            call_ring_timeout_ms=1,
-            call_connect_timeout_ms=1,
-            call_packet_timeout_ms=1,
+            call_receive_timeout_ms=20000,
+            call_ring_timeout_ms=90000,
+            call_connect_timeout_ms=30000,
+            call_packet_timeout_ms=10000,
             me_url_prefix="https://t.me/",
             caption_length_max=1024,
             message_length_max=4096,

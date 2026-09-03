@@ -208,6 +208,22 @@ Two more, outside the documented output shapes:
   upload to the daemon and returns a job id; the transfer keeps its `.part`
   file when cancelled, and a retry re-fetches the source first because a queued
   transfer is holding an expired `file_reference`.
+- **The `call`, `vc` and `conference` groups.** 45 operations covering 1:1
+  calls, video chats, livestreams, RTMP, live stories and conference call
+  links: ring, answer, decline, hang up, rate, the Calls tab with its service
+  messages decoded, incoming-call streaming, video-chat creation and
+  scheduling, recording, muting and moderation, invite and speaker links, RTMP
+  credentials, the in-call chat, participants, and call links. **tlgr carries
+  no audio or video** — there is no tgcalls binding behind any of it — so
+  every shape that could be mistaken for participation reports `media:
+  "none"`, and the operations that would need a real media engine
+  (`vc join --params-json`, `vc video set --screen --on`, `call signal`) take a
+  payload rather than inventing one. The one thing this does better than a GUI
+  is `vc download`: it cannot play a livestream and it can record one.
+  Conference joining, participant removal and in-call encryption need a signed
+  `e2e.chain` block, which tlgr accepts from an external implementation
+  (`--block`, `--public-key`) and refuses to fake — the refusal is a usage
+  error naming the missing piece, not a failed RPC.
 - **`tlgr agent parity`** — coverage of the pinned feature catalog by
   priority and domain, with every uncovered id either waived to a named PR or
   reported as a gap. `--uncovered` prints the full list; `docs/reference/PARITY.md`

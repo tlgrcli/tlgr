@@ -652,6 +652,76 @@ Two rules worth knowing before scripting against these:
 - **A sticker is named `<set>/<index>` or `<set>/<emoji>`, never by a bare
   document id.** A cached id carries a dead `file_reference`; naming the set
   lets tlgr fetch a live one in the same call.
+### Calls, video chats and conferences
+
+**tlgr carries no audio or video.** It speaks the signalling half of calls: it
+can ring, answer, hang up, rate, mute, moderate, invite, record and observe,
+and nobody can hear it. Every response that could be mistaken for
+participation says so — `"media": "none"` is on the wire, not in a footnote.
+
+```
+tlgr call start <user> [--video] [--check] [--wait] [--auto-discard 60s]
+→ {"call_id": 4815162342, "state": "waiting", "media": "none", "video": false, "out": true}
+   --check rings nothing and reports {"state": "checked", "can_call": true, ...}
+
+tlgr call accept <call> [--ack-only] [--no-ack]  → {"call_id": ..., "state": "accepted", "media": "none"}
+tlgr call decline <call> [--reason missed|busy] [--reply TEXT]
+                                                 → {"call_id": ..., "reason": "missed"}
+tlgr call end <call> [--reason hangup|busy|...] [--duration N]
+                                                 → {"call_id": ..., "reason": "hangup", "need_rating": true}
+tlgr call get <call>                             → the live state, and the key-verification indices
+tlgr call rate <call> <1-5> [--problem echo]     → {"call_id": ..., "rating": 4, "comment": "#echo"}
+tlgr call log list [--missed] [--with USER] [--limit N] [--cursor TOKEN]
+→ {"items": [{"msg_id": 900, "chat_id": 4242, "kind": "call", "direction": "in",
+              "duration": 42, "date": "2026-09-03T09:14:07Z"}], "has_more": false}
+tlgr call watch                                  → NDJSON: one record per ring or state change
+```
+
+A call is addressed by its id. The daemon remembers the calls it has seen —
+Telegram hands out a call's `access_hash` once, in an update — so a bare id
+works; the `id:access_hash` form works without that memory and teaches it.
+
+```
+tlgr vc create <chat> [--title T] [--schedule WHEN] [--rtmp] --yes
+tlgr vc get <chat|id:hash|link|msg:ID> [--limits] [--stream-channels]
+tlgr vc list                                     → chats with a call running now
+tlgr vc set <call> [--title T] [--join-muted on|off] [--record start|stop]
+tlgr vc participant list <call> [--raised-hands] [--limit N] [--cursor TOKEN]
+tlgr vc mute|unmute <call> [PEER] [--for-me]     → {"muted": true, "media": "none"}
+tlgr vc invite <chat> <user>...                  → {"invited": [...], "failed": [...]}
+tlgr vc link <chat> [--speaker] [--revoke]       → the listener or speaker link
+tlgr vc rtmp get <chat> [--show-key|--key-file PATH] [--revoke]
+tlgr vc send <call> <text> [--stars N --confirm-stars]
+tlgr vc download <call> --out PATH [--duration 30s]
+tlgr vc watch <call>                             → NDJSON: participants, mutes, in-call chat
+```
+
+`vc download` is the one thing a headless CLI does better than the GUI: it
+cannot play a livestream and it can record one. It needs a join first
+(`vc join --listen-only`, experimental: it synthesizes a listener payload to
+obtain presence and still carries no audio).
+
+The in-call chat has **no history and no fetch method**. `vc watch --messages`
+is the only way to read it.
+
+The RTMP stream key is a publishing credential: it is masked unless you pass
+`--show-key` or `--key-file`.
+
+```
+tlgr conference create                           → {"slug": "AbCdEf", "invite_link": "https://t.me/call/AbCdEf"}
+tlgr conference get <link|slug|id:hash|msg:ID> [--qr]
+tlgr conference invite <call> <user>...          → rings them; falls back to the link
+tlgr conference decline <msg_id>                 → refuse an invitation, or cancel your own
+tlgr conference revoke <call> --yes              → invalidate the link
+tlgr conference chain list <call> [--tip]        → the E2E chain, base64, unvalidated
+```
+
+Conferences are end-to-end encrypted. Creating and reading a call link, ringing
+people and revoking it need no crypto and are complete. **Joining**, **removing
+a participant** and **sending inside** need a signed `e2e.chain` block built on
+the current tip; tlgr has no block builder, accepts one from an external
+implementation (`--block`, `--public-key`) and otherwise exits 2 naming exactly
+what is missing rather than sending a request that will fail.
 
 ### Agent Helpers
 

@@ -249,13 +249,19 @@ def resolve_account(
 
     if not alias:
         try:
-            from tlgr.core.config import CONFIG_DIR, load_app_config
+            from tlgr.core.config import load_app_config
+            from tlgr.core.paths import default_base
 
             alias = (load_app_config().default_account or "").strip()
             if not alias:
                 from tlgr.core.accounts import AccountManager
 
-                alias = (AccountManager(CONFIG_DIR).get_active() or "").strip()
+                # `default_base()` rather than the `CONFIG_DIR` constant:
+                # that one is captured at import, so a `TLGR_HOME` set after
+                # the first import was ignored here and the CLI read the
+                # *real* home — which is how a development run reaches a
+                # production tree at all.
+                alias = (AccountManager(default_base()).get_active() or "").strip()
         except Exception:
             alias = ""
 

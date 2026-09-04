@@ -12,7 +12,7 @@ them and a live agent reads them today:
 
 * `user dialog-status` is three-valued and its exit code is part of the
   answer — exit 13 must never be reachable by reading "unknown" as "no";
-* `user hide-stories` reports `already` and sends nothing when there is
+* `user hide-stories` (now `story hide`) reports `already` and sends nothing when there is
   nothing to do;
 * `contact rename` writes only *our* view of a name, and an empty first name
   still becomes `"."` the way v1 sent it.
@@ -169,9 +169,9 @@ class TestContactList:
 
     async def test_with_stories_flags_unseen_ones(self, live_daemon, client, in_thread, book):
         book.users[ALICE].stories_max_id = types.RecentStory(max_id=9)
-        book.stories_read[ALICE] = 4
+        book.story_read[ALICE] = 4
         book.users[BOB].stories_max_id = types.RecentStory(max_id=2)
-        book.stories_read[BOB] = 2
+        book.story_read[BOB] = 2
         rows = await result(client, in_thread, "contact.list", {"with_stories": True})
         unseen = {row["id"]: row["has_unseen_stories"] for row in rows}
         assert unseen == {ALICE: True, BOB: False}
@@ -958,15 +958,19 @@ class TestDialogStatus:
 
 
 # ---------------------------------------------------------------------------
-# user hide-stories — the other frozen contract
+# user hide-stories — the frozen contract, now owned by `story hide`
 # ---------------------------------------------------------------------------
 
 
 class TestHideStories:
+    """The v1 path is a legacy path of `story.hide`, so the contract is tested
+    through the id an agent would actually call. AGENT.md's four keys, the
+    idempotence and the bulk shape are unchanged; only the owner moved."""
+
     async def test_hiding_moves_the_flag_and_reports_v1_keys(
         self, live_daemon, client, in_thread, book
     ):
-        answer = await result(client, in_thread, "user.hide-stories", {"user": ["@alice"]})
+        answer = await result(client, in_thread, "story.hide", {"chat": ["@alice"]})
         assert {
             "user_id": ALICE,
             "username": "alice",
@@ -976,38 +980,34 @@ class TestHideStories:
         assert book.users[ALICE].stories_hidden is True
 
     async def test_a_second_pass_costs_no_rpc(self, live_daemon, client, in_thread, book):
-        await result(client, in_thread, "user.hide-stories", {"user": ["@alice"]})
+        await result(client, in_thread, "story.hide", {"chat": ["@alice"]})
         book.calls.clear()
-        envelope = await call(client, in_thread, "user.hide-stories", {"user": ["@alice"]})
+        envelope = await call(client, in_thread, "story.hide", {"chat": ["@alice"]})
         assert envelope["result"]["already"] is True
         assert envelope["meta"]["already"] is True
         assert not book.called("TogglePeerStoriesHiddenRequest")
 
     async def test_unhide_puts_them_back(self, live_daemon, client, in_thread, book):
         book.users[ALICE].stories_hidden = True
-        answer = await result(
-            client, in_thread, "user.hide-stories", {"user": ["@alice"], "unhide": True}
-        )
+        answer = await result(client, in_thread, "story.hide", {"chat": ["@alice"], "unhide": True})
         assert answer["hidden"] is False
         assert book.users[ALICE].stories_hidden is False
 
     async def test_a_bulk_pass_keeps_the_single_peer_shape(
         self, live_daemon, client, in_thread, book
     ):
-        answer = await result(
-            client, in_thread, "user.hide-stories", {"user": ["@alice", "@bobby"]}
-        )
+        answer = await result(client, in_thread, "story.hide", {"chat": ["@alice", "@bobby"]})
         assert answer["user_id"] == ALICE
         assert [row["user_id"] for row in answer["peers"]] == [ALICE, BOB]
 
     async def test_the_whole_strip_can_be_collapsed(self, live_daemon, client, in_thread, book):
-        answer = await result(client, in_thread, "user.hide-stories", {"all_stories": "on"})
-        assert answer["all_hidden"] is True
+        answer = await result(client, in_thread, "story.hide", {"every": True})
+        assert answer["all"] is True
         assert book.all_stories_hidden is True
 
     async def test_no_target_at_all_is_a_usage_error(self, live_daemon, client, in_thread, book):
         with pytest.raises(Exception) as caught:
-            await result(client, in_thread, "user.hide-stories", {})
+            await result(client, in_thread, "story.hide", {})
         assert classify(caught.value).exit_code == EXIT_USAGE
 
 
@@ -1439,7 +1439,6 @@ class TestDryRun:
             ("contact.remove", {"user": ["@alice"]}),
             ("contact.rename", {"user": "@alice", "first_name": "X"}),
             ("user.block", {"user": "@carol"}),
-            ("user.hide-stories", {"user": ["@alice"]}),
             ("contact.blocked.set", {"user": ["@carol"]}),
         ],
     )
@@ -1467,7 +1466,7 @@ class TestLegacyPaths:
             ("contact search", "contact.search"),
             ("user get", "user.get"),
             ("user dialog-status", "user.dialog-status"),
-            ("user hide-stories", "user.hide-stories"),
+            ("user hide-stories", "story.hide"),
         ],
     )
     def test_the_v1_path_still_resolves(self, path, op_id):

@@ -709,32 +709,35 @@ class TestPin:
 
 class TestHide:
     async def test_hiding_a_peer_flips_the_flag(self, live_daemon, client, in_thread, stories):
-        hidden = await result(client, in_thread, "story.hide", {"chat": "@alice"})
+        hidden = await result(client, in_thread, "story.hide", {"chat": ["@alice"]})
         assert hidden == {
             "user_id": ALICE,
             "username": "alice",
             "peer_id": ALICE,
             "hidden": True,
+            "already": False,
         }, "the v1 keys, and nothing invented beside them"
         assert stories.called("TogglePeerStoriesHiddenRequest")[0].hidden is True
 
     async def test_hiding_twice_sends_no_request(self, live_daemon, client, in_thread, stories):
-        await result(client, in_thread, "story.hide", {"chat": "@alice"})
-        envelope = await call(client, in_thread, "story.hide", {"chat": "@alice"})
+        await result(client, in_thread, "story.hide", {"chat": ["@alice"]})
+        envelope = await call(client, in_thread, "story.hide", {"chat": ["@alice"]})
         assert envelope["result"]["already"] is True
         assert len(stories.called("TogglePeerStoriesHiddenRequest")) == 1
 
     async def test_unhide_is_the_same_toggle_the_other_way(
         self, live_daemon, client, in_thread, stories
     ):
-        await result(client, in_thread, "story.hide", {"chat": "@alice"})
-        await result(client, in_thread, "story.unhide", {"chat": "@alice"})
+        await result(client, in_thread, "story.hide", {"chat": ["@alice"]})
+        await result(client, in_thread, "story.unhide", {"chat": ["@alice"]})
         assert stories.called("TogglePeerStoriesHiddenRequest")[1].hidden is False
 
     async def test_the_v1_unhide_flag_still_works(self, live_daemon, client, in_thread, stories):
         """`user hide-stories --unhide` was v1's spelling of `story unhide`."""
-        await result(client, in_thread, "story.hide", {"chat": "@alice"})
-        unhidden = await result(client, in_thread, "story.hide", {"chat": "@alice", "unhide": True})
+        await result(client, in_thread, "story.hide", {"chat": ["@alice"]})
+        unhidden = await result(
+            client, in_thread, "story.hide", {"chat": ["@alice"], "unhide": True}
+        )
         assert unhidden.get("hidden", False) is False
         assert unhidden.get("already", False) is False
 
@@ -766,7 +769,7 @@ class TestLegacyUserHideStories:
         assert "--unhide" in flags
 
     async def test_the_v1_keys_survive(self, live_daemon, client, in_thread, stories):
-        hidden = await result(client, in_thread, "user.hide-stories", {"chat": "@alice"})
+        hidden = await result(client, in_thread, "user.hide-stories", {"chat": ["@alice"]})
         assert set(hidden) >= {"user_id", "username", "hidden"}
 
 
@@ -1003,12 +1006,12 @@ class TestBlocklist:
         assert stories.called("BlockRequest")[0].my_stories_from is True
 
     async def test_removing_is_the_inverse(self, live_daemon, client, in_thread, stories):
-        stories.story_blocklist = [BOB]
+        stories.block(BOB, stories=True)
         changed = await result(
             client, in_thread, "story.blocklist.set", {"user": ["@bobby"], "remove": True}
         )
         assert changed["removed"] == [BOB]
-        assert stories.story_blocklist == []
+        assert stories.blocked_stories == {}
 
     async def test_removing_somebody_absent_is_already(
         self, live_daemon, client, in_thread, stories
@@ -1019,16 +1022,16 @@ class TestBlocklist:
         assert envelope["result"]["already"] is True
 
     async def test_replace_overwrites_in_one_rpc(self, live_daemon, client, in_thread, stories):
-        stories.story_blocklist = [ALICE]
+        stories.block(ALICE, stories=True)
         changed = await result(
             client, in_thread, "story.blocklist.set", {"user": ["@bobby"], "replace": True}
         )
         assert changed["total"] == 1
-        assert stories.story_blocklist == [BOB]
+        assert list(stories.blocked_stories) == [BOB]
         assert not stories.called("BlockRequest")
 
     async def test_the_list_is_its_own_blocklist(self, live_daemon, client, in_thread, stories):
-        stories.story_blocklist = [BOB]
+        stories.block(BOB, stories=True)
         page = await paged(client, in_thread, "story.blocklist.list", {})
         assert page["items"][0]["user_id"] == BOB
         assert stories.called("GetBlockedRequest")[0].my_stories_from is True
@@ -1214,8 +1217,8 @@ class TestLive:
 
     async def test_rtmp_prints_the_ingest_url(self, live_daemon, client, in_thread, stories):
         live = await result(client, in_thread, "story.live.start", {"rtmp": True})
-        assert live["rtmp_url"] == "rtmps://dc.tg/s/"
-        assert live["rtmp_key"] == "secret-key"
+        assert live["rtmp_url"] == stories.rtmp_url
+        assert live["rtmp_key"] == stories.rtmp_key
         assert stories.called("GetGroupCallStreamRtmpUrlRequest")[0].live_story is True
 
     async def test_dry_run_starts_nothing(self, live_daemon, client, in_thread, stories):

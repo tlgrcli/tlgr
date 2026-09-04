@@ -490,16 +490,18 @@ class TestTheGate:
         assert "dialogs_chats" not in waivers().domains
 
     def test_stories_is_fully_accounted_for(self, report):
-        """PR-8's own domain. The 16 remaining ids belong to other groups.
+        """PR-8's own domain. The 7 remaining ids belong to other groups.
 
-        Close friends are a contacts surface, the live-story call is the `vc`
-        group, story notifications are the `notify` group — each is waived to
-        the PR that owns that command, so "the story group is done" is
-        checkable rather than asserted.
+        Story notifications are the `notify` group, the soundtrack save is
+        the profile group, posting as a business account is a bot connection
+        — each is waived to the PR that owns that command, so "the story
+        group is done" is checkable rather than asserted. Close friends and
+        the live-story call were waived here too until PR-5 and PR-11 landed
+        and covered them outright.
         """
         stats = report.by_domain["stories"]
         assert stats["accounted_percent"] == 100.0
-        assert stats["covered"] >= 104
+        assert stats["covered"] >= 113
 
     def test_the_stories_domain_is_no_longer_waived_wholesale(self):
         assert "stories" not in waivers().domains

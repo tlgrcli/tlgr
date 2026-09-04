@@ -959,7 +959,7 @@ tlgr story reply <chat> <id> "text"       # a private message carrying the story
 tlgr story share <chat> <id> --until <chat>   # sends a story card, not a copy
 
 tlgr story pin|unpin <chat> <id>...       # the profile page; --top for the top row
-tlgr story hide|unhide <chat>             # the stories bar; --all for the whole bar
+tlgr story hide|unhide <chat>...          # the stories bar; --all for the whole bar
 tlgr story viewer list <chat> <id>        # --contacts, --q, --csv PATH, --hide-from
 tlgr story blocklist list|set <user>...   # "Hide my stories from"; --remove, --replace
 tlgr story album create|edit|list|delete|reorder <chat> …

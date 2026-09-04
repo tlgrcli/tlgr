@@ -284,13 +284,17 @@ class StoryPostCheck(Model):
 
 
 class StoryHiddenPeer(Model):
-    """One row of a bulk `story hide`, in the same keys the single call uses."""
+    """One row of a bulk `story hide`, in the same keys the single call uses.
 
+    `hidden` and `already` carry no default on purpose: they are the answer,
+    and `omit_defaults` would drop the false ones (see `StoryHidden`).
+    """
+
+    hidden: bool
+    already: bool
     user_id: int = 0
     username: str | None = None
     peer_id: int = 0
-    hidden: bool = False
-    already: bool = False
 
 
 class StoryHidden(Model):
@@ -303,11 +307,14 @@ class StoryHidden(Model):
     shape the documented single-peer call returns.
     """
 
+    #: Neither has a default: `hidden: false` and `already: false` are the
+    #: answer AGENT.md publishes for `user hide-stories`, and `omit_defaults`
+    #: would drop exactly the two values a caller has to read.
+    hidden: bool
+    already: bool
     user_id: int = 0
     username: str | None = None
     peer_id: int = 0
-    hidden: bool = False
-    already: bool = False
     #: Set instead of the peer fields when `--all` collapsed the whole bar.
     all: bool = False
     peers: list[StoryHiddenPeer] = []

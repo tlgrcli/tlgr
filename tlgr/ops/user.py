@@ -12,6 +12,7 @@ One contract here is frozen by `AGENT.md` and must not drift; the tests in
   id only consults the local cache, and its network fallback returns
   `UserEmpty` for any non-contact. Reading that as "no history" is the
   cold-contact bug this command exists to remove.
+
 v1's other frozen `user` contract, `user hide-stories`, now lives in the
 story group: `story hide` owns the implementation and keeps `user
 hide-stories` as a legacy path, so one toggle has one definition.

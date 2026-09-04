@@ -1183,7 +1183,8 @@ reports what the layer does expose — the story id, its dates, the live flag �
 and warns that the call-side fields are unreachable, rather than returning
 zeros that read as an empty broadcast. `stories.live-join` and
 `livestory.streamer-info` are therefore `covers_partial`; the rest of the
-live-story surface is waived to PR-11, which owns the call.
+live-story surface belongs to PR-11, which owns the call and landed ahead of
+this one.
 
 ## 2026-09-04 — a refusal from `canSendStory` is an error, not a result
 
@@ -1223,12 +1224,14 @@ a request the server rejects minutes later with `FILE_REFERENCE_EXPIRED`. The
 flag takes a file, uploads it through `messages.uploadMedia`, and refuses a
 numeric argument with a usage error that says why.
 
-## 2026-09-04 — the stories domain keeps 16 ids it does not own
+## 2026-09-04 — the stories domain keeps 7 ids it does not own
 
 Same shape as `media_files`: the catalog groups by subject, tlgr by command
-group. The close-friends list is a contacts surface, a live story's comments
-and RTMP key belong to the call group, story notification settings belong to
-`notify`, and posting for a business account goes through a bot connection.
-Each is waived to the PR that owns the command rather than implemented here
-under a `story` noun where nobody would look for it. `stories` is 86.7 %
-covered and 100 % accounted.
+group. Story notification settings belong to `notify`, saving a story's
+soundtrack is a profile surface, and posting for a business account goes
+through a bot connection. Each is waived to the PR that owns the command
+rather than implemented here under a `story` noun where nobody would look for
+it. The close-friends list and the live story's call — comments, RTMP key,
+send-as identity — were on that list too until PR-5 and PR-11 landed ahead of
+this one and covered them outright. `stories` is 94.2 % covered and 100 %
+accounted.

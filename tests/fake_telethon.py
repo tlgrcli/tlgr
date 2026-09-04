@@ -580,7 +580,6 @@ class World:
     search_global: list[int] = field(default_factory=list)
     sponsored_peers: list[int] = field(default_factory=list)
     #: The story read marks `stories.getAllReadPeerStories` reports.
-    stories_read: dict[int, int] = field(default_factory=dict)
     #: `contacts.exportContactToken`.
     contact_token: str = "AbCdEfToken"
     #: `help.getDeepLinkInfo` for an unknown tg:// path.
@@ -684,8 +683,6 @@ class World:
     #: string to make the server answer `storiesAllStoriesNotModified`.
     story_feed_not_modified: str | None = None
     stealth_mode: Any = None
-    #: The story-only blocklist ("Hide my stories from"), as raw user ids.
-    story_blocklist: list[int] = field(default_factory=list)
     #: What `stories.canSendStory` answers; a count means "yes".
     can_send_story: Any = None
     story_albums_hash: int = 4242
@@ -2501,6 +2498,19 @@ class FakeTelegramClient:
         )
 
     def _raw_SearchPostsRequest(self, request: Any) -> Any:
+        # Two RPCs share this class name: `messages.searchPosts` (public
+        # messages) and `stories.searchPosts` (public stories). The fake
+        # dispatches by class name, so the TL namespace is what tells them
+        # apart — the requests have no field in common that would.
+        if type(request).__module__.rsplit(".", 1)[-1] == "stories":
+            rows = list(self.world.public_stories)
+            return types.stories.FoundStories(
+                count=len(rows),
+                stories=rows[: request.limit],
+                chats=list(self.world.chats.values()),
+                users=list(self.world.users.values()),
+                next_offset="page2" if len(rows) > request.limit else None,
+            )
         return self._slice(list(self.world.public_posts)[: int(request.limit)], next_rate=7)
 
     def _raw_CheckSearchPostsFloodRequest(self, request: Any) -> Any:
@@ -3723,29 +3733,6 @@ class FakeTelegramClient:
 
     # -- stories -----------------------------------------------------------
 
-    def _raw_TogglePeerStoriesHiddenRequest(self, request: Any) -> bool:
-        marked = abs(self._chat_id(request.peer))
-        user = self.world.users.get(marked)
-        if user is not None:
-            user.stories_hidden = bool(request.hidden)
-        return True
-
-    def _raw_ToggleAllStoriesHiddenRequest(self, request: Any) -> bool:
-        self.world.all_stories_hidden = bool(request.hidden)
-        return True
-
-    def _raw_GetAllReadPeerStoriesRequest(self, request: Any) -> types.Updates:
-        return types.Updates(
-            updates=[
-                types.UpdateReadStories(peer=_peer_for(uid), max_id=max_id)
-                for uid, max_id in self.world.stories_read.items()
-            ],
-            users=[],
-            chats=[],
-            date=datetime.now(timezone.utc),
-            seq=0,
-        )
-
     # -- the administration world ------------------------------------------
     #
     # Written as state, not as canned replies: `chat member ban` really moves
@@ -4431,6 +4418,10 @@ class FakeTelegramClient:
         )
 
     def _raw_LoadAsyncGraphRequest(self, request: Any) -> Any:
+        # The token is the only thing that says which graph was asked for, so
+        # the story group's graph and the chat group's answer differently.
+        if getattr(request, "token", "") == "graph-token":
+            return types.StatsGraph(json=types.DataJSON(data='{"columns": ["reactions"]}'))
         return types.StatsGraph(json=types.DataJSON(data='{"columns": ["x"]}'))
 
     def _raw_GetMessagePublicForwardsRequest(self, request: Any) -> Any:
@@ -5228,42 +5219,6 @@ class FakeTelegramClient:
         )
         return self._updates()
 
-    def _raw_SearchPostsRequest(self, request: Any) -> Any:
-        rows = list(self.world.public_stories)
-        return types.stories.FoundStories(
-            count=len(rows),
-            stories=rows[: request.limit],
-            chats=list(self.world.chats.values()),
-            users=list(self.world.users.values()),
-            next_offset="page2" if len(rows) > request.limit else None,
-        )
-
-    def _raw_GetBlockedRequest(self, request: Any) -> Any:
-        if not getattr(request, "my_stories_from", False):
-            return types.contacts.Blocked(blocked=[], chats=[], users=[])
-        rows = self.world.story_blocklist[request.offset : request.offset + request.limit]
-        return types.contacts.Blocked(
-            blocked=[
-                types.PeerBlocked(
-                    peer_id=types.PeerUser(user_id=user_id), date=datetime.now(timezone.utc)
-                )
-                for user_id in rows
-            ],
-            chats=[],
-            users=[self.world.users[u] for u in rows if u in self.world.users],
-        )
-
-    def _raw_UnblockRequest(self, request: Any) -> bool:
-        raw = self._chat_id(request.id)
-        if raw in self.world.story_blocklist:
-            self.world.story_blocklist.remove(raw)
-            return True
-        return False
-
-    def _raw_SetBlockedRequest(self, request: Any) -> bool:
-        self.world.story_blocklist = [self._chat_id(peer) for peer in request.id]
-        return True
-
     def _raw_StartLiveRequest(self, request: Any) -> types.Updates:
         chat_id = self._chat_id(request.peer)
         self.world.next_story_id += 1
@@ -5277,9 +5232,6 @@ class FakeTelegramClient:
             seq=0,
         )
 
-    def _raw_GetGroupCallStreamRtmpUrlRequest(self, request: Any) -> Any:
-        return types.phone.GroupCallStreamRtmpUrl(url="rtmps://dc.tg/s/", key="secret-key")
-
     # statistics -----------------------------------------------------------
 
     def _raw_GetStoryStatsRequest(self, request: Any) -> Any:
@@ -5287,9 +5239,6 @@ class FakeTelegramClient:
             views_graph=types.StatsGraph(json=types.DataJSON(data='{"columns": []}')),
             reactions_by_emotion_graph=types.StatsGraphAsync(token="graph-token"),
         )
-
-    def _raw_LoadAsyncGraphRequest(self, request: Any) -> Any:
-        return types.StatsGraph(json=types.DataJSON(data='{"columns": ["reactions"]}'))
 
     def _raw_GetStoryPublicForwardsRequest(self, request: Any) -> Any:
         return types.stats.PublicForwards(

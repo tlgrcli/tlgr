@@ -590,9 +590,9 @@ Two more, outside the documented output shapes:
   full set of reactions this account holds after the call, which is what the
   next `sendReaction` has to resend.
 
-- **`ClientWrapper.set_stories_hidden()` and the `/user/stories-hidden` IPC
-  route.** `story hide` replaces both, and `tlgr user hide-stories` is
-  declared as its legacy path rather than kept as a second implementation.
+- **The second implementation of the "Hide Stories" toggle.** `story hide`
+  owns it, and `tlgr user hide-stories` is declared as its legacy path rather
+  than kept as an operation of its own — one alias, one implementation.
   `tlgr user get` still reports `stories_hidden`.
 
 - The dead `jobs.toml` job engine in `core/config.py` (`load_jobs`,

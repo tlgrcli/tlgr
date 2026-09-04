@@ -732,21 +732,6 @@ reason = "Cloud themes are the `settings` group (PR-12)."
 # ---------------------------------------------------------------------------
 
 [[id]]
-id = "stories.close-friends-list"
-pr = 5
-reason = "The close-friends list is `contact close-friends list` (PR-5)."
-
-[[id]]
-id = "stories.close-friends-set"
-pr = 5
-reason = "Editing close friends is `contact close-friends set` (PR-5)."
-
-[[id]]
-id = "stories.admin-rights"
-pr = 7
-reason = "post/edit/delete_stories are admin rights on `chat admin` (PR-7)."
-
-[[id]]
 id = "stories.boost-status"
 pr = 7
 reason = "Boost levels are the `boost` group (PR-7); `story can-post` reports the gate."
@@ -755,36 +740,6 @@ reason = "Boost levels are the `boost` group (PR-7); `story can-post` reports th
 id = "stories.business-story"
 pr = 10
 reason = "Posting for a business account goes through a bot connection (PR-10)."
-
-[[id]]
-id = "stories.live-comments"
-pr = 11
-reason = "Commenting in a live story is a group-call message (PR-11)."
-
-[[id]]
-id = "stories.live-end"
-pr = 11
-reason = "Ending a live story discards its group call — `vc end` (PR-11)."
-
-[[id]]
-id = "stories.live-highlight-comment"
-pr = 11
-reason = "Highlighting a comment with Stars is a group-call action (PR-11)."
-
-[[id]]
-id = "stories.live-message-sender"
-pr = 11
-reason = "The send-as identity for call messages is `vc send-as` (PR-11)."
-
-[[id]]
-id = "stories.live-rtmp-url"
-pr = 11
-reason = "Getting or revoking an RTMP key is `vc rtmp` (PR-11); `story live start --rtmp` prints it once."
-
-[[id]]
-id = "stories.live-settings"
-pr = 11
-reason = "Live comment settings and price live on the call (PR-11)."
 
 [[id]]
 id = "stories.notify-exceptions"

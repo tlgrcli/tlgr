@@ -1888,7 +1888,7 @@ async def _toggle_one(ctx: OpContext, ref: PeerRef, *, hidden: bool) -> StoryHid
 async def _toggle_hidden(ctx: OpContext, req: HideReq, *, hidden: bool) -> StoryHidden:
     from telethon.tl.functions import stories as fn
 
-    result = StoryHidden(hidden=hidden)
+    result = StoryHidden(hidden=hidden, already=False)
     if req.every:
         await client(ctx)(fn.ToggleAllStoriesHiddenRequest(hidden=hidden))
         result.all = True
@@ -1934,7 +1934,10 @@ SPEC_HIDE = OperationSpec(
     description=(
         "v1 spelled this `tlgr user hide-stories`, and that path still works "
         "— including its `--unhide` flag, which is `story unhide` said the "
-        "other way round."
+        "other way round. Idempotent: the fresh flag is read first and "
+        "`already: true` means no RPC was sent, so repeating a bulk pass is "
+        "nearly free. More than one peer fills `peers`; a single peer answers "
+        "with exactly the four keys v1 printed."
     ),
     legacy_paths=("user hide-stories",),
     mutating=True,

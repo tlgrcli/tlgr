@@ -5,7 +5,15 @@ All notable changes to tlgr are recorded here. The format follows
 semantic versioning at the CLI surface, which means the JSON shapes and exit
 codes documented in `AGENT.md` are the public API.
 
-## [Unreleased] — 2.0.0-dev
+## [2.0.0] — 2026-09-04
+
+**Every command tlgr has is generated from the operation registry.** There is
+no hand-written command left, no v1 route left and no `ClientWrapper` left;
+the daemon serves `/v1/*` and nothing else. Feature parity against the
+official clients is 1788 of 1797 catalogued behaviours (99.5 %), and **all 178
+P0 behaviours** — the ones ARCHITECTURE §1.3 required before this release.
+The nine that remain are individually waived and each names the MTProto method
+this build has no request class for.
 
 The foundation of v2: operations are defined once, as an `OperationSpec`, and
 the command, its JSON Schema, its docs and its contract tests are generated
@@ -105,17 +113,43 @@ One bug fix rides along: `message get --json` now actually prints
 made its two keyboard-rendering P0 ids true only on paper — a caller could see
 no button, so a caller could press none.
 
+Last, the settings surface: `profile`, `privacy`, `notify`, `settings`,
+`business`, `premium`, `stars`, `gift` and `giveaway` — 90 operations covering
+Settings ▸ Edit Profile, Privacy and Security, Notifications and Sounds,
+Telegram Business, Premium and boosts, Stars and the gift and giveaway
+screens, where v1 had two commands (`profile get` and `profile update`). Both
+still work.
+
+Three of those two commands' behaviours were wrong and are now right.
+`profile get` fetches `users.getFullUser`, so `bio` is the bio rather than the
+`""` v1 reported for every account. `profile photo set` uploads the file and
+sends raw `photos.uploadProfilePhoto`; v1 called
+`client.upload_profile_photo()`, which Telethon 1.44 does not have, so the
+command could never have worked. And a mute is computed from the wall clock:
+v1 used the asyncio event loop's clock, whose origin is arbitrary, so "mute
+for an hour" produced a timestamp in 1970 and muted nothing.
+
+Two of Telegram's APIs in this group replace their whole payload —
+`account.setPrivacy` replaces the ordered rule vector, and
+`account.setGlobalPrivacySettings` replaces the constructor — so both commands
+read first and write back complete. `privacy set --add-allow` and `--remove`
+exist precisely so a script never has to re-state a list it did not mean to
+touch.
+
+The no-spend policy PR-10 set for the `payment` group holds across this one:
+`premium gift send`, `business stars transfer`, `stars subscription refulfill`
+and the paid halves of `gift upgrade`, `gift transfer` and `gift offer
+approve` report the price and stop. A test walks the registry's source and
+fails if anything in the group names `sendStarsForm`, `sendPaymentForm`,
+`validateRequestedInfo` or `fulfillStarsSubscription`.
+
 ### Breaking
 
-Every change below applies **only to commands generated from the operation
-registry** — in this release that is the `message`, `draft`, `chat`,
-`folder`, `auth`, `account`, `passport`, `media`, `sticker`, `gif`, `emoji`,
-`story`, `events`, `watch`, `daemon`, `sync`, `net`, `proxy`, `config`, `job`,
-`webhook`, `export`, `contact`, `user`, `resolve`, `bot`, `inline`,
-`webapp` and `payment` groups,
-`tlgr completion`, `tlgr status`, `tlgr schema` and the `agent` group. Commands still
-hand-written under `tlgr/cli/legacy/` behave exactly as they did in v1 until
-their own migration PR, at which point these rules apply to them too.
+Every change below applies to **every** command: they are all generated from
+the operation registry now. Earlier releases in this cycle carried a list of
+which groups were migrated and a note that the hand-written ones behaved as
+they did in v1 until their own PR; there are no hand-written ones left, so the
+list is gone and the rules are universal.
 
 No documented command path disappears. Every migrated operation declares its
 v1 paths, so `tlgr send`, `tlgr msg list`, `tlgr message react` and the rest
@@ -168,6 +202,13 @@ Two more in the groups-and-channels group:
 | 10 | `chat.member.list` (`chat members`) | `{"members":[{"id","first_name","last_name","username","is_bot"}]}` | `Page[Participant]`, each row keeping its `ChannelParticipant*` wrapper: `status`, `rank`, `date`, `inviter_id`, `promoted_by`, `kicked_by`, `admin_rights`, `banned_rights` | `--results-only` yields `{items, has_more, next_cursor, total}`; `id`, `username` and `is_bot` are unchanged, and `first_name`/`last_name` are joined into `name` (`--select name` reaches it). The dropped wrapper was why v1 could list members but not say whether one was banned or merely restricted |
 | 11 | `chat.create` | `{"id","name","type"}` with `--type group\|channel` | `{"id","type","title","username","invite_link","added","missing"}` with `--type group\|supergroup\|channel\|forum` | `name` became `title` (`--select title`), and `--type group` still means the legacy basic group. `missing` names every seed member the server refused, instead of dropping them |
 
+Two more in the settings group, which are the only two commands v1 had there:
+
+| # | Change | v1 | v2 | Migration |
+|---|---|---|---|---|
+| 12 | `profile.get` | `{"id","first_name","last_name","username","phone"}` with `bio` always `""` | the same five keys, plus `bio`, `birthday`, `usernames`, `premium`, `personal_channel_id`, `emoji_status`, `color`, `stargifts_count`, `stars_rating` and the rest of `userFull` | additive, except that `bio` now carries the real value. `--no-full` skips the second round trip and omits `bio` entirely, which is how "not fetched" is told apart from "empty" |
+| 13 | `profile.update` | echoed the whole updated profile | `{"changed": [...]}` plus only the fields it wrote | the command spans four RPCs and a report listing what you did not ask for is one nobody can act on. `profile get` reads the whole profile back |
+
 `tlgr agent whoami --json` reports `output_schema_version: 2`, so an agent can
 branch on the two sets without probing for each change.
 
@@ -194,6 +235,34 @@ Two more, outside the documented output shapes:
 
 ### Added
 
+- **The settings surface: `profile`, `privacy`, `notify`, `settings`,
+  `business`, `premium`, `stars`, `gift` and `giveaway`.** 90 operations. Six
+  shapes are worth knowing before scripting against them:
+  - **A privacy key is read-modify-written, always.** `account.setPrivacy`
+    replaces the whole ordered vector, so `privacy set last-seen contacts`
+    would wipe every exception if tlgr sent only what changed. The exception
+    rules are written *before* the base rule, because the server applies the
+    vector in order.
+  - **`mute_until` is an absolute UNIX timestamp**, and `notify set --mute 2h`
+    turns a duration into one from the wall clock. `forever` is Telegram's own
+    sentinel (2³¹−1), not a tlgr convention.
+  - **`settings get`/`settings set` address fifteen cloud keys by name**, and
+    every row carries `accepts` — the exact token vocabulary its setter takes
+    — so a read can be piped back into a write.
+  - **A gift is addressed by a `ref`**: `msg:<id>` for one received in a
+    private chat, `<peer>:<saved_id>` for one a channel holds, or a
+    collectible slug (a `t.me/nft/` link is reduced to one). Every time gate
+    the server publishes — `can_transfer_at`, `can_resell_at`, `can_export_at`,
+    `can_craft_at` — is reported rather than collapsed into a boolean, because
+    "not yet, and here is when" is a different answer from "never".
+  - **`business bot set` grants no right you did not name.** There is no
+    `--all`: a connected bot can read your messages, reply as you, rewrite
+    your profile and move your Stars, and the reply enumerates exactly what
+    was granted.
+  - **The free/paid line runs through the gift commands.** Converting,
+    crafting, a free transfer, a prepaid upgrade, listing a collectible for
+    sale and declining an offer are performed; anything that needs a payment
+    form signed is priced and refused with `refused_reason`.
 - **The `story` group.** 31 operations covering the whole story surface:
   posting (with the audience vector, media areas, albums, reposts and a
   soundtrack), the stories bar, a peer's active/profile/archive/album grids,
@@ -649,5 +718,19 @@ Two more, outside the documented output shapes:
 - `tlgr/cli/message.py` and `tlgr/cli/draft.py`, and their `EXAMPLE_RESPONSES`
   entries. The generated group replaces them outright — §12.4 forbids a group
   being defined in both places, and a start-up assertion enforces it.
-- The hand-rolled HTTP client in `ipc_client.py`. The module stays as a shim
-  over the new transport until the last v1 command migrates.
+- **The whole v1 surface.** `tlgr/cli/legacy/` (the hand-written command
+  package), `tlgr/daemon/ipc.py` (the v1 route table), `tlgr/ipc_client.py`
+  and `transport.legacy_request` (the shim those routes were reached
+  through), and `tlgr/core/client.py` (`ClientWrapper`). Every documented v1
+  command path is still invocable as a `legacy_paths` alias on the operation
+  that replaced it, and `tests/test_agentmd_compat.py` walks the list. What is
+  gone is the *second* way to reach Telegram: the daemon serves `/v1/*` only,
+  so the peer-uid check, the policy allowlist, the version handshake, the
+  flood budget and the §7.2 error classification apply to every command
+  without exception.
+- **`Daemon.status()`**, v1's `/daemon/status` body. Nothing has served it
+  over HTTP since the update-transport groups landed; `daemon status` answers
+  from the per-account state machine, which is where the COR-37 fix now lives.
+- **The transport-level `flood_wait_max` default.** It existed because the
+  hand-written commands did not thread the flag into their own request bodies
+  (COR-15); every command threads it now.

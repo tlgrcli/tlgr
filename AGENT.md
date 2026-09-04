@@ -116,7 +116,8 @@ an envelope:
 `--results-only` prints the inner value in both cases, which is v1's shape,
 and `--select a.b,c` projects fields by dot path. `meta.already: true` marks an
 idempotent no-op (the world already looked the way you asked for) — success,
-not an error. Commands still under `tlgr/cli/legacy/` print v1's bare object.
+not an error. Every command answers in this envelope: 2.0.0 removed the last
+hand-written v1 command, so there is no second output shape to branch on.
 
 `tlgr agent whoami --json` reports `output_schema_version: 2`; branch on that
 rather than probing for each changed shape.
@@ -831,15 +832,106 @@ makes the answer authoritative. It reports on the dialog list: a conversation
 the account itself deleted is gone server-side too and correctly reads as no
 dialog.
 
-### Profile
+### Profile, privacy, notifications and settings
+
+`profile get` fetches the full user, so `bio` is the bio — v1 answered `""`
+for every account because it never made the second call. `--no-full` skips
+that call and omits `bio` entirely, which is how "not fetched" is told apart
+from "empty".
 
 ```
-tlgr profile get
-→ {"id": ..., "first_name": ..., "last_name": ..., "username": ..., "phone": ...}
+tlgr profile get [--no-full]
+→ {"id": ..., "first_name": ..., "last_name": ..., "username": ..., "phone": ...,
+   "bio": ..., "birthday": "10-12", "premium": true, "usernames": [...]}
 
-tlgr profile update [--first-name TEXT] [--last-name TEXT] [--bio TEXT] [--photo PATH]
-→ {"updated": true}
+tlgr profile update [--first-name T] [--last-name T] [--bio T] [--birthday D]
+                    [--channel CHAT] [--photo PATH]
+→ {"changed": ["bio"], "bio": "..."}      # only the fields it wrote
+
+tlgr profile photo set FILE|--photo-id ID|--emoji ID   # --fallback for the public one
+tlgr profile username set NAME [--check] [--on|--off] [--order LIST]
+tlgr profile status set EMOJI [--until WHEN] | --clear
+tlgr profile presence set online|offline   # tlgr reports neither unless asked
+tlgr profile link [--qr] [--collectible]
 ```
+
+Privacy keys are read-modify-written: `account.setPrivacy` replaces the whole
+ordered vector, so `--add-allow`/`--add-disallow`/`--remove` edit a list in
+place and `--allow`/`--disallow` replace one.
+
+```
+tlgr privacy get [KEY]                    # omit KEY for every key
+tlgr privacy set KEY [RULE] [--add-disallow @user] [--remove @user]
+→ {"key": "last-seen", "base": "contacts", "deny_users": [777123]}
+
+tlgr privacy global get|set [--hide-read-marks on|off] [--paid-messages-price N]
+tlgr privacy blocked list|set PEER [--unblock] [--stories]
+```
+
+`notify` takes a *target* — a scope, a chat, a topic, `reactions` or
+`contact-joined` — and picks between three server APIs. `mute_until` is an
+absolute UNIX timestamp computed from the wall clock; `forever` is Telegram's
+own sentinel.
+
+```
+tlgr notify get private|groups|channels|stories|reactions|contact-joined|<chat>
+tlgr notify set <target> [--mute 2h|forever] [--unmute] [--sound ringtone:ID]
+tlgr notify exception list|clear [CHAT...]
+tlgr notify ringtone list|set FILE
+```
+
+`settings` addresses fifteen cloud-synced keys by name. Every row carries
+`accepts`, the exact token vocabulary its setter takes, so a read pipes into
+a write.
+
+```
+tlgr settings get [KEY]
+→ {"key": "auto-delete", "value": "off", "accepts": "1d|1w|1m|<duration>|off"}
+
+tlgr settings set KEY VALUE...            # auto-delete, sensitive-content,
+                                          # top-peers, quick-reaction, browser,
+                                          # language, auto-download.<preset>.<field>…
+tlgr settings unset top-peers|browser-exception|autosave|saved-tag [VALUE]
+```
+
+### Business, Premium, Stars and gifts
+
+`business bot set` grants no right you did not name — there is deliberately no
+`--all`, because a connected bot can read your messages, reply as you, rewrite
+your profile and move your Stars.
+
+```
+tlgr business get [--timezones]
+tlgr business set --tz ID --open 'mon-fri 09:00-18:00' [--address T] [--intro-title T]
+tlgr business reply list|add|edit|delete|send
+tlgr business bot list|set BOT --reply-to --read …|toggle CHAT
+```
+
+`premium feature list --limits` is the part a script needs: caption length,
+upload size, folder counts and pinned chats all change with the subscription,
+and guessing them writes a message the server refuses.
+
+```
+tlgr premium status | feature list [--limits] | boost list | gift list
+tlgr stars balance get [--ton] | transaction list [--in|--out] | subscription list
+tlgr stars rating get | revenue get CHAT | url get CHAT --amount N
+```
+
+A gift is addressed by a `ref`: `msg:<id>`, `<peer>:<saved_id>`, or a
+collectible slug. Every time gate the server publishes is reported, because
+"not yet, and here is when" is a different answer from "never".
+
+```
+tlgr gift catalog | list [PEER] | get REF | unique get SLUG
+tlgr gift set REF --save|--pin|--wear
+tlgr gift convert REF | upgrade REF | transfer REF PEER | craft REF...
+tlgr giveaway get CHAT MSG_ID | join CHAT | list [CHAT] | code check|apply SLUG
+```
+
+**tlgr never spends money.** `premium gift send`, `business stars transfer`,
+`stars subscription refulfill` and the paid halves of `gift upgrade`,
+`gift transfer` and `gift offer approve` fetch the price, report it, and stop
+with `ok: false` and a reason. There is no flag that changes that.
 
 ### Media, stickers, GIFs and custom emoji
 

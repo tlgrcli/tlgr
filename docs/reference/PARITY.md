@@ -4,7 +4,7 @@
 
 Coverage against the Telegram feature catalog, computed from the registry: every operation declares the catalog ids it covers, and `tlgr.parity` subtracts them from the index shipped in the package. Regenerate with `make parity`.
 
-`covered` is implemented today. `acct%` is covered **plus** waived — an id that belongs to a group a later PR owns, named in `tlgr/data/parity_waivers.toml` with the PR that closes it. Ids whose feasibility is `not-applicable` or `prohibited` are excluded from the denominator once and never counted again.
+`covered` is implemented today. `acct%` is covered **plus** waived — an id this build genuinely cannot cover, named in `tlgr/data/parity_waivers.toml` with the reason and the MTProto method that is missing. Ids whose feasibility is `not-applicable` or `prohibited` are excluded from the denominator once and never counted again.
 
 ```
 catalog 2026-09-02 — 678 operations, 951 invocable paths
@@ -31,7 +31,7 @@ P3                                627    630   99.5%  100.0%
 
 TOTAL                            1788   1797   99.5%  100.0%
 excluded: not-applicable 79, prohibited 40
-uncovered: 9 (9 waived with a PR number)
+uncovered: 9 (9 waived with a reason)
 ```
 
 ## By domain
@@ -98,18 +98,18 @@ uncovered: 9 (9 waived with a PR number)
 | `stories.live-join` | `story.live.get` | The live story is reported; its group call is not reachable from layer 227's storyItem, and joining a broadcast needs a media engine tlgr does not have. |
 | `updates.invoke-business-connection` | `bot.connection.invoke` | The wrapper is implemented on `bot command send`, `bot press` and `inline send`; wrapping an arbitrary command is refused with exit 13. |
 
-## Gaps in a migrated domain
+## What this build cannot do
 
-Domains no PR has reached yet are waived wholesale and not listed here. These are the ids inside a domain that *is* migrated:
+Every one of these is registered as a command that exits 13 (`NOT_SUPPORTED`) naming the method it needs, so "unavailable in this build" is a different answer from "no such command":
 
-| Catalog id | Priority | Feature | Closed by |
+| Catalog id | Priority | Feature | Why |
 |---|---|---|---|
-| `bots.ephemeral-callback-press` | P1 | Press a button on an ephemeral bot message | waived until PR-12: layer 229: `ephemeral.*` and the rich-message keyboard are not in Telethon 1.44. The commands are registered and exit 13 (NOT_SUPPORTED) so an agent can tell 'unavailable in this build' from 'no such command'. |
-| `bots.ephemeral-command-send` | P1 | Send an ephemeral bot command / reply to an ephemeral message | waived until PR-12: layer 229: `ephemeral.*` and the rich-message keyboard are not in Telethon 1.44. The commands are registered and exit 13 (NOT_SUPPORTED) so an agent can tell 'unavailable in this build' from 'no such command'. |
-| `bots.ephemeral-message-send` | P2 | Send / edit / delete an ephemeral message (bot side) | waived until PR-12: layer 229: `ephemeral.*` and the rich-message keyboard are not in Telethon 1.44. The commands are registered and exit 13 (NOT_SUPPORTED) so an agent can tell 'unavailable in this build' from 'no such command'. |
-| `bots.rich-message-buttons` | P2 | Buttons inside a rich bot message | waived until PR-12: layer 229: `ephemeral.*` and the rich-message keyboard are not in Telethon 1.44. The commands are registered and exit 13 (NOT_SUPPORTED) so an agent can tell 'unavailable in this build' from 'no such command'. |
-| `bots.welcome-messages-manage` | P2 | Add / edit / delete a chat's welcome messages | waived until PR-12: layer 229: `ephemeral.*` and the rich-message keyboard are not in Telethon 1.44. The commands are registered and exit 13 (NOT_SUPPORTED) so an agent can tell 'unavailable in this build' from 'no such command'. |
-| `bots.welcome-messages-view` | P2 | Bot welcome messages in an empty chat | waived until PR-12: layer 229: `ephemeral.*` and the rich-message keyboard are not in Telethon 1.44. The commands are registered and exit 13 (NOT_SUPPORTED) so an agent can tell 'unavailable in this build' from 'no such command'. |
-| `bots.chat-join-webview` | P3 | Guard-bot join webview (chat approval mini app) | waived until PR-12: messages.requestChatJoinWebView is absent from Telethon 1.44; `webapp open --join-query-id` is registered and exits 13. |
-| `bots.ephemeral-report` | P3 | Report an ephemeral bot message | waived until PR-12: layer 229: `ephemeral.*` and the rich-message keyboard are not in Telethon 1.44. The commands are registered and exit 13 (NOT_SUPPORTED) so an agent can tell 'unavailable in this build' from 'no such command'. |
-| `gift.can-send` | P3 | Can I send this gift? | waived until PR-12: gifts and collectibles are the `gift` surface (PR-12). |
+| `bots.ephemeral-callback-press` | P1 | Press a button on an ephemeral bot message | waived (layer-gap): `ephemeral.getCallbackAnswer` is a layer-229 method; `bot press --ephemeral` is registered and exits 13. |
+| `bots.ephemeral-command-send` | P1 | Send an ephemeral bot command / reply to an ephemeral message | waived (layer-gap): `ephemeral.sendMessage` is a layer-229 method; `bot command send --ephemeral` is registered and exits 13. |
+| `bots.ephemeral-message-send` | P2 | Send / edit / delete an ephemeral message (bot side) | waived (layer-gap): `ephemeral.sendMessage` is a layer-229 method; the command is registered and exits 13. |
+| `bots.rich-message-buttons` | P2 | Buttons inside a rich bot message | waived (layer-gap): The rich-message keyboard constructors arrived in layer 229; tlgr refuses rather than guessing at a constructor id. |
+| `bots.welcome-messages-manage` | P2 | Add / edit / delete a chat's welcome messages | waived (layer-gap): `ephemeral.sendMessage` / `ephemeral.editMessage` are layer-229 methods; `chat welcome set` is registered and exits 13. |
+| `bots.welcome-messages-view` | P2 | Bot welcome messages in an empty chat | waived (layer-gap): `ephemeral.getWelcomeMessages` is a layer-229 method; `chat welcome list` is registered and exits 13. |
+| `bots.chat-join-webview` | P3 | Guard-bot join webview (chat approval mini app) | waived (absent-method): `messages.requestChatJoinWebView` is absent from Telethon 1.44; `webapp open --join-query-id` is registered and exits 13. |
+| `bots.ephemeral-report` | P3 | Report an ephemeral bot message | waived (layer-gap): `ephemeral.report` is a layer-229 method; the command is registered and exits 13. |
+| `gift.can-send` | P3 | Can I send this gift? | waived (absent-method): `payments.canSendStarGift` is absent from Telethon 1.44; `gift catalog --until` is registered and exits 13, and the rest of the catalogue still reads. |

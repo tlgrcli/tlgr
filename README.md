@@ -379,12 +379,50 @@ Three things this group does *not* do, on purpose:
   A phone number, a location, a chat or a poll each needs its own flag;
   without one tlgr prints what it would send and exits 2.
 
-### Profile
+### Profile, privacy and notifications
 
 ```bash
-tlgr profile get
-tlgr profile update                    # --first-name, --last-name, --bio, --photo
+tlgr profile get                       # --no-full skips the userFull round trip
+tlgr profile update                    # --first-name, --last-name, --bio, --birthday, --channel
+tlgr profile photo set avatar.jpg      # --video, --emoji ID, --photo-id ID, --fallback
+tlgr profile username set ada          # --check, --on/--off, --order a,b
+tlgr profile status set 5301           # --until +7d, --clear
+tlgr profile color set 5               # --profile, collectible:<slug>
+tlgr profile presence set online       # tlgr reports neither unless asked
+tlgr profile link --qr                 # --collectible for the Fragment record
+
+tlgr privacy get [key]                 # omit for every key
+tlgr privacy set last-seen contacts --add-disallow @nosy
+tlgr privacy global set --hide-read-marks on
+tlgr privacy blocked list|set @spammer # --unblock, --stories
+
+tlgr notify get private                # or groups|channels|stories|reactions|<chat>
+tlgr notify set private --mute 2h      # --unmute, --sound ringtone:ID, --preview off
+tlgr notify exception list|clear
+tlgr notify ringtone list|set chime.ogg
 ```
+
+### Settings, business, Premium, Stars and gifts
+
+```bash
+tlgr settings get                      # every cloud key, each with what its setter accepts
+tlgr settings set auto-delete 1w       # sensitive-content, top-peers, browser, language…
+tlgr settings theme list|install Nord
+tlgr settings language list
+
+tlgr business get                      # hours, location, intro, greeting, away, links, bots
+tlgr business set --tz Europe/London --open 'mon-fri 09:00-18:00'
+tlgr business reply add hello --text "Hi! I will reply shortly."
+tlgr business bot set @mybot --reply-to --read --new-chats   # no --all, by design
+
+tlgr premium status | premium feature list --limits
+tlgr stars balance get | stars transaction list --out
+tlgr gift list | gift get msg:120 | gift set msg:120 --pin
+tlgr giveaway get @channel 42 | giveaway code apply <slug>
+```
+
+tlgr never spends money: the commands that would need a payment form signed
+report the price and stop.
 
 ### Accounts
 
@@ -707,14 +745,17 @@ tlgr agent parity                      # coverage of the pinned Telegram feature
 tlgr agent parity --json --uncovered   # every gap, by priority and domain
 ```
 
-The answer to "can tlgr do X yet" without guessing. Every uncovered id is
-either waived to a named later PR or reported as a gap; nothing in the report
-is hand-maintained. The same report is generated into
+The answer to "can tlgr do X yet" without guessing. 2.0.0 covers 1788 of
+1797 catalogued behaviours and all 178 P0 ones; the nine that remain are
+individually waived and each names the MTProto method this build has no
+request class for. Nothing in the report is hand-maintained — it is computed
+from the registry — and the same report is generated into
 [`docs/reference/PARITY.md`](docs/reference/PARITY.md).
 
 ### JSON envelope
 
-Generated commands wrap their answer:
+Every command wraps its answer — there is no hand-written command left to
+answer any other way:
 
 ```json
 {"ok": true, "op": "message.send", "result": {...}, "meta": {"request_id": "...", "elapsed_ms": 42}}

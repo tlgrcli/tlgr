@@ -13,8 +13,37 @@ import pytest
 from telethon.errors import FloodWaitError, PeerFloodError, RPCError
 from telethon.tl.functions.messages import SendMessageRequest
 
-from tlgr.core.errors import EXIT_CODE_MAP, EXIT_SPAM_FLAGGED, SpamFlagError
-from tlgr.daemon.ipc import _handle_exception
+from tlgr.core.errors import (
+    EXIT_CODE_MAP,
+    EXIT_SPAM_FLAGGED,
+    SpamFlagError,
+    classify,
+    error_body_dict,
+    http_status_for,
+)
+
+
+class _Resp:
+    """The status and body the daemon would send, in the shape this file reads."""
+
+    def __init__(self, exc):
+        self.status = http_status_for(exc)
+        self._body = error_body_dict(classify(exc))
+
+    @property
+    def body(self):
+        return json.dumps(self._body).encode()
+
+
+def _handle_exception(exc):
+    """What the daemon answers for *exc*.
+
+    PR-12 deleted `daemon/ipc.py`, whose `_handle_exception` this was written
+    against. The classification was never that route's own — it funnelled
+    through `core.errors`, which is what every path uses now — so the claims
+    below are unchanged and are made one layer down.
+    """
+    return _Resp(exc)
 
 
 def _body(resp):

@@ -2,7 +2,7 @@
 
 # Command reference
 
-588 operations across 38 groups, generated from the operation registry. Groups still served by v1's hand-written commands are not listed here; they arrive with their own PR.
+678 operations across 47 groups, generated from the operation registry. Groups still served by v1's hand-written commands are not listed here; they arrive with their own PR.
 
 | Group | Operations | Reference |
 |---|---:|---|
@@ -11,6 +11,7 @@
 | `auth` | 11 | [auth.md](auth.md) |
 | `boost` | 3 | [boost.md](boost.md) |
 | `bot` | 57 | [bot.md](bot.md) |
+| `business` | 14 | [business.md](business.md) |
 | `call` | 13 | [call.md](call.md) |
 | `chat` | 117 | [chat.md](chat.md) |
 | `conference` | 9 | [conference.md](conference.md) |
@@ -23,19 +24,27 @@
 | `export` | 5 | [export.md](export.md) |
 | `folder` | 13 | [folder.md](folder.md) |
 | `gif` | 5 | [gif.md](gif.md) |
+| `gift` | 19 | [gift.md](gift.md) |
+| `giveaway` | 6 | [giveaway.md](giveaway.md) |
 | `inline` | 7 | [inline.md](inline.md) |
 | `job` | 8 | [job.md](job.md) |
 | `location` | 9 | [location.md](location.md) |
 | `media` | 28 | [media.md](media.md) |
 | `message` | 39 | [message.md](message.md) |
 | `net` | 5 | [net.md](net.md) |
+| `notify` | 7 | [notify.md](notify.md) |
 | `passport` | 5 | [passport.md](passport.md) |
 | `payment` | 9 | [payment.md](payment.md) |
 | `poll` | 9 | [poll.md](poll.md) |
+| `premium` | 6 | [premium.md](premium.md) |
+| `privacy` | 7 | [privacy.md](privacy.md) |
+| `profile` | 16 | [profile.md](profile.md) |
 | `proxy` | 6 | [proxy.md](proxy.md) |
 | `reaction` | 17 | [reaction.md](reaction.md) |
 | `resolve` | 5 | [resolve.md](resolve.md) |
 | `search` | 3 | [search.md](search.md) |
+| `settings` | 8 | [settings.md](settings.md) |
+| `stars` | 7 | [stars.md](stars.md) |
 | `sticker` | 20 | [sticker.md](sticker.md) |
 | `story` | 31 | [story.md](story.md) |
 | `sync` | 5 | [sync.md](sync.md) |

@@ -1,8 +1,14 @@
 """Telethon → model, and the promise that v1's classification is preserved.
 
-`media_details` is the function these summaries were ported from; the parity
-test below is the one that matters, because "the same logic, typed" is a claim
-that decays silently unless something checks it.
+`media_summary` was ported from v1's `media_details`, and the table below is
+what makes "the same logic, typed" checkable rather than asserted: one case
+per kind, with the two that v1's own "first attribute wins" got wrong (a GIF
+carries Video *and* Animated; a video sticker carries Video *and* Sticker)
+called out by name.
+
+`media_details` itself went with `ClientWrapper` in PR-12, so the parity is
+against the table rather than against the old function — the table is the
+part that was ever worth keeping.
 """
 
 from __future__ import annotations
@@ -11,7 +17,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from tlgr.core.client import media_details
 from tlgr.ops._serialize import (
     entity_to_peer,
     marked_id,
@@ -81,7 +86,6 @@ CASES = {
 class TestMediaParity:
     @pytest.mark.parametrize(("expected", "media"), sorted(CASES.items()))
     def test_kind_matches_v1(self, expected, media):
-        assert media_details(media)["kind"] == expected
         summary = media_summary(media)
         assert summary is not None and summary.kind == expected
 

@@ -1322,3 +1322,103 @@ tlgr reports those fields under those names rather than inventing
 `stakes`/`payouts` over an opaque `params` vector, and keeps `--emoji` as a
 label echoed back on the answer so a caller can tell which game they asked
 about. Staking TON on one is a financial action and is not implemented.
+
+## 2026-09-04 — the no-spend policy is inherited, not re-litigated
+
+PR-10 named four methods as deliberately absent from tlgr's whole surface:
+`payments.sendPaymentForm`, `sendStarsForm`, `validateRequestedInfo` and
+`fulfillStarsSubscription`. PR-12's work list nevertheless designs `premium
+gift send`, `business stars transfer` and `stars subscription refulfill` as
+`--yes`-gated sends of exactly those. Adding them behind a flag would make the
+policy a default rather than a property, and a property is the only kind of
+guarantee worth stating.
+
+So the three are control-only: they fetch the payment form, report the price,
+and answer `ok: false` with the reason. They are **not** mutating, so
+`--dry-run` does not short-circuit them and the price is always printed. The
+same line runs through the gift group — converting, crafting, a free transfer,
+a prepaid upgrade, listing a collectible and *declining* an offer are
+performed; the paid halves report `refused_reason`. The catalog agrees: every
+id involved is `partial` or `control-only` feasibility, so covering it this
+way is coverage rather than a gap.
+
+A test walks the registry's *source* and fails if any operation in the group
+names one of the four. A list of commands would have to be maintained; the
+property does not.
+
+## 2026-09-04 — five aliases from the work list collide with their own groups
+
+`profile presence`, `gift unique`, `stars balance`, `stars rating`, `stars
+revenue`, `stars url` and `privacy revenue` are all listed as aliases in the
+work list, and every one of them is the *group* its canonical op lives under
+(`profile.presence.set`, `gift.unique.get`, …). Registry lint L16 refuses
+them, and it is right to: placing a command where a group stands replaces the
+group and takes every command inside it. They are dropped. `notify set` loses
+its `chat mute` legacy path for the same reason — `chat.mute` is already an
+operation of its own from PR-3, and one path cannot mean two things.
+
+## 2026-09-04 — `update` joins the verb vocabulary
+
+`profile update` is a path v1 documented, and §12.4 makes a documented path
+permanent, so the operation is `profile.update` and `update` goes into
+`registry.VERBS`. `profile set` is its STYLE-shaped alias. The alternative —
+making `profile.set` canonical and `profile update` a legacy path — would put
+the v1 spelling one indirection away from the thing it names, for no gain.
+
+## 2026-09-04 — a headline field loses its default rather than its meaning
+
+`omit_defaults` drops a field whose value equals its default, so `ok: False`
+on a refusal, `state: "declined"`, `transferred: False` and `version: 0` were
+all disappearing from the JSON exactly when a caller most needed to see them.
+Absent must mean "not applicable", never "the interesting case", so every
+field that *carries the answer* is now declared without a default: msgspec
+always emits a required field. `kw_only` is not inherited by a msgspec
+subclass, so those fields moved to the front of their structs — which is the
+right reading order anyway.
+
+## 2026-09-04 — `privacy set stories` is refused, with the two commands that own it
+
+The work list's help text lists `stories` among the privacy keys. There is no
+`inputPrivacyKeyStories`: story visibility is an audience vector chosen per
+story (`story post --audience`) plus an exclusion list (`story blocklist set`,
+reachable as `privacy blocked set --stories`). Accepting the key and silently
+doing nothing, or mapping it onto the blocklist alone, would both be wrong in
+a way a caller could not see. It raises a usage error naming both commands.
+
+## 2026-09-04 — three flags refuse because Telethon has no request class
+
+`payments.canSendStarGift`, `getStarGiftCraftCandidates` and
+`getStarGiftAttributes` exist in the layer and not in Telethon 1.44. That is a
+different gap from layer 229 — the method is not new, the library is
+incomplete — so `_settings.method_gap()` is separate from `_layer.py` and says
+so: the flag that needs the method exits 13 naming it, and the rest of the
+command still works. `gift catalog` still reads the catalogue without
+`--until`; `gift craft` still crafts without `--candidates`; `gift variant
+list` still reports the upgrade preview without `--craft-only`.
+`gift.can-send` is the one id this costs, and it is waived by name.
+
+## 2026-09-04 — the parity waiver file stops being a backlog
+
+Until this PR a waiver was a promise with a PR number on it, which is exactly
+right while PRs remain and meaningless once they do not. All 177 promises were
+kept. The file now requires a `kind` — `layer-gap`, `absent-method`,
+`prohibited` or `not-applicable` — and the gate enforces the shape rather than
+trusting the file: no domain waiver, no unknown kind, a method named in every
+layer/method reason, and no waiver for an id that is in fact covered. That
+last one is the only way a number could lie about itself.
+
+## 2026-09-04 — `ClientWrapper` becomes a two-method protocol
+
+The job engine was the last thing holding `tlgr/core/client.py` alive, and it
+used two of its methods: the raw Telethon client, and a chat resolver.
+`jobs/client.JobClient` is those two as a Protocol, and
+`AccountSession.job_client` implements it by reading through to the session —
+so a reconnect swaps the client underneath a running job instead of leaving it
+holding a dead one, which the long-lived wrapper could not do. A Protocol
+rather than a base class because `jobs/` must not import `daemon/`.
+
+`media_details` went with it. Its logic had already been ported to
+`ops/_serialize.media_summary`; what was worth keeping was the *table* of
+cases — a GIF carries Video and Animated, a video sticker carries Video and
+Sticker — and that moved onto the function that now decides them.
+

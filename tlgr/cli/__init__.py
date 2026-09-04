@@ -206,13 +206,11 @@ def cli(
     ctx.obj["results_only"] = results_only
     ctx.obj["select"] = select_fields
     ctx.obj["dry_run"] = dry_run
+    # Every command threads this through its own request body now: the
+    # generated dispatcher passes `flood_wait_max` on every `/v1/op` call, so
+    # the transport-level default the hand-written v1 commands needed (COR-15)
+    # went with them.
     ctx.obj["flood_wait_max"] = flood_wait_max
-    # The forty hand-written v1 commands do not thread this through their own
-    # request bodies, so the transport attaches it and the daemon applies it
-    # per request. Without this the flag parsed and did nothing (COR-15).
-    from tlgr.transport import set_default_flood_wait_max
-
-    set_default_flood_wait_max(flood_wait_max)
     ctx.obj["force"] = force
     ctx.obj["no_input"] = no_input
     ctx.obj["verbose"] = verbose
@@ -230,39 +228,19 @@ def cli(
 # ---------------------------------------------------------------------------
 
 from tlgr.cli.gen import build_click_tree  # noqa: E402
-from tlgr.cli.legacy.profile import profile_group  # noqa: E402
-
-cli.add_command(profile_group, "profile")
-
 
 # ---------------------------------------------------------------------------
 # The generated tree
 # ---------------------------------------------------------------------------
 
 
-#: Commands that still live in `cli/legacy` *inside* a group the registry now
-#: generates. Each entry is a promise to delete, and an enumerated list is
-#: the only kind of overlap that is a decision rather than an accident. PR-2
-#: took `agent whoami` out of it, PR-4 took `daemon` and `job`, PR-7 took
-#: `chat create` and `chat members`. Nothing is left: the dict is empty and
-#: stays that way unless a future migration needs the same escape hatch.
-LEGACY_EXTRAS: dict[str, list[click.Command]] = {}
-
-
 def build_cli() -> click.Group:
-    """Compose the generated command tree with the v1 groups still hand-written.
+    """Install the transport and attach the generated command tree.
 
-    A *command* must be defined in exactly one of the two places. Being
-    defined in both would mean a migration half-landed — one path generated,
-    one still hand-written, silently disagreeing — so it fails the import
-    rather than the user's next command (§12.4).
-
-    A *group* may legitimately be shared while a migration is in flight, in
-    both directions: LEGACY_EXTRAS puts a v1 command inside a generated group
-    (`agent whoami` until PR-2 moves it), and merging puts a generated command
-    inside a v1 group (`account status`, whose group migrates in PR-2). Both
-    are enumerated by the code that does the merging, and a name that appears
-    twice is still a hard failure.
+    Every command comes from the registry now. PR-12 deleted the last
+    hand-written group, and with it the merge that let a v1 command and a
+    generated one share a name: there is one source for what `tlgr` can do,
+    so there is nothing left to reconcile.
     """
     import tlgr.ops  # noqa: F401  — importing it is what populates the registry
     from tlgr.cli.gen import set_dispatcher
@@ -273,27 +251,8 @@ def build_cli() -> click.Group:
     # daemon out of the CLI's import graph.
     set_dispatcher(make_dispatcher(), make_stream_dispatcher())
 
-    generated = build_click_tree()
-    for name, command in generated.items():
-        for extra in LEGACY_EXTRAS.get(name, []):
-            if isinstance(command, click.Group):
-                command.add_command(extra, extra.name)
-        existing = cli.commands.get(name)
-        if existing is None:
-            cli.add_command(command, name)
-            continue
-        if not (isinstance(existing, click.Group) and isinstance(command, click.Group)):
-            raise RuntimeError(
-                f"the command {name!r} is defined both by the registry and by "
-                f"tlgr/cli/legacy. Delete the legacy module."
-            )
-        for sub_name, sub in command.commands.items():
-            if sub_name in existing.commands:
-                raise RuntimeError(
-                    f"{name} {sub_name} is defined both by the registry and by "
-                    f"tlgr/cli/legacy. Delete the legacy command."
-                )
-            existing.add_command(sub, sub_name)
+    for name, command in build_click_tree().items():
+        cli.add_command(command, name)
     return cli
 
 

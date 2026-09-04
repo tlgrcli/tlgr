@@ -3,7 +3,7 @@
 On 2026-09-02 the machine's route to Telegram dropped mid-wake. Telethon
 exhausted its reconnect budget on all three campaign accounts and raised
 `ConnectionError: Connection to Telegram failed 5 time(s)`, leaving every
-`ClientWrapper` in `Daemon._clients` — present, and dead. Every request then
+client object in the daemon's table — present, and dead. Every request then
 failed with "Cannot send requests while disconnected".
 
 The documented remedy for exactly that situation ("`tlgr status` if things
@@ -17,105 +17,88 @@ look dead", CLAUDE.md) reported:
 most reassuring possible answer while nothing worked, and the only way to
 learn otherwise was to attempt a real send and read the failure.
 
-The wrapper existing and the wrapper being usable are different facts; status
-now reports the second one.
+The object existing and the link being usable are different facts. PR-12
+deleted the `ClientWrapper` this was first written against, so the claim is
+made where it now lives: `AccountSession.connected` asks the client, and
+`SessionManager.snapshot()` — what `daemon status` answers from — carries a
+state per account rather than a list of keys.
 """
 
 from __future__ import annotations
 
 from types import SimpleNamespace
 
-from tlgr.core.client import ClientWrapper
+import pytest
+
+from tlgr.daemon.session import AccountSession, SessionState
 
 
-def _wrapper(*, client=None):
-    w = ClientWrapper.__new__(ClientWrapper)
-    w._client = client
-    w._me = None
-    return w
+def _session(alias: str, *, client=None, state: str = SessionState.ONLINE) -> AccountSession:
+    """A session with a client and nothing else; no loop, no socket."""
+    session = AccountSession.__new__(AccountSession)
+    session.alias = alias
+    session.client = client
+    session.state = state
+    session.me = None
+    session.reason = ""
+    session.since = None
+    session.connected_since = None
+    session.last_update = None
+    session.reconnects = 0
+    session.catch_up_pending = False
+    session.in_flight = 0
+    session.resync_needed = set()
+    return session
 
 
-class _FakeDaemon:
-    """Just enough of Daemon to exercise status() without a running loop."""
-
-    def __init__(self, clients):
-        import os
-        import time
-
-        self._clients = clients
-        self._start_time = time.time()
-        self._job_runner = SimpleNamespace(list_jobs=lambda: [])
-        self._os_getpid = os.getpid
-
-    status = None  # bound below
+LIVE = SimpleNamespace(is_connected=lambda: True)
+DEAD = SimpleNamespace(is_connected=lambda: False)
 
 
-def _status(clients):
-    from tlgr.daemon.server import DaemonServer
-
-    d = _FakeDaemon(clients)
-    return DaemonServer.status(d)
+# -- AccountSession.connected ------------------------------------------------
 
 
-# -- ClientWrapper.is_connected --
+def test_a_session_that_never_connected_is_not_connected():
+    assert _session("work", client=None).connected is False
 
 
-def test_wrapper_never_connected_is_not_connected():
-    assert _wrapper(client=None).is_connected is False
+def test_a_session_with_a_live_client_is_connected():
+    assert _session("work", client=LIVE).connected is True
 
 
-def test_wrapper_with_live_client_is_connected():
-    live = SimpleNamespace(is_connected=lambda: True)
-    assert _wrapper(client=live).is_connected is True
-
-
-def test_wrapper_survives_its_connection():
+def test_a_session_survives_its_connection():
     """The exact shape of the incident: the object is there, the link is not."""
-    dead = SimpleNamespace(is_connected=lambda: False)
-    w = _wrapper(client=dead)
-    assert w._client is not None  # what status() used to key off
-    assert w.is_connected is False  # what it keys off now
+    session = _session("work", client=DEAD)
+    assert session.client is not None  # what status() used to key off
+    assert session.connected is False  # what it keys off now
 
 
-# -- Daemon.status() --
+# -- what `daemon status` answers from ---------------------------------------
 
 
-def test_status_reports_all_connected_as_healthy():
-    live = SimpleNamespace(is_connected=lambda: True)
-    st = _status({"Pouri2048": _wrapper(client=live), "Mr": _wrapper(client=live)})
-
-    assert st["healthy"] is True
-    assert st["disconnected"] == []
-    assert st["connections"] == {"Pouri2048": True, "Mr": True}
+def _snapshot(*sessions: AccountSession) -> list[dict]:
+    return [session.snapshot() for session in sessions]
 
 
-def test_status_reports_a_fully_dead_daemon_as_unhealthy():
-    dead = SimpleNamespace(is_connected=lambda: False)
-    clients = {a: _wrapper(client=dead) for a in ("Mr", "Pouri2048", "Pouri16", "Pouri256")}
-    st = _status(clients)
-
-    # The field that lied: still complete, still every account, unchanged shape.
-    assert sorted(st["accounts"]) == ["Mr", "Pouri16", "Pouri2048", "Pouri256"]
-    # The fields that tell the truth.
-    assert st["healthy"] is False
-    assert st["disconnected"] == ["Mr", "Pouri16", "Pouri2048", "Pouri256"]
-    assert not any(st["connections"].values())
+def test_every_row_carries_a_state_not_just_a_name():
+    """The field that lied was a list of keys. A row cannot be just a name."""
+    rows = _snapshot(_session("Pouri2048", client=LIVE), _session("Mr", client=LIVE))
+    assert sorted(row["alias"] for row in rows) == ["Mr", "Pouri2048"]
+    assert all(row["state"] == SessionState.ONLINE for row in rows)
 
 
-def test_status_reports_a_partial_outage():
-    live = SimpleNamespace(is_connected=lambda: True)
-    dead = SimpleNamespace(is_connected=lambda: False)
-    st = _status({"Pouri2048": _wrapper(client=live), "Pouri16": _wrapper(client=dead)})
+def test_a_dead_account_says_so_in_its_own_row():
+    rows = _snapshot(
+        _session("Mr", client=DEAD, state=SessionState.DEGRADED),
+        _session("Pouri16", client=LIVE),
+    )
+    by_alias = {row["alias"]: row for row in rows}
+    assert by_alias["Mr"]["state"] == SessionState.DEGRADED
+    assert by_alias["Pouri16"]["state"] == SessionState.ONLINE
 
-    assert st["healthy"] is False
-    assert st["disconnected"] == ["Pouri16"]
-    assert st["connections"] == {"Pouri2048": True, "Pouri16": False}
 
-
-def test_status_with_no_clients_is_healthy_not_broken():
-    """No accounts loaded yet is a different thing from accounts that died."""
-    st = _status({})
-
-    assert st["healthy"] is True
-    assert st["disconnected"] == []
-    assert st["connections"] == {}
+@pytest.mark.parametrize("state", [SessionState.DEGRADED, SessionState.STOPPED])
+def test_a_session_that_is_not_online_reports_when_it_stopped_being(state):
+    """ "Since when" is the difference between a blip and an outage."""
+    row = _session("Mr", client=DEAD, state=state).snapshot()
+    assert "since" in row

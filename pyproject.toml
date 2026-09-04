@@ -67,7 +67,7 @@ asyncio_mode = "auto"
 [tool.ruff]
 line-length = 100
 target-version = "py310"
-extend-exclude = ["tlgr/cli/legacy", "*.md"]  # design docs contain illustrative, not runnable, snippets
+extend-exclude = ["*.md"]  # design docs contain illustrative, not runnable, snippets
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF"]
@@ -78,9 +78,8 @@ ignore = [
     "RUF001", "RUF002", "RUF003",  # the docs and tests are full of real Unicode
 ]
 
-# The v1 modules below are rewritten or deleted by their own group PR
-# (ARCHITECTURE §2.4). Restyling them now would bury the foundation diff in
-# unrelated churn, so their remaining nits are parked rather than fixed.
+# PR-12 deleted the last v1 module, so nothing below is parked pending a
+# rewrite any more: each entry is a rule that is wrong for that file.
 [tool.ruff.lint.per-file-ignores]
 # RUF012: msgspec turns a mutable Struct default into a default_factory, so
 # `list[str] = []` is the documented spelling, not a shared-mutable bug.
@@ -93,25 +92,21 @@ ignore = [
 # and the code/exit status is the contract.
 "tests/*" = ["B011", "B017", "SIM117", "RUF059", "RUF012"]
 "tlgr/cli/__init__.py" = ["SIM102"]
-"tlgr/cli/legacy/*" = ["SIM102", "SIM105", "F401", "F841", "B904"]
-"tlgr/cli/account.py" = ["SIM105", "F841"]
-"tlgr/cli/config_cmd.py" = ["SIM105", "F401"]
 "tlgr/core/accounts.py" = ["SIM105"]
-"tlgr/core/client.py" = ["SIM102", "SIM105", "B904"]
 "tlgr/daemon/server.py" = ["SIM105", "RUF006"]
 "tlgr/daemon/webhook.py" = ["SIM102", "SIM105"]
 "tlgr/filters/*" = ["SIM102"]
 "tlgr/gateway/engine.py" = ["RUF059"]
-"tlgr/ipc_client.py" = ["B904", "F841"]
 "tlgr/jobs/base.py" = ["SIM105"]
 "tlgr/processors/__init__.py" = ["F811"]
 
 [tool.ruff.format]
 quote-style = "double"
 
-# Strict typing is enforced on the v2 foundation only. The v1 modules under
-# tlgr/cli/legacy and the not-yet-migrated core keep their existing looseness
-# until their group PR rewrites them.
+# Strict typing is enforced on the v2 foundation. What is left outside the
+# list below is the job engine (`gateway/`, `jobs/`, `actions/`, `filters/`,
+# `processors/`) and the platform glue, neither of which the command surface
+# runs through.
 [tool.mypy]
 python_version = "3.10"
 warn_unused_configs = true
@@ -150,7 +145,7 @@ strict = true
 
 [tool.coverage.run]
 source = ["tlgr"]
-omit = ["tlgr/cli/legacy/*"]
+omit = []
 
 [project.urls]
 Homepage = "https://github.com/tlgrcli/tlgr"

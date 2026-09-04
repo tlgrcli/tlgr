@@ -448,6 +448,10 @@ class ProfilePhoto(ContactModel):
     video: bool = False
     dc_id: int | None = None
     file: str | None = None
+    #: Only filled for my own history (`profile photo list`): which of these
+    #: is the avatar in force. Absent on another user's photos, because the
+    #: server does not say.
+    current: bool = False
 
 
 class PhotoResult(ContactModel):

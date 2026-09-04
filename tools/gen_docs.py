@@ -211,10 +211,11 @@ def parity_page() -> str:
         "Regenerate with `make parity`.",
         "",
         "`covered` is implemented today. `acct%` is covered **plus** waived — "
-        "an id that belongs to a group a later PR owns, named in "
-        "`tlgr/data/parity_waivers.toml` with the PR that closes it. Ids whose "
-        "feasibility is `not-applicable` or `prohibited` are excluded from the "
-        "denominator once and never counted again.",
+        "an id this build genuinely cannot cover, named in "
+        "`tlgr/data/parity_waivers.toml` with the reason and the MTProto "
+        "method that is missing. Ids whose feasibility is `not-applicable` or "
+        "`prohibited` are excluded from the denominator once and never "
+        "counted again.",
         "",
         "```",
         render_table(report),
@@ -261,12 +262,13 @@ def parity_page() -> str:
     ]
     lines += [
         "",
-        "## Gaps in a migrated domain",
+        "## What this build cannot do",
         "",
-        "Domains no PR has reached yet are waived wholesale and not listed "
-        "here. These are the ids inside a domain that *is* migrated:",
+        "Every one of these is registered as a command that exits 13 "
+        '(`NOT_SUPPORTED`) naming the method it needs, so "unavailable in '
+        'this build" is a different answer from "no such command":',
         "",
-        "| Catalog id | Priority | Feature | Closed by |",
+        "| Catalog id | Priority | Feature | Why |",
         "|---|---|---|---|",
     ]
     for item in report.uncovered:

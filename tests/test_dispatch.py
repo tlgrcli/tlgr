@@ -311,28 +311,36 @@ class TestMiddleware:
         assert classify(caught.value).exit_code == EXIT_DAEMON
 
 
-async def test_the_v1_error_shape_is_flat_and_the_v2_one_is_wrapped(live_daemon, client, in_thread):
-    """Both surfaces classify identically; only the wrapper differs (§7.1).
+async def test_the_only_error_shape_is_the_wrapped_one(live_daemon, client, in_thread):
+    """One surface, one shape (§7.1).
 
-    The raw bodies are read here rather than through `client.request`, which
-    would raise — and the shape of the body *is* the compatibility contract.
-    Everything goes through `in_thread`: the transport is synchronous, and
-    calling it directly would block the loop the daemon is running on.
+    Until PR-12 this asserted two: the v1 routes answered a flat
+    `{code, exit_code, error}` body and `/v1/op` answered the wrapped one.
+    The v1 routes are gone, so the flat shape has nothing left to describe —
+    what survives is that an unknown operation is a USAGE error inside the
+    envelope, and that a v1 path is simply not a route any more.
+
+    The raw body is read here rather than through `client.request`, which
+    would raise, and everything goes through `in_thread`: the transport is
+    synchronous and would otherwise block the loop the daemon runs on.
     """
     import json
 
-    def raw(method: str, path: str, body: bytes | None = None) -> dict[str, Any]:
+    def raw(method: str, path: str, body: bytes | None = None) -> tuple[int, Any]:
         conn, response = client._open(method, path, body=body)
         try:
-            return json.loads(response.read())
+            payload = response.read()
+            try:
+                return response.status, json.loads(payload)
+            except json.JSONDecodeError:
+                return response.status, payload
         finally:
             conn.close()
 
     client._ready = True
-    v1 = await in_thread(raw, "GET", "/profile/get?account=nope")
-    assert {"code", "exit_code", "error"} <= set(v1)
-    assert "ok" not in v1
+    status, _ = await in_thread(raw, "GET", "/profile/get?account=nope")
+    assert status == 404, "a v1 route must not be served at all"
 
-    v2 = await in_thread(raw, "POST", "/v1/op", msgspec.json.encode({"op": "nope.nothing"}))
+    _, v2 = await in_thread(raw, "POST", "/v1/op", msgspec.json.encode({"op": "nope.nothing"}))
     assert v2["ok"] is False
     assert v2["error"]["code"] == "USAGE"

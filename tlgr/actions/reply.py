@@ -6,8 +6,8 @@ import logging
 from typing import Any
 
 from tlgr.actions import register_action
-from tlgr.core.client import ClientWrapper
 from tlgr.gateway.event import Event
+from tlgr.jobs.client import JobClient
 from tlgr.processors import ProcessorChain
 
 log = logging.getLogger("tlgr.actions.reply")
@@ -17,7 +17,7 @@ log = logging.getLogger("tlgr.actions.reply")
 async def action_reply(
     event: Event,
     config: Any,
-    client: ClientWrapper,
+    client: JobClient,
     chain: ProcessorChain | None = None,
 ) -> None:
     if event.source != "telegram":

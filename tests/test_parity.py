@@ -25,10 +25,10 @@ ROOT = Path(__file__).resolve().parent.parent
 #: Every P0 catalog id the landed PRs claim. Raised by each group PR, never
 #: lowered. ARCHITECTURE §1.3: "P0 coverage may never decrease and must reach
 #: 100 % before 2.0.0 final".
-P0_FLOOR = 172
+P0_FLOOR = 178
 
 #: The floor for total covered ids. Same rule, weaker guarantee.
-COVERED_FLOOR = 1541
+COVERED_FLOOR = 1788
 
 #: Every P0 catalog id PR-1's own operations cover, named rather than
 #: counted, so a swap (one dropped, one added) cannot pass a count check
@@ -257,6 +257,23 @@ PR10_P0_IDS = frozenset(
     }
 )
 
+#: Every P0 catalog id PR-12's operations cover. With these six the P0 set
+#: is complete: 178 of 178, which is what ARCHITECTURE §1.3 required before
+#: 2.0.0 final. Four of them are the profile screen v1 answered wrongly or not
+#: at all; `notify.peer` is the per-chat notification exception; and
+#: `calls.privacy-who-can-call` is a privacy key, which is why it lands here
+#: rather than with the call group.
+PR12_P0_IDS = frozenset(
+    {
+        "calls.privacy-who-can-call",
+        "notify.peer",
+        "profile.photo-set",
+        "profile.set-bio",
+        "profile.set-name",
+        "profile.view-own",
+    }
+)
+
 #: `(group prefixes, the P0 ids those groups claim)` for each landed PR.
 #: The P0 ids PR-5's own operations cover, named for the same reason.
 PR5_P0_IDS = frozenset(
@@ -352,6 +369,21 @@ P0_OWNERS = (
     ("pr8", _by_prefix("story."), PR8_P0_IDS),
     ("pr11", _by_prefix("call.", "vc.", "conference."), PR11_P0_IDS),
     ("pr10", _by_prefix("bot.", "inline.", "webapp.", "payment."), PR10_P0_IDS),
+    (
+        "pr12",
+        _by_prefix(
+            "profile.",
+            "privacy.",
+            "notify.",
+            "settings.",
+            "business.",
+            "premium.",
+            "stars.",
+            "gift.",
+            "giveaway.",
+        ),
+        PR12_P0_IDS,
+    ),
 )
 
 
@@ -460,10 +492,59 @@ class TestTheGate:
             named |= set(expected)
         assert len(named) == P0_FLOOR
 
-    def test_every_uncovered_id_is_waived_with_a_pr_number(self, report):
+    def test_every_uncovered_id_is_waived_with_a_reason(self, report):
         """No silent gaps: the gate is meaningful from day one, not at the end."""
         unwaived = [u for u in report.uncovered if not u["reason"].startswith("waived")]
         assert unwaived == [], f"{len(unwaived)} ids are uncovered and unwaived: {unwaived[:5]}"
+
+    def test_p0_coverage_is_complete(self, report):
+        """§1.3: P0 must reach 100 % before 2.0.0 final. This is that check."""
+        stats = report.by_priority["P0"]
+        assert stats["covered"] == stats["required"] == 178
+        assert stats["waived"] == 0
+
+    def test_no_domain_is_waived_wholesale(self):
+        """The blanket waiver was the backlog; the backlog is empty.
+
+        A domain waiver would let a whole group read as done without covering
+        anything in it, which is the one failure mode this file exists to
+        prevent.
+        """
+        assert waivers().domains == {}
+
+    def test_every_waiver_names_one_of_the_four_permanent_reasons(self):
+        """A waiver is no longer a promise: "owned by PR-N" has no meaning now.
+
+        Each remaining entry must say *why it cannot be done in this build* —
+        a layer the pinned Telethon does not speak, a request class it does
+        not ship, a thing tlgr refuses on purpose, or a thing a CLI has no
+        use for.
+        """
+        from tlgr.parity import KINDS
+
+        bad = {
+            entry_id: waiver.kind
+            for entry_id, waiver in waivers().ids.items()
+            if waiver.kind not in KINDS
+        }
+        assert bad == {}, f"waivers with no permanent reason: {bad}"
+
+    def test_every_layer_or_method_waiver_names_the_method(self):
+        """ "Not supported" without the method name is not a reason."""
+        for entry_id, waiver in waivers().ids.items():
+            if waiver.kind in ("layer-gap", "absent-method"):
+                assert "." in waiver.reason, f"{entry_id} does not name a method"
+
+    def test_no_waiver_survives_for_an_id_that_is_covered(self, report):
+        """A waiver on covered work is a lie the numbers would repeat."""
+        covered = _covered_ids()
+        stale = sorted(entry_id for entry_id in waivers().ids if entry_id in covered)
+        assert stale == [], f"these ids are covered and still waived: {stale}"
+
+    def test_the_remaining_waivers_are_the_nine_this_build_cannot_do(self, report):
+        """Named, not counted: a swap must not pass a count check."""
+        assert {u["id"] for u in report.uncovered} == set(waivers().ids)
+        assert len(waivers().ids) == 9
 
     def test_the_auth_domain_is_fully_accounted_for(self, report):
         """PR-2's own domain: implemented, or waived to a named later PR.
@@ -572,6 +653,13 @@ class TestTheGate:
 
     def test_the_groups_channels_admin_domain_is_no_longer_waived_wholesale(self):
         assert "groups_channels_admin" not in waivers().domains
+
+    def test_profile_settings_privacy_is_completely_covered(self, report):
+        """PR-12's own domain, and the last one: 178 of 178, nothing waived."""
+        stats = report.by_domain["profile_settings_privacy"]
+        assert stats["covered"] == stats["required"]
+        assert stats["percent"] == 100.0
+        assert stats["waived"] == 0
 
 
 class TestReport:

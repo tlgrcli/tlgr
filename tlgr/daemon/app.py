@@ -186,25 +186,16 @@ class Daemon:
             log.debug("could not register the raw Telethon handler for %s: %s", alias, exc)
             register(on_update)
 
-    # -- v1 compatibility surface -----------------------------------------
-
-    @property
-    def _clients(self) -> dict[str, Any]:
-        """alias → `ClientWrapper`, for the v1 handlers still in `ipc.py`."""
-        return {
-            alias: session.wrapper
-            for alias, session in ((a, self.sessions.get(a)) for a in self.sessions.aliases)
-            if session is not None and session.client is not None
-        }
+    # -- the job engine's account handles ---------------------------------
 
     def get_client(self, account: str = "") -> Any:
         if not account:
             return None
         session = self.sessions.get(account)
-        return session.wrapper if session and session.client is not None else None
+        return session.job_client if session and session.client is not None else None
 
     async def ensure_client(self, account: str = "") -> Any:
-        """v1's on-demand connect, now going through the SessionManager.
+        """Connect an account on demand and hand back its job client.
 
         Returning `None` for an empty account is the point: v1 answered with
         "whichever client came first", so an under-specified request silently
@@ -221,7 +212,7 @@ class Daemon:
             return None
         with contextlib.suppress(Exception):
             await session.acquire(timeout=15.0)
-        return session.wrapper if session.client is not None else None
+        return session.job_client if session.client is not None else None
 
     def touch_ipc(self) -> None:
         self.activity.touch()
@@ -277,30 +268,6 @@ class Daemon:
             "added": sorted(added),
             "removed": sorted(removed),
             "updated": sorted(updated),
-        }
-
-    def status(self) -> dict[str, Any]:
-        """v1's `/daemon/status` body. The route is gone; the shape is not.
-
-        `daemon status` is a registry operation now and answers from
-        `/v1/status`, so nothing serves this over HTTP any more. It stays
-        because `connections`/`healthy` are the COR-37 fix stated at the level
-        the `ClientWrapper` bridge works at — the wrapper existing and the
-        wrapper being usable are different facts, and v1 reported only the
-        first — and both go together at PR-12.
-        """
-        uptime = int(time.time() - self._start_time)
-        connections = {alias: client.is_connected for alias, client in self._clients.items()}
-        disconnected = sorted(alias for alias, ok in connections.items() if not ok)
-        return {
-            "running": True,
-            "pid": os.getpid(),
-            "uptime_seconds": uptime,
-            "accounts": list(self._clients),
-            "connections": connections,
-            "disconnected": disconnected,
-            "healthy": not disconnected,
-            "jobs": self._job_runner.list_jobs(),
         }
 
     def request_shutdown(self) -> None:
@@ -877,7 +844,14 @@ DAEMON_KEY: web.AppKey[Daemon] = web.AppKey("daemon", Daemon)
 
 
 def build_app(daemon: Daemon) -> web.Application:
-    """The application: the v2 routes, the v1 routes, one middleware chain."""
+    """The application: four `/v1/*` routes and one middleware chain.
+
+    PR-12 removed the last v1 route. Everything the daemon serves now goes
+    through `POST /v1/op`, which means the peer-uid check, the policy
+    allowlist, the version handshake, the flood budget and the error
+    classification apply to every command without exception — the thing the
+    v1 routes could only approximate by being registered here.
+    """
     app = web.Application(
         middlewares=[
             error_middleware,
@@ -892,10 +866,4 @@ def build_app(daemon: Daemon) -> web.Application:
     app.router.add_get("/v1/events", handle_events)
     app.router.add_get("/v1/status", handle_status)
     app.router.add_post("/v1/admin/{action}", handle_admin)
-
-    # The v1 routes ride the same middleware, so every fix above is global
-    # from day one instead of arriving with each group's migration (§12.4).
-    from tlgr.daemon.ipc import register_legacy_routes
-
-    register_legacy_routes(app, daemon)
     return app

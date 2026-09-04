@@ -11,10 +11,13 @@ Three rules keep it honest.
   (bot-only, server-side, GUI-only) or `prohibited` (ToS, spam,
   deanonymisation) are excluded once, here, and never again. Anything else
   counts, so coverage cannot be improved by re-labelling work as out of scope.
-* **A waiver is a promise with a PR number on it.** `parity_waivers.toml`
-  lists what is knowingly not covered yet and by when. A waived id is still
-  in the denominator; it is reported as uncovered-with-a-reason, not
-  subtracted.
+* **A waiver names a permanent reason, not a later PR.** Until PR-12 a
+  waiver was a promise with a PR number on it; every one of those promises
+  has been kept, so `parity_waivers.toml` now holds only ids this build
+  genuinely cannot cover, each with a `kind` (`layer-gap`, `absent-method`,
+  `prohibited`, `not-applicable`) and the method that is missing. A waived id
+  is still in the denominator; it is reported as uncovered-with-a-reason,
+  never subtracted.
 * **An unknown id is a build failure.** An op that covers an id the catalog
   has never heard of is a typo, and a typo that inflates a coverage number is
   worse than a gap.
@@ -36,6 +39,7 @@ else:  # pragma: no cover - exercised on the 3.10 CI leg
 __all__ = [
     "CatalogEntry",
     "ParityReport",
+    "Waiver",
     "Waivers",
     "catalog",
     "compute",
@@ -65,22 +69,41 @@ class CatalogEntry:
         return self.feasibility in ("full", "partial", "control-only")
 
 
+#: The only reasons a waiver may give. Anything else is a backlog entry
+#: wearing a waiver's clothes, and `tests/test_parity.py` refuses it.
+KINDS = ("layer-gap", "absent-method", "prohibited", "not-applicable")
+
+
+@dataclass(frozen=True, slots=True)
+class Waiver:
+    """One id that cannot be covered, and why."""
+
+    kind: str
+    reason: str
+
+
 @dataclass(frozen=True, slots=True)
 class Waivers:
-    """What is knowingly uncovered, and which PR closes it."""
+    """What is knowingly uncovered, by id.
+
+    `domains` survives as a mapping rather than being deleted, so that a
+    domain waiver reappearing in the file is something the gate can *see* and
+    refuse — "no blanket waivers" is then a rule the file cannot break rather
+    than a habit somebody has to remember.
+    """
 
     catalog_version: str = ""
     final_pr: int = 0
     domains: dict[str, tuple[int, str]] = field(default_factory=dict)
-    ids: dict[str, tuple[int, str]] = field(default_factory=dict)
+    ids: dict[str, Waiver] = field(default_factory=dict)
 
     def reason_for(self, entry: CatalogEntry) -> str:
         found = self.ids.get(entry.id)
         if found is not None:
-            return f"waived until PR-{found[0]}: {found[1]}"
-        found = self.domains.get(entry.domain)
-        if found is not None:
-            return f"waived until PR-{found[0]}: {found[1]}"
+            return f"waived ({found.kind}): {found.reason}"
+        legacy = self.domains.get(entry.domain)
+        if legacy is not None:  # pragma: no cover - the file carries none
+            return f"waived (domain): {legacy[1]}"
         return ""
 
 
@@ -133,7 +156,9 @@ def waivers(path: Path | None = None) -> Waivers:
             for item in raw.get("domain", [])
         },
         ids={
-            str(item["id"]): (int(item["pr"]), str(item.get("reason", "")))
+            str(item["id"]): Waiver(
+                kind=str(item.get("kind", "")), reason=str(item.get("reason", ""))
+            )
             for item in raw.get("id", [])
         },
     )
@@ -352,7 +377,7 @@ def render_table(report: ParityReport) -> str:
         f"{'TOTAL':<28} {report.covered:>8} {report.required:>6} "
         f"{report.percent:>6.1f}% {report.accounted_percent:>6.1f}%",
         f"excluded: {excluded}",
-        f"uncovered: {len(report.uncovered)} ({report.waivers} waived with a PR number)",
+        f"uncovered: {len(report.uncovered)} ({report.waivers} waived with a reason)",
     ]
     if report.unknown:
         lines.append(

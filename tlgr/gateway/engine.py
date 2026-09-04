@@ -26,11 +26,11 @@ import logging
 from telethon import events
 
 from tlgr.actions import get_action
-from tlgr.core.client import ClientWrapper
 from tlgr.filters.compose import evaluate
 from tlgr.gateway.config import ActionConfig, GatewayConfig
 from tlgr.gateway.event import Event
 from tlgr.jobs.base import BaseJob
+from tlgr.jobs.client import JobClient
 
 log = logging.getLogger("tlgr.gateway")
 
@@ -88,7 +88,7 @@ class Gateway(BaseJob):
     def __init__(
         self,
         config: GatewayConfig,
-        client: ClientWrapper,
+        client: JobClient,
         webhook=None,
         bus=None,
     ) -> None:

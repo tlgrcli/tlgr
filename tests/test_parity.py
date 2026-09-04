@@ -25,10 +25,10 @@ ROOT = Path(__file__).resolve().parent.parent
 #: Every P0 catalog id the landed PRs claim. Raised by each group PR, never
 #: lowered. ARCHITECTURE §1.3: "P0 coverage may never decrease and must reach
 #: 100 % before 2.0.0 final".
-P0_FLOOR = 148
+P0_FLOOR = 161
 
 #: The floor for total covered ids. Same rule, weaker guarantee.
-COVERED_FLOOR = 1285
+COVERED_FLOOR = 1390
 
 #: Every P0 catalog id PR-1's own operations cover, named rather than
 #: counted, so a swap (one dropped, one added) cannot pass a count check
@@ -216,6 +216,25 @@ PR4_P0_IDS = frozenset(
     }
 )
 
+#: Every P0 catalog id PR-8's `story` operations cover. Same rule again.
+PR8_P0_IDS = frozenset(
+    {
+        "stories.delete",
+        "stories.feed-all",
+        "stories.get-by-id",
+        "stories.mark-read",
+        "stories.peer-active",
+        "stories.post-photo",
+        "stories.post-video",
+        "stories.privacy-close-friends",
+        "stories.privacy-contacts",
+        "stories.privacy-everyone",
+        "stories.react",
+        "stories.reply",
+        "stories.share-to-chat",
+    }
+)
+
 #: `(group prefixes, the P0 ids those groups claim)` for each landed PR.
 #: The P0 ids PR-5's own operations cover, named for the same reason.
 PR5_P0_IDS = frozenset(
@@ -308,6 +327,7 @@ P0_OWNERS = (
     ("pr6", _by_prefix("media.", "sticker.", "gif.", "emoji."), PR6_P0_IDS),
     ("pr7", _admin_group, PR7_P0_IDS),
     ("pr9", _by_prefix("poll.", "reaction.", "todo.", "location.", "search."), PR9_P0_IDS),
+    ("pr8", _by_prefix("story."), PR8_P0_IDS),
     ("pr11", _by_prefix("call.", "vc.", "conference."), PR11_P0_IDS),
 )
 
@@ -468,6 +488,23 @@ class TestTheGate:
 
     def test_the_dialogs_chats_domain_is_no_longer_waived_wholesale(self):
         assert "dialogs_chats" not in waivers().domains
+
+    def test_stories_is_fully_accounted_for(self, report):
+        """PR-8's own domain. The 7 remaining ids belong to other groups.
+
+        Story notifications are the `notify` group, the soundtrack save is
+        the profile group, posting as a business account is a bot connection
+        — each is waived to the PR that owns that command, so "the story
+        group is done" is checkable rather than asserted. Close friends and
+        the live-story call were waived here too until PR-5 and PR-11 landed
+        and covered them outright.
+        """
+        stats = report.by_domain["stories"]
+        assert stats["accounted_percent"] == 100.0
+        assert stats["covered"] >= 113
+
+    def test_the_stories_domain_is_no_longer_waived_wholesale(self):
+        assert "stories" not in waivers().domains
 
     def test_media_files_is_fully_accounted_for(self, report):
         """PR-6's own domain. The 22 remaining ids belong to other groups.

@@ -1128,3 +1128,110 @@ operations land in `chat.md` and `boost.md` rather than in a hand-named
 `chat-admin.md`. Adding a second grouping rule to the generator would mean the
 page a command lives on is no longer derivable from its id, which is the
 property that makes the docs impossible to get out of sync.
+
+## 2026-09-04 — one "Hide Stories" toggle, owned by `story hide`
+
+PR-5 shipped `user hide-stories` as an operation of its own; `story hide`
+declares the same path as a legacy path, and the registry refuses one alias
+claimed by two ops — correctly, because a toggle with two implementations is
+a toggle that will disagree with itself. `story hide` keeps the
+implementation, because that is where the rest of the story surface reads the
+same `stories_hidden` flag, and it absorbs what the `user` op had that it did
+not: several peers in one pass, and `--all` for the whole bar. `user
+hide-stories` is now purely the §12.4 path onto it, so v1's spelling and its
+`--unhide` flag keep working with nothing behind them to drift.
+
+## 2026-09-04 — `story feed list` does not carry the stealth mode
+
+`stories.getAllStories` answers with the account's `stealth_mode` beside the
+feed, and the work list asked for it as a top-level field. A paginated
+operation must declare `response=Page[T]` (registry lint L6), and `Page` has
+no room for a sidecar; putting the same object on every row would be worse
+than not reporting it. `story stealth --status` reads it from the same call,
+so the information is one command away and appears in exactly one shape.
+
+## 2026-09-04 — three two-segment story aliases are dropped
+
+`story feed`, `story stats` and `story stealth` were proposed as shorthands
+for `story feed list`, `story stats get` and `story stealth set`. Click has one
+namespace per level, so registering them would replace the *group* of the same
+name and take the canonical three-segment command with it — the same trap
+`chat badge` hit on 2026-09-03. The canonical paths stand alone; `story view`
+and `story forward` are registered because they cannot collide.
+
+## 2026-09-04 — `story search --peer`, not `--since`
+
+The work list spells the poster filter `--since`, which is the date flag the
+generator injects into every `SEARCH`-paginated command. Two parameters with
+one name is a Click warning and a silent shadow, so the flag is `--peer`; the
+work list's spelling would have meant "restrict to one poster" on this command
+and "only after this time" on every other one.
+
+## 2026-09-04 — the viewer export is `--csv PATH`, not `--format csv`
+
+`--format table|json|csv` would have added a third output switch beside the
+global `--json`/`--plain` pair, and its `json` value would have shadowed a
+global flag. `story viewer list --csv PATH` writes the file the GUI has no
+button for and leaves rendering to the flags every other command uses.
+
+## 2026-09-04 — `story live get` reports the story, not the call
+
+Telethon 1.44 speaks layer 227, whose `storyItem` carries no group-call
+reference; there is no accessor from a live story to the call that carries its
+viewer count, publisher and stream settings. The operation is registered and
+reports what the layer does expose — the story id, its dates, the live flag —
+and warns that the call-side fields are unreachable, rather than returning
+zeros that read as an empty broadcast. `stories.live-join` and
+`livestory.streamer-info` are therefore `covers_partial`; the rest of the
+live-story surface belongs to PR-11, which owns the call and landed ahead of
+this one.
+
+## 2026-09-04 — a refusal from `canSendStory` is an error, not a result
+
+The work list describes `canSendStoryResult*` variants. Layer 227 has none:
+`stories.canSendStory` returns a count or the server raises
+`PREMIUM_ACCOUNT_REQUIRED` / `BOOSTS_REQUIRED` / `STORIES_TOO_MUCH` /
+`STORY_SEND_FLOOD_WEEKLY_%d`. `story can-post` catches the error and reports
+the reason with the number the message carries, so a caller still gets
+`{"can_post": false, "reason": …, "retry_after": …}` rather than a raw
+exception — and `story post` turns the same refusal into exit 6.
+
+## 2026-09-04 — `story read --register-view` is opt-in
+
+`stories.readStories` clears the reader's own unread ring and tells the poster
+nothing; `stories.incrementStoryViews` is what puts the account in the
+poster's viewer list. The work list folds both into one command, and the
+default is the private half: an agent walking a feed must not silently appear
+in strangers' viewer lists, so being seen costs an explicit flag.
+
+## 2026-09-04 — story updates are shaped in `normalise_update`, not beside it
+
+Telethon has no event builder for stories, so the six story updates only reach
+the bus through the daemon's single `events.Raw()` handler. PR-4's taxonomy in
+`core/eventtypes.py` already maps all six constructors onto the five
+`story_*` types, so PR-8 adds a payload branch to `normalise_update` rather
+than a second normaliser and a second Raw handler: one table names the
+vocabulary, one function shapes it. The branch keeps the fine-grained `kind`
+the story surface wants — `UpdateNewStoryReaction` and
+`UpdateSentStoryReaction` share a type, and only `kind` says which side the
+reaction came from.
+
+## 2026-09-04 — `--music` takes a path, never a bare document id
+
+A soundtrack is sent as an `inputDocument`, which needs an access hash and a
+file reference. A bare document id has neither, so accepting one would produce
+a request the server rejects minutes later with `FILE_REFERENCE_EXPIRED`. The
+flag takes a file, uploads it through `messages.uploadMedia`, and refuses a
+numeric argument with a usage error that says why.
+
+## 2026-09-04 — the stories domain keeps 7 ids it does not own
+
+Same shape as `media_files`: the catalog groups by subject, tlgr by command
+group. Story notification settings belong to `notify`, saving a story's
+soundtrack is a profile surface, and posting for a business account goes
+through a bot connection. Each is waived to the PR that owns the command
+rather than implemented here under a `story` noun where nobody would look for
+it. The close-friends list and the live story's call — comments, RTMP key,
+send-as identity — were on that list too until PR-5 and PR-11 landed ahead of
+this one and covered them outright. `stories` is 94.2 % covered and 100 %
+accounted.

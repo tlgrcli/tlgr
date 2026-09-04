@@ -2,7 +2,7 @@
 
 # `tlgr user`
 
-13 operations. Every one takes the global flags (`--json`, `--plain`, `-a/--account`, `--results-only`, `--select`, `--dry-run`, `--yes`, `--no-input`, `--flood-wait-max`, `-v`) anywhere on the line.
+12 operations. Every one takes the global flags (`--json`, `--plain`, `-a/--account`, `--results-only`, `--select`, `--dry-run`, `--yes`, `--no-input`, `--flood-wait-max`, `-v`) anywhere on the line.
 
 | Command | Summary |
 |---|---|
@@ -12,7 +12,6 @@
 | [`user chat list`](#tlgr-user-chat-list) | Groups and channels you share with a user |
 | [`user dialog-status`](#tlgr-user-dialog-status) | Does this account have prior history with this user? (three-valued, never guessed) |
 | [`user get`](#tlgr-user-get) | Full profile of a user |
-| [`user hide-stories`](#tlgr-user-hide-stories) | Hide or unhide a peer's stories (per-account; the other side is never notified) |
 | [`user link`](#tlgr-user-link) | Build a link to a user (t.me / tg://), or my own temporary profile link |
 | [`user music list`](#tlgr-user-music-list) | Music a user pinned to their profile |
 | [`user personal-channel get`](#tlgr-user-personal-channel-get) | The channel a user pinned to their profile, with its latest posts |
@@ -209,37 +208,6 @@ $ tlgr user get @alice --json
 <details><summary>Catalog coverage (23 full, 0 partial)</summary>
 
 Full: `contacts-users.block-status`, `contacts-users.resolve-min-users`, `contacts-users.resolve-user-id`, `contacts-users.user-badges`, `contacts-users.user-bio`, `contacts-users.user-bio-translate`, `contacts-users.user-birthday-read`, `contacts-users.user-business-hours`, `contacts-users.user-business-intro`, `contacts-users.user-business-location`, `contacts-users.user-copy-fields`, `contacts-users.user-emoji-status`, `contacts-users.user-gifts-count`, `contacts-users.user-main-profile-tab`, `contacts-users.user-peer-colors`, `contacts-users.user-phone`, `contacts-users.user-profile-basic`, `contacts-users.user-profile-full`, `contacts-users.user-stars-rating`, `contacts-users.user-status`, `contacts-users.user-unofficial-warning`, `contacts-users.user-usernames`, `profile.security-risk-flag`
-
-</details>
-
-### `user hide-stories`
-
-Hide or unhide a peer's stories (per-account; the other side is never notified).
-
-Idempotent: the fresh flag is read first and `already: true` means no RPC was sent, so repeating a bulk pass is nearly free. Purely local to this account — the chat, the contact entry and their access to you are untouched. `user get` reports the current value as `stories_hidden`. More than one peer fills `peers`; a single peer answers exactly as v1 did.
-
-```
-tlgr user hide-stories [USER]... [OPTIONS]
-```
-
-**mutating · idempotent (reports `already`) · returns `StoriesHidden`**
-
-| Argument | Type | Required | Meaning |
-|---|---|---|---|
-| `USER` | user | one or more | Peers to hide. |
-
-| Flag | Type | Default | Meaning |
-|---|---|---|---|
-| `--all` | text |  | Collapse or expand the whole story strip. |
-| `--unhide` | flag |  | Put them back in the main stories bar. |
-
-```console
-$ tlgr user hide-stories @alice --json
-```
-
-<details><summary>Catalog coverage (2 full, 0 partial)</summary>
-
-Full: `contacts-users.user-hide-stories`, `dialogs.hide-stories-peer`
 
 </details>
 

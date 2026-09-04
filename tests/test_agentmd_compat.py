@@ -74,6 +74,8 @@ V1_PATHS = [
     ("contacts",),
     ("user", "get"),
     ("user", "dialog-status"),
+    # PR-8: the one story command v1 had. It is `story hide` now, and the old
+    # path is a legacy path on it rather than a second implementation.
     ("user", "hide-stories"),
 ]
 
@@ -255,6 +257,11 @@ def test_the_v1_watch_line_shape_survives_results_only():
 def test_the_shortcuts_still_reach_message_send():
     for name in ("send", "msg.send", "message.send"):
         assert ALIASES[name] == "message.send"
+
+
+def test_the_v1_story_command_still_reaches_the_story_group():
+    """`user hide-stories` was v1's only story command; `story hide` is it now."""
+    assert ALIASES["user.hide-stories"] == "story.hide"
 
 
 def test_the_media_shortcuts_still_reach_the_media_operations():

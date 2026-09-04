@@ -179,7 +179,8 @@ class Daemon:
             # builders drop service messages, topic ids and every action kind
             # Telethon does not model, so a stream built on them can only ever
             # show a subset of what the GUI shows; `normalise` names all 163
-            # update constructors instead (docs/design/EVENTS.md).
+            # update constructors instead (docs/design/EVENTS.md). The six
+            # story updates, which have no builder at all, arrive here too.
             register(on_update, tl_events.Raw())
         except Exception as exc:  # pragma: no cover - a fake client has no builders
             log.debug("could not register the raw Telethon handler for %s: %s", alias, exc)

@@ -736,7 +736,8 @@ tlgr user birthday set <user> <date>         # sends a visible message
 
 tlgr user dialog-status <user> [--max-dialogs N]
 → {"ref": ..., "id": ..., "username": ..., "resolved": true, "has_dialog": true,
-   "message_count": 12, "source": "peer_dialogs", "reason": null}
+   "message_count": 12, "read_outbox_max_id": 893, "unread_count": 0,
+   "top_message": 893, "source": "peer_dialogs", "reason": null}
 
 tlgr user hide-stories <user>... [--unhide] [--all]   # v1's spelling of `story hide`
 → {"user_id": ..., "username": ..., "hidden": true, "already": false}
@@ -804,6 +805,24 @@ the bug this command exists to remove; exit 13 must be treated as a refusal.
   the list is the only thing that licenses a negative. `scanned_dialogs` reports
   how far it got.
 - `unknown` — cap hit, FloodWait, or RPC failure. `resolved` is `false`.
+
+It also reports the peer's **read state**, because `messages.GetPeerDialogs`
+already hands back the whole dialog object:
+
+| key | meaning |
+|---|---|
+| `read_outbox_max_id` | the highest message of **ours** the peer has read |
+| `unread_count` | messages of theirs this account has not read |
+| `top_message` | the id of the newest message in the dialog |
+
+All three are on **every** return path — `null` on the indeterminate one, `0`
+on the definitive negative — because an absent key reads back as `null`, which
+is indistinguishable from "they have not read it". `chat list` reports the same
+field, so the two routes cannot disagree about the same peer.
+
+"Did they see our last message?" is `read_outbox_max_id >= top_message` **and**
+the last message being ours. There is deliberately no derived `they_read_it`
+boolean: the second half of that condition is only knowable by the caller.
 
 Note: there is no MTProto call that resolves a bare user id to an access hash
 for a non-bot account (`users.GetUsers` with `access_hash=0` returns

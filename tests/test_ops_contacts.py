@@ -886,6 +886,9 @@ class TestDialogStatus:
             "resolved",
             "has_dialog",
             "message_count",
+            "read_outbox_max_id",
+            "unread_count",
+            "top_message",
             "source",
         } <= set(answer)
 
@@ -955,6 +958,65 @@ class TestDialogStatus:
         outcome = CliRunner().invoke(cli, ["--json", "user", "dialog-status", "@alice"])
         assert outcome.exit_code == EXIT_INDETERMINATE
         assert '"has_dialog": null' in outcome.output
+
+    # -- the peer's read state, which must always be PRESENT ---------------
+    #
+    # An ABSENT key reads back as `null`, which is indistinguishable from
+    # "they have not read it". A real 0 must be a real 0, and every other
+    # outcome must still carry the key. `/chat/list` has always reported this
+    # field, so without it the two routes disagreed about the same peer.
+
+    async def test_read_state_is_reported_when_the_peer_read_our_message(
+        self, live_daemon, client, in_thread, book
+    ):
+        book.add_message(ALICE, "hello", message_id=893)
+        book.add_dialog(ALICE, top_message=893, unread_count=0)
+        book.read_outbox[ALICE] = 893
+        answer = await result(client, in_thread, "user.dialog-status", {"user": "@alice"})
+        assert answer["read_outbox_max_id"] == 893
+        assert answer["top_message"] == 893
+        assert answer["unread_count"] == 0
+
+    async def test_an_unread_outgoing_message_is_zero_not_missing(
+        self, live_daemon, client, in_thread, book
+    ):
+        """The trap this exists to close: 0 is an answer, absence is not."""
+        book.add_message(ALICE, "hello", message_id=852)
+        book.add_dialog(ALICE, top_message=852)
+        book.read_outbox[ALICE] = 0
+        answer = await result(client, in_thread, "user.dialog-status", {"user": "@alice"})
+        assert answer["read_outbox_max_id"] == 0
+        assert answer["top_message"] == 852
+
+    async def test_every_return_path_carries_the_read_state_keys(
+        self, live_daemon, client, in_thread, book
+    ):
+        """Including the ones that answer nothing — that is the whole point."""
+        keys = {"read_outbox_max_id", "unread_count", "top_message"}
+
+        indeterminate = await result(
+            client, in_thread, "user.dialog-status", {"user": str(NOBODY), "max_dialogs": 1}
+        )
+        assert keys <= set(indeterminate)
+        assert all(indeterminate[key] is None for key in keys)
+
+        negative = await result(client, in_thread, "user.dialog-status", {"user": str(NOBODY)})
+        assert keys <= set(negative)
+        assert all(negative[key] == 0 for key in keys)
+
+    async def test_the_read_state_does_not_become_a_they_read_it_boolean(
+        self, live_daemon, client, in_thread, book
+    ):
+        """The comparison is only meaningful when the last message is ours,
+        which only the caller knows — so the raw fields are echoed and no
+        derived verdict is invented."""
+        book.add_message(ALICE, "hi", message_id=849)
+        book.add_dialog(ALICE, top_message=849, unread_count=3)
+        book.read_outbox[ALICE] = 846
+        answer = await result(client, in_thread, "user.dialog-status", {"user": "@alice"})
+        assert (answer["read_outbox_max_id"], answer["top_message"]) == (846, 849)
+        assert answer["unread_count"] == 3
+        assert "they_read_it" not in answer
 
 
 # ---------------------------------------------------------------------------

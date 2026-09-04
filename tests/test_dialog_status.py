@@ -45,11 +45,14 @@ class _FakeTelethon:
     """A Telethon stand-in whose entity cache can be cold on purpose."""
 
     def __init__(self, *, dialogs=None, cached_ids=(), totals=None,
-                 peer_dialog_top=None, dialogs_raise=None):
+                 peer_dialog_top=None, dialogs_raise=None, peer_dialog_read=None,
+                 peer_dialog_unread=None):
         self._dialogs = dialogs or []
         self._cached = set(cached_ids)
         self._totals = totals or {}
         self._peer_dialog_top = peer_dialog_top or {}
+        self._peer_dialog_read = peer_dialog_read or {}
+        self._peer_dialog_unread = peer_dialog_unread or {}
         self._dialogs_raise = dialogs_raise
         self.dialogs_iterated = 0
 
@@ -82,7 +85,11 @@ class _FakeTelethon:
         peer = request.peers[0].peer
         uid = peer.user_id
         top = self._peer_dialog_top.get(uid, 0)
-        return SimpleNamespace(dialogs=[SimpleNamespace(top_message=top)])
+        return SimpleNamespace(dialogs=[SimpleNamespace(
+            top_message=top,
+            read_outbox_max_id=self._peer_dialog_read.get(uid, 0),
+            unread_count=self._peer_dialog_unread.get(uid, 0),
+        )])
 
     async def get_messages(self, peer, limit=1, **kw):
         uid = getattr(peer, "user_id", getattr(peer, "id", None))
@@ -244,3 +251,57 @@ def test_scan_hit_wins_even_if_the_follow_up_count_is_zero():
     assert r["resolved"] is True
     assert r["has_dialog"] is True
     assert r["source"] == "dialog_scan"
+
+
+# --------------------------------------------------------------------------
+# Read state: the fields must always be PRESENT, so a caller can tell
+# "not read" from "never reported". [tlgr-agent L140, 2026-09-04.]
+# --------------------------------------------------------------------------
+
+def test_read_state_is_reported_when_the_peer_has_read_our_message():
+    target = _u(118346470)
+    fake = _FakeTelethon(
+        dialogs=[_dialog(target)],
+        cached_ids=(118346470,),
+        totals={118346470: 1},
+        peer_dialog_top={118346470: 893},
+        peer_dialog_read={118346470: 893},
+        peer_dialog_unread={118346470: 0},
+    )
+    r = asyncio.run(_wrap(fake).dialog_status(118346470))
+    assert r["read_outbox_max_id"] == 893
+    assert r["top_message"] == 893
+    assert r["unread_count"] == 0
+
+
+def test_unread_outgoing_is_zero_not_missing():
+    """The trap: an ABSENT key reads back as `null`, which is
+    indistinguishable from "they have not read it". A real 0 must be a real 0
+    and every other outcome must still carry the key."""
+    target = _u(7072200730)
+    fake = _FakeTelethon(
+        dialogs=[_dialog(target)],
+        cached_ids=(7072200730,),
+        totals={7072200730: 1},
+        peer_dialog_top={7072200730: 852},
+        peer_dialog_read={7072200730: 0},
+    )
+    r = asyncio.run(_wrap(fake).dialog_status(7072200730))
+    assert r["read_outbox_max_id"] == 0
+    assert r["top_message"] == 852
+
+
+def test_every_return_path_carries_the_read_state_keys():
+    """Including the ones that answer nothing — that is the whole point."""
+    keys = {"read_outbox_max_id", "unread_count", "top_message"}
+
+    # indeterminate
+    fake = _FakeTelethon(dialogs=[], cached_ids=(), dialogs_raise=(0, FloodWaitError(
+        GetHistoryRequest, capture=30)))
+    r = asyncio.run(_wrap(fake).dialog_status(1))
+    assert keys <= r.keys() and all(r[k] is None for k in keys)
+
+    # definitive negative
+    fake = _FakeTelethon(dialogs=[_dialog(_u(1))], cached_ids=())
+    r = asyncio.run(_wrap(fake).dialog_status(777))
+    assert keys <= r.keys() and all(r[k] == 0 for k in keys)

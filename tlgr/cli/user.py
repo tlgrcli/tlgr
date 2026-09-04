@@ -81,6 +81,13 @@ def user_dialog_status(
     Exit 13 means UNKNOWN. Callers gating a cold first message must treat it
     as a refusal, not as a green light -- that conflation is exactly the bug
     this command exists to remove.
+
+    Also reports the peer's read state -- `read_outbox_max_id` (highest
+    message of OURS they have read), `unread_count`, `top_message` -- always
+    present, including on the paths that answer nothing, where they are null.
+    "Did they see our last message?" is `read_outbox_max_id >= top_message`
+    AND the last message being ours; this command does not guess at the
+    second half, because only the caller knows it.
     """
     acct = resolve_account(ctx, account)
     result = ipc_request(
@@ -91,7 +98,8 @@ def user_dialog_status(
     emit(
         ctx.obj,
         result,
-        columns=["id", "username", "resolved", "has_dialog", "message_count", "source"],
+        columns=["id", "username", "resolved", "has_dialog", "message_count",
+                 "read_outbox_max_id", "top_message", "unread_count", "source"],
     )
     if not result.get("resolved"):
         ctx.exit(EXIT_INDETERMINATE)

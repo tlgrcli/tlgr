@@ -1056,6 +1056,17 @@ class ClientWrapper:
         Caveat, deliberately not papered over: this reports on the dialog
         list. If the account *deleted* the conversation, the history is gone
         server-side too and this correctly says there is no dialog.
+
+        The server's dialog object carries more than "does it exist", and the
+        three fields below are echoed verbatim rather than reduced to a
+        convenience boolean: ``read_outbox_max_id`` (the highest message of
+        OURS the peer has read), ``unread_count`` and ``top_message``. They
+        are always present in the result — a *missing* key is what makes an
+        unanswerable question look answered, since a caller reading it back
+        gets ``null`` and cannot tell "not read" from "never reported".
+        ``read_outbox_max_id >= top_message`` only means "they saw our last
+        message" when the last message is in fact ours, so that comparison is
+        left to the caller, which is the only party that knows.
         """
         from telethon.tl.functions.messages import GetPeerDialogsRequest
         from telethon.tl.types import InputDialogPeer
@@ -1067,6 +1078,9 @@ class ClientWrapper:
             "resolved": False,
             "has_dialog": None,
             "message_count": None,
+            "read_outbox_max_id": None,
+            "unread_count": None,
+            "top_message": None,
             "source": "unknown",
             "reason": None,
         }
@@ -1130,6 +1144,9 @@ class ClientWrapper:
                     resolved=True,
                     has_dialog=False,
                     message_count=0,
+                    read_outbox_max_id=0,
+                    unread_count=0,
+                    top_message=0,
                     source="dialog_scan",
                     reason="absent from the account's complete dialog list",
                 )
@@ -1143,7 +1160,11 @@ class ClientWrapper:
                 GetPeerDialogsRequest(peers=[InputDialogPeer(peer=input_peer)])
             )
             dialogs = list(getattr(res, "dialogs", []) or [])
-            top = max((getattr(d, "top_message", 0) or 0) for d in dialogs) if dialogs else 0
+            # The peer's own dialog object — the one with the newest message
+            # when the server hands back more than one — carries the read
+            # state as well as the top message.
+            dlg = max(dialogs, key=lambda d: getattr(d, "top_message", 0) or 0, default=None)
+            top = (getattr(dlg, "top_message", 0) or 0) if dlg is not None else 0
             msgs = await self.client.get_messages(input_peer, limit=1)
             total = getattr(msgs, "total", None)
             if total is None:
@@ -1170,6 +1191,10 @@ class ClientWrapper:
         # positive even if both sides have since wiped the history.
         out["has_dialog"] = out["source"] == "dialog_scan" or bool(top) or total > 0
         out["message_count"] = total
+        if dlg is not None:
+            out["read_outbox_max_id"] = getattr(dlg, "read_outbox_max_id", None)
+            out["unread_count"] = getattr(dlg, "unread_count", None)
+            out["top_message"] = top
         if out["source"] != "dialog_scan":
             out["source"] = "peer_dialogs"
         return out

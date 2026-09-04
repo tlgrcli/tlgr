@@ -7,31 +7,31 @@ Coverage against the Telegram feature catalog, computed from the registry: every
 `covered` is implemented today. `acct%` is covered **plus** waived — an id that belongs to a group a later PR owns, named in `tlgr/data/parity_waivers.toml` with the PR that closes it. Ids whose feasibility is `not-applicable` or `prohibited` are excluded from the denominator once and never counted again.
 
 ```
-catalog 2026-09-02 — 479 operations, 689 invocable paths
+catalog 2026-09-02 — 509 operations, 722 invocable paths
 
 domain                        covered    req       %   acct%  ops
 auth_sessions_security             87     89   97.8%  100.0%  44
-bots_inline_payments               17    175    9.7%  100.0%  7
-calls_voicechats                  130    133   97.7%  100.0%  53
-contacts_users                    107    121   88.4%  100.0%  50
-dialogs_chats                     137    146   93.8%  100.0%  73
-groups_channels_admin             156    162   96.3%  100.0%  102
+bots_inline_payments               18    175   10.3%  100.0%  8
+calls_voicechats                  131    133   98.5%  100.0%  55
+contacts_users                    108    121   89.3%  100.0%  51
+dialogs_chats                     137    146   93.8%  100.0%  74
+groups_channels_admin             158    162   97.5%  100.0%  104
 media_files                       124    143   86.7%  100.0%  62
-messages_core                     163    167   97.6%  100.0%  57
-polls_reactions_content           129    174   74.1%  100.0%  67
+messages_core                     164    167   98.2%  100.0%  58
+polls_reactions_content           130    174   74.7%  100.0%  68
 profile_settings_privacy           32    178   18.0%  100.0%  30
-stories                            15    120   12.5%  100.0%  12
+stories                           113    120   94.2%  100.0%  43
 updates_sync_network              188    189   99.5%  100.0%  67
 
 priority                      covered    req       %   acct%
-P0                                148    178   83.1%  100.0%
-P1                                296    379   78.1%  100.0%
-P2                                410    610   67.2%  100.0%
-P3                                431    630   68.4%  100.0%
+P0                                161    178   90.4%  100.0%
+P1                                323    379   85.2%  100.0%
+P2                                459    610   75.2%  100.0%
+P3                                447    630   71.0%  100.0%
 
-TOTAL                            1285   1797   71.5%  100.0%
+TOTAL                            1390   1797   77.4%  100.0%
 excluded: not-applicable 79, prohibited 40
-uncovered: 512 (512 waived with a PR number)
+uncovered: 407 (407 waived with a PR number)
 ```
 
 ## By domain
@@ -39,26 +39,26 @@ uncovered: 512 (512 waived with a PR number)
 | Domain | Covered | Required | % | Accounted % | Ops |
 |---|---:|---:|---:|---:|---:|
 | `auth_sessions_security` | 87 | 89 | 97.8% | 100.0% | 44 |
-| `bots_inline_payments` | 17 | 175 | 9.7% | 100.0% | 7 |
-| `calls_voicechats` | 130 | 133 | 97.7% | 100.0% | 53 |
-| `contacts_users` | 107 | 121 | 88.4% | 100.0% | 50 |
-| `dialogs_chats` | 137 | 146 | 93.8% | 100.0% | 73 |
-| `groups_channels_admin` | 156 | 162 | 96.3% | 100.0% | 102 |
+| `bots_inline_payments` | 18 | 175 | 10.3% | 100.0% | 8 |
+| `calls_voicechats` | 131 | 133 | 98.5% | 100.0% | 55 |
+| `contacts_users` | 108 | 121 | 89.3% | 100.0% | 51 |
+| `dialogs_chats` | 137 | 146 | 93.8% | 100.0% | 74 |
+| `groups_channels_admin` | 158 | 162 | 97.5% | 100.0% | 104 |
 | `media_files` | 124 | 143 | 86.7% | 100.0% | 62 |
-| `messages_core` | 163 | 167 | 97.6% | 100.0% | 57 |
-| `polls_reactions_content` | 129 | 174 | 74.1% | 100.0% | 67 |
+| `messages_core` | 164 | 167 | 98.2% | 100.0% | 58 |
+| `polls_reactions_content` | 130 | 174 | 74.7% | 100.0% | 68 |
 | `profile_settings_privacy` | 32 | 178 | 18.0% | 100.0% | 30 |
-| `stories` | 15 | 120 | 12.5% | 100.0% | 12 |
+| `stories` | 113 | 120 | 94.2% | 100.0% | 43 |
 | `updates_sync_network` | 188 | 189 | 99.5% | 100.0% | 67 |
 
 ## By priority
 
 | Priority | Covered | Required | % | Accounted % |
 |---|---:|---:|---:|---:|
-| P0 | 148 | 178 | 83.1% | 100.0% |
-| P1 | 296 | 379 | 78.1% | 100.0% |
-| P2 | 410 | 610 | 67.2% | 100.0% |
-| P3 | 431 | 630 | 68.4% | 100.0% |
+| P0 | 161 | 178 | 90.4% | 100.0% |
+| P1 | 323 | 379 | 85.2% | 100.0% |
+| P2 | 459 | 610 | 75.2% | 100.0% |
+| P3 | 447 | 630 | 71.0% | 100.0% |
 
 ## Partial coverage
 
@@ -86,7 +86,7 @@ uncovered: 512 (512 waived with a PR number)
 | `richmsg.send` | `message.send` | A layer-229 rich body is refused with NOT_SUPPORTED: the pinned Telethon speaks layer 227 and cannot serialise inputRichMessage*. |
 | `richmsg.tasks` | `message.edit` | Checklist tasks live in a layer-229 rich body; --toggle-task is refused. |
 | `richmsg.translate` | `message.translate` | Rich-body translation is layer 229 and refused with NOT_SUPPORTED. |
-| `stories.live-join` | `vc.download` | watching a live story as a viewer is owned by `story live get` |
+| `stories.live-join` | `story.live.get` | The live story is reported; its group call is not reachable from layer 227's storyItem, and joining a broadcast needs a media engine tlgr does not have. |
 
 ## Gaps in a migrated domain
 
@@ -104,6 +104,7 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `dialogs.notify-exceptions` | P1 | List notification exceptions | waived until PR-12: The exceptions *list* is `notify exceptions` (PR-12); one chat's exception is `chat notify`. |
 | `profile.photos-list-history` | P1 | View own / another user's profile photo history | waived until PR-12: Profile photo history is the `profile` group (PR-12). |
 | `stars.balance` | P1 | Telegram Stars balance | waived until PR-12: the Star balance and top-up packages are the `stars` surface (PR-12). |
+| `stories.notify-peer` | P1 | Per-peer story notifications | waived until PR-12: Per-peer story notifications are `notify set --stories` (PR-12). |
 | `attach.menu-bots` | P2 | Attachment-menu / side-menu mini-app bots: list, info, add, remove | waived until PR-10: Attachment-menu bots are the `bot` group (PR-10). |
 | `auth.url-auth-bot-button` | P2 | Log in to a website via a bot's login button (Seamless Telegram Login) | waived until PR-10: Seamless Telegram Login is a bot keyboard button (messages.requestUrlAuth / acceptUrlAuth); it lands with the bots group in PR-10. |
 | `contacts-users.privacy-about` | P2 | Privacy: bio | waived until PR-12: Privacy keys are the `privacy` group (PR-12). |
@@ -111,7 +112,6 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `contacts-users.privacy-exception-lists` | P2 | Always/Never allow exception lists | waived until PR-12: Always/Never lists are privacy rules (PR-12); the close-friends list is `contact close-friends`. |
 | `contacts-users.privacy-forwards` | P2 | Privacy: forwarded messages link back to me | waived until PR-12: Privacy keys are the `privacy` group (PR-12). |
 | `contacts-users.user-status-reveal` | P2 | Show My Last Seen to reveal theirs | waived until PR-12: Revealing my own last-seen to see theirs is a privacy setting (PR-12); `contact status list` reports the by_me flag that explains it. |
-| `contacts-users.user-stories` | P2 | A user's stories on their profile | waived until PR-8: A user's stories are the `story` group (PR-8); hiding them is `user hide-stories`. |
 | `content.limits` | P2 | Server limits for polls, reactions, checklists and gifts | waived until PR-12: the app-config limit table is read through the settings surface (PR-12). |
 | `dialogs.business-bot-bar` | P2 | Manage connected business bot in a chat | waived until PR-12: The connected-business-bot bar is a business setting (PR-12). |
 | `dialogs.business-link-create` | P2 | Create a business 'link to chat' | waived until PR-12: Business chat links are a business setting (PR-12). |
@@ -132,13 +132,15 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `giveaway.info` | P2 | Giveaway status / did I win? | waived until PR-12: giveaways and channel boosts are the `giveaway`/`boost` surface (PR-12). |
 | `giveaway.join-by-boosting` | P2 | Join a giveaway by boosting the channel | waived until PR-12: giveaways and channel boosts are the `giveaway`/`boost` surface (PR-12). |
 | `groups-channels-admin.channel-subscription-manage` | P2 | Manage my paid (Stars) channel subscriptions | waived until PR-12: My own paid subscriptions are `stars subscription *` (PR-12); the admin side is `chat invite list`. |
-| `livestory.start-rtmp` | P2 | Start an RTMP live story | waived until PR-8: Starting a live story is stories.startLive (PR-8); the RTMP credentials half is already covered here by `vc rtmp get --live-story`. |
 | `messages-core.quick-reply-list` | P2 | Quick replies (business shortcuts): list shortcuts and their messages | waived until PR-12: Business quick-reply shortcuts are a business setting (PR-12); `message send --quick-reply` uses one. |
 | `messages-core.quick-reply-manage` | P2 | Create/edit/reorder/delete quick reply shortcuts and their messages | waived until PR-12: Business quick-reply shortcuts are a business setting (PR-12). |
 | `profile.contact-personal-photo` | P2 | Set a personal photo for a contact / suggest a photo to a contact | waived until PR-12: A personal photo for a contact is the `profile` group (PR-12). |
 | `profile.photo-set-as-main` | P2 | Set an older profile photo as main | waived until PR-12: Promoting an older photo is the `profile` group (PR-12). |
 | `profile.photo-set-video` | P2 | Animated profile photo (video avatar) | waived until PR-12: A video avatar is the `profile` group (PR-12). |
 | `profile.saved-music` | P2 | Music on profile (save songs to profile, list, reorder) | waived until PR-12: Music on a profile is the `profile` group (PR-12). |
+| `stories.boost-status` | P2 | Boost level needed to post channel stories | waived until PR-7: Boost levels are the `boost` group (PR-7); `story can-post` reports the gate. |
+| `stories.notify-global` | P2 | Global story notification settings | waived until PR-12: Global story notification settings are `notify set` (PR-12). |
+| `stories.notify-reactions` | P2 | Notifications for reactions to my stories | waived until PR-12: Notifications for reactions to my stories are `notify set` (PR-12). |
 | `attach.file-download-check` | P3 | Mini-app file download permission check | waived until PR-10: Mini-app download permission is the `webapp` surface (PR-10). |
 | `attach.open-mini-app` | P3 | Open an attachment-menu mini app in a chat | waived until PR-10: Opening a mini app is the `webapp` group (PR-10). |
 | `auction.acquired-gifts` | P3 | Gifts I won in an auction | waived until PR-12: collectible-gift auctions are the `gift` surface (PR-12). |
@@ -183,17 +185,16 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `groups-channels-admin.gift-code-redeem` | P3 | Check and redeem a giveaway gift code | waived until PR-12: Gift codes are the `gift` noun (PR-12); `boost list --gifts` finds the winners. |
 | `groups-channels-admin.giveaway-info` | P3 | Inspect a giveaway's state and results | waived until PR-12: `giveaway *` lands with gifts and Stars (PR-12); `boost get` reports the prepaid ones. |
 | `groups-channels-admin.giveaway-prepaid-launch` | P3 | Launch a prepaid giveaway | waived until PR-12: Launching a giveaway is `giveaway launch` (PR-12); `boost get` reports the prepaid slots it spends. |
-| `groups-channels-admin.hide-peer-stories` | P3 | Hide a channel's stories from the feed | waived until PR-8: Hiding a peer's stories is `story hide` (PR-8); `user hide-stories` already does the user half. |
-| `groups-channels-admin.stories-as-channel` | P3 | Post/manage stories as a channel (boost feature) | waived until PR-8: Posting as a channel is the story group (PR-8); the admin rights that gate it are `chat admin promote --rights post-stories`. |
 | `location.business-address` | P3 | Business account location | waived until PR-12: a business account's address is the `business` surface (PR-12). |
-| `messages-core.search-hashtag-stories` | P3 | Hashtag / location search in public stories | waived until PR-8: Hashtag search over public stories is the story surface (PR-8). |
 | `messages-core.url-authorization` | P3 | Seamless Telegram login when opening a link / login-url button | waived until PR-10: Seamless login-url authorisation is a bot surface (PR-10). |
 | `profile.main-tab` | P3 | Main profile tab (Posts / Gifts / Media) for own profile and channels | waived until PR-12: The profile tab layout is the `profile` group (PR-12). |
 | `profile.photo-fallback-public` | P3 | Public (fallback) profile photo for users who cannot see the main one | waived until PR-12: The public fallback photo is the `profile` group (PR-12). |
 | `profile.photo-set-emoji-sticker` | P3 | Profile photo from sticker / custom emoji on a colour background | waived until PR-12: An emoji avatar is the `profile` group (PR-12). |
-| `reaction.story-list` | P3 | Who reacted to my story | waived until PR-8: story reactions are the `story` surface (PR-8). |
 | `ringtone.manage` | P3 | Custom notification sounds: list, upload, save from voice/audio, remove | waived until PR-12: Custom notification sounds are the `notify` group (PR-12). |
 | `ringtone.set-for-chat` | P3 | Set notification sound for a chat or chat category | waived until PR-12: Per-chat notification sounds are the `notify` group (PR-12). |
 | `stars.topup-options` | P3 | Star purchase packages | waived until PR-12: the Star balance and top-up packages are the `stars` surface (PR-12). |
+| `stories.business-story` | P3 | Bot posting stories for a business account | waived until PR-10: Posting for a business account goes through a bot connection (PR-10). |
+| `stories.notify-exceptions` | P3 | List peers with custom story notification settings | waived until PR-12: Per-peer notification exceptions are the `notify` group (PR-12). |
+| `stories.story-music-save` | P3 | Save a story's soundtrack (Add to Profile / Saved Messages) | waived until PR-12: Saving a story's soundtrack to the profile is the profile group (PR-12). |
 | `theme.cloud-themes` | P3 | Cloud themes (list, install, create, update, upload theme file) | waived until PR-12: Cloud themes are the `settings` group (PR-12). |
 | `updates.invoke-business-connection` | P3 | Act on behalf of a connected business account | waived until PR-12: Acting on behalf of a connected business account is the business surface (PR-12). |

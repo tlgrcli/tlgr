@@ -445,17 +445,17 @@ Full: `stories.album-link`, `stories.caption-entities`, `stories.get-by-id`, `st
 
 Hide a peer's stories, or hide the whole stories bar.
 
-v1 spelled this `tlgr user hide-stories`, and that path still works — including its `--unhide` flag, which is `story unhide` said the other way round.
+v1 spelled this `tlgr user hide-stories`, and that path still works — including its `--unhide` flag, which is `story unhide` said the other way round. Idempotent: the fresh flag is read first and `already: true` means no RPC was sent, so repeating a bulk pass is nearly free. More than one peer fills `peers`; a single peer answers with exactly the four keys v1 printed.
 
 ```
-tlgr story hide [CHAT] [OPTIONS]
+tlgr story hide [CHAT]... [OPTIONS]
 ```
 
 **mutating · idempotent (reports `already`) · returns `StoryHidden`**
 
 | Argument | Type | Required | Meaning |
 |---|---|---|---|
-| `CHAT` | chat | no | Whose stories to hide. |
+| `CHAT` | chat | one or more | Whose stories to hide. |
 
 | Flag | Type | Default | Meaning |
 |---|---|---|---|
@@ -468,9 +468,9 @@ Also invocable as: `tlgr user hide-stories`
 $ tlgr story hide @alice --json
 ```
 
-<details><summary>Catalog coverage (2 full, 2 partial)</summary>
+<details><summary>Catalog coverage (3 full, 2 partial)</summary>
 
-Full: `dialogs.hide-stories-peer`, `groups-channels-admin.hide-peer-stories`
+Full: `contacts-users.user-hide-stories`, `dialogs.hide-stories-peer`, `groups-channels-admin.hide-peer-stories`
 
 Partial: `stories.hide-all`, `stories.hide-peer`
 
@@ -944,14 +944,14 @@ Full: `stories.stealth-activate`, `stories.stealth-status`
 Put a peer's stories back in the main bar.
 
 ```
-tlgr story unhide [CHAT] [OPTIONS]
+tlgr story unhide [CHAT]... [OPTIONS]
 ```
 
 **mutating · idempotent (reports `already`) · returns `StoryHidden`**
 
 | Argument | Type | Required | Meaning |
 |---|---|---|---|
-| `CHAT` | chat | no | Whose stories to hide. |
+| `CHAT` | chat | one or more | Whose stories to hide. |
 
 | Flag | Type | Default | Meaning |
 |---|---|---|---|

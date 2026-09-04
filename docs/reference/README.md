@@ -2,7 +2,7 @@
 
 # Command reference
 
-479 operations across 33 groups, generated from the operation registry. Groups still served by v1's hand-written commands are not listed here; they arrive with their own PR.
+509 operations across 34 groups, generated from the operation registry. Groups still served by v1's hand-written commands are not listed here; they arrive with their own PR.
 
 | Group | Operations | Reference |
 |---|---:|---|
@@ -34,9 +34,10 @@
 | `resolve` | 5 | [resolve.md](resolve.md) |
 | `search` | 3 | [search.md](search.md) |
 | `sticker` | 20 | [sticker.md](sticker.md) |
+| `story` | 31 | [story.md](story.md) |
 | `sync` | 5 | [sync.md](sync.md) |
 | `todo` | 5 | [todo.md](todo.md) |
-| `user` | 13 | [user.md](user.md) |
+| `user` | 12 | [user.md](user.md) |
 | `vc` | 23 | [vc.md](vc.md) |
 | `webhook` | 3 | [webhook.md](webhook.md) |
 

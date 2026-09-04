@@ -16,11 +16,28 @@ content; an audio/video `duration`; a `file_name`; the `mime_type`).
 
 from __future__ import annotations
 
-import asyncio
-from pathlib import Path
 from types import SimpleNamespace
 
-from tlgr.core.client import ClientWrapper, media_details
+from tlgr.ops._serialize import media_summary
+
+
+def media_details(media):
+    """v1's dict shape, from the typed summary that replaced it.
+
+    PR-12 deleted `ClientWrapper` and with it `media_details`; the logic it
+    carried lives in `media_summary` and is what the ops serialise with. This
+    shim keeps the *claims* below written the way they were made, because
+    they are about the classifier and not about which module holds it.
+    """
+    summary = media_summary(media)
+    if summary is None:
+        return {}
+    out = {"kind": summary.kind}
+    for name in ("alt", "duration", "file_name", "mime_type"):
+        value = getattr(summary, name, None)
+        if value is not None:
+            out[name] = value
+    return out
 
 
 class MessageMediaPhoto(SimpleNamespace):
@@ -53,47 +70,6 @@ class DocumentAttributeFilename(SimpleNamespace):
 
 def _doc(*attrs, mime=None):
     return MessageMediaDocument(document=SimpleNamespace(mime_type=mime, attributes=list(attrs)))
-
-
-def _msg(mid, text, *, out=False, media=None):
-    return SimpleNamespace(
-        id=mid,
-        date="2026-09-02",
-        text=text,
-        out=out,
-        action=None,
-        reply_to_msg_id=None,
-        sender=None,
-        sender_id=None,
-        media=media,
-        entities=None,
-        reactions=None,
-        reply_to=None,
-        forward=None,
-    )
-
-
-class _FakeTelethon:
-    def __init__(self, msgs):
-        self._msgs = msgs
-
-    def iter_messages(self, chat_id, limit=20, offset_id=0, **kw):
-        msgs = self._msgs[:limit]
-
-        async def _gen():
-            for m in msgs:
-                yield m
-
-        return _gen()
-
-    async def get_messages(self, chat_id, ids=None):
-        return [m for m in self._msgs if m.id in (ids or [])]
-
-
-def _wrap(msgs):
-    w = ClientWrapper(Path("/nonexistent"), 1, "x")
-    w._client = _FakeTelethon(msgs)
-    return w
 
 
 # --- the classifier itself ------------------------------------------------
@@ -171,35 +147,3 @@ def test_non_document_media_falls_back_to_its_own_name():
 
 def test_none_media_is_empty():
     assert media_details(None) == {}
-
-
-# --- wired into every serialization site ----------------------------------
-
-
-def test_get_messages_labels_kind_without_asking():
-    w = _wrap([_msg(2, "", media=_doc(DocumentAttributeSticker(alt="👍")))])
-    out = asyncio.run(w.get_messages(7, limit=10))
-    assert out[0]["media_type"] == "MessageMediaDocument"
-    assert out[0]["media_kind"] == "sticker"
-    assert out[0]["media_alt"] == "👍"
-
-
-def test_get_message_single_labels_kind():
-    w = _wrap([_msg(2, "", media=_doc(DocumentAttributeAudio(voice=True, duration=11)))])
-    out = asyncio.run(w.get_message(7, 2))
-    assert out["media_kind"] == "voice"
-    assert out["media_duration"] == 11
-
-
-def test_include_media_payload_gains_the_same_detail():
-    w = _wrap([_msg(1, "", media=_doc(DocumentAttributeSticker(alt="🙏")))])
-    out = asyncio.run(w.get_messages(7, limit=10, include_media=True))
-    assert out[0]["media"]["has_file"] is True
-    assert out[0]["media"]["kind"] == "sticker"
-    assert out[0]["media"]["alt"] == "🙏"
-
-
-def test_text_message_has_no_kind():
-    w = _wrap([_msg(1, "سلام")])
-    out = asyncio.run(w.get_messages(7, limit=10))
-    assert "media_kind" not in out[0]

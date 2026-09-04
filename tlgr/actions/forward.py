@@ -9,9 +9,9 @@ from typing import Any
 from telethon import errors
 
 from tlgr.actions import register_action
-from tlgr.core.client import ClientWrapper
 from tlgr.filters.message import is_forwardable
 from tlgr.gateway.event import Event
+from tlgr.jobs.client import JobClient
 from tlgr.processors import ProcessorChain
 
 log = logging.getLogger("tlgr.actions.forward")
@@ -21,7 +21,7 @@ log = logging.getLogger("tlgr.actions.forward")
 async def action_forward(
     event: Event,
     config: Any,
-    client: ClientWrapper,
+    client: JobClient,
     chain: ProcessorChain | None = None,
 ) -> None:
     if event.source != "telegram":

@@ -11,11 +11,9 @@ from tlgr.transport.client import (
     DaemonClient,
     admin,
     events,
-    legacy_request,
     make_dispatcher,
     make_stream_dispatcher,
     op,
-    set_default_flood_wait_max,
     status,
     stream,
 )
@@ -24,11 +22,9 @@ __all__ = [
     "DaemonClient",
     "admin",
     "events",
-    "legacy_request",
     "make_dispatcher",
     "make_stream_dispatcher",
     "op",
-    "set_default_flood_wait_max",
     "status",
     "stream",
 ]

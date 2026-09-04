@@ -7,8 +7,8 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
-from tlgr.core.client import ClientWrapper
 from tlgr.daemon.webhook import WebhookPusher
+from tlgr.jobs.client import JobClient
 
 log = logging.getLogger("tlgr.jobs")
 
@@ -19,7 +19,7 @@ class BaseJob(ABC):
     def __init__(
         self,
         config: Any,
-        client: ClientWrapper,
+        client: JobClient,
         webhook: WebhookPusher | None = None,
     ):
         self.config = config

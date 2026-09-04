@@ -189,7 +189,7 @@ class AccountSession:
         self._ready = asyncio.Event()
         self._supervisor: asyncio.Task[None] | None = None
         self._tickers: list[asyncio.Task[None]] = []
-        self._wrapper: Any = None
+        self._job_client: Any = None
         self._flood_budgets: list[int] = []
 
     # -- state -------------------------------------------------------------
@@ -540,28 +540,20 @@ class AccountSession:
     def note_update(self) -> None:
         self.last_update = time.time()
 
-    # -- legacy bridge -----------------------------------------------------
+    # -- the job engine's view ---------------------------------------------
 
     @property
-    def wrapper(self) -> Any:
-        """A `ClientWrapper` view of this session, for unmigrated v1 handlers.
+    def job_client(self) -> Any:
+        """This session as a `jobs.client.JobClient`.
 
-        The wrapper is a v1 object with a `_client`/`_me` pair; building one
-        around the supervised client lets the legacy routes keep working
-        unchanged while the connection is owned here. It goes at PR-12 with
-        `ClientWrapper` itself.
+        Two methods, not a client wrapper: PR-12 deleted `ClientWrapper`,
+        whose 460 lines could log an account in and out from inside a
+        background job. The connection is owned here, and a job may attach
+        handlers, send, and turn a name into a chat id — nothing else.
         """
-        from tlgr.core.client import ClientWrapper
-
-        if self._wrapper is None:
-            self._wrapper = ClientWrapper.__new__(ClientWrapper)
-            self._wrapper.session_path = self.session_path
-            self._wrapper.api_id = self.options.api_id
-            self._wrapper.api_hash = self.options.api_hash
-            self._wrapper.flood_wait_max = self.options.flood_sleep_threshold
-        self._wrapper._client = self.client
-        self._wrapper._me = self.me
-        return self._wrapper
+        if self._job_client is None:
+            self._job_client = _SessionJobClient(self)
+        return self._job_client
 
     # -- reporting ---------------------------------------------------------
 
@@ -590,6 +582,42 @@ class AccountSession:
         if self.state != SessionState.ONLINE:
             info["since"] = stamp(self.since)
         return info
+
+
+class _SessionJobClient:
+    """A `jobs.client.JobClient` backed by a supervised session.
+
+    Deliberately thin. The job engine's YAML names destinations by `@handle`,
+    so it needs a resolver; everything else it does, it does through the raw
+    Telethon client. Both read through to the session, so a reconnect swaps
+    the client underneath without the job noticing — which is what v1's
+    long-lived `ClientWrapper` could not do.
+    """
+
+    __slots__ = ("_session",)
+
+    def __init__(self, session: AccountSession) -> None:
+        self._session = session
+
+    @property
+    def client(self) -> Any:
+        return self._session.client
+
+    async def resolve_chat(self, chat_ref: str) -> int:
+        """`@channel`, an id or a link → the marked chat id.
+
+        Through the account's *own* resolver, never a shared one: an access
+        hash minted for one account is meaningless to another and produces
+        `PEER_ID_INVALID` for a peer that plainly exists (§6.6).
+        """
+        from tlgr.models.peer import parse_peer_ref
+        from tlgr.ops._serialize import peer_id_of
+
+        peer = await self._session.resolver.resolve(parse_peer_ref(str(chat_ref)))
+        found = peer_id_of(peer)
+        if found is None:  # pragma: no cover - the resolver raises instead
+            raise ValueError(f"could not resolve {chat_ref!r}")
+        return int(found)
 
 
 async def call_with_flood_budget(

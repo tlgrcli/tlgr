@@ -5,11 +5,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from tlgr.core.client import ClientWrapper
 from tlgr.daemon.webhook import WebhookPusher
 from tlgr.gateway.config import GatewayConfig
 from tlgr.gateway.engine import Gateway
 from tlgr.jobs.base import BaseJob
+from tlgr.jobs.client import JobClient
 
 log = logging.getLogger("tlgr.daemon.jobs")
 
@@ -21,7 +21,7 @@ class JobRunner:
     def create_job(
         self,
         config: GatewayConfig,
-        client: ClientWrapper,
+        client: JobClient,
         webhook: WebhookPusher | None = None,
         bus: Any = None,
     ) -> BaseJob:

@@ -9,8 +9,9 @@ Each rule exists for a reason that is not aesthetic:
 * `cli/` must not import Telethon or the daemon, because `tlgr --help` has to
   be fast and has to work on a machine that never connects to Telegram.
 
-`cli/legacy/` is exempt: those modules are v1, moved verbatim, and each is
-deleted by its own group PR.
+There are no exemptions any more. `cli/legacy/` held the v1 modules that were
+moved verbatim and deleted one group PR at a time; PR-12 deleted the last of
+them, so every module under `tlgr/` is held to the rule.
 """
 
 from __future__ import annotations
@@ -28,9 +29,7 @@ ROOT = Path(__file__).resolve().parent.parent / "tlgr"
 
 def _modules(package: str) -> list[Path]:
     return sorted(
-        path
-        for path in (ROOT / package).rglob("*.py")
-        if "legacy" not in path.parts and "__pycache__" not in path.parts
+        path for path in (ROOT / package).rglob("*.py") if "__pycache__" not in path.parts
     )
 
 

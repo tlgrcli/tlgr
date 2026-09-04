@@ -195,22 +195,33 @@ async def test_a_stream_without_an_end_frame_is_retryable(live_daemon, tlgr_home
         await in_thread(drain)
 
 
-async def test_legacy_requests_go_through_the_same_transport(live_daemon, tlgr_home, in_thread):
-    """COR-04 for unmigrated commands: the shim encodes, so they are fixed too."""
+async def test_a_missing_account_is_classified_not_flattened(live_daemon, client, in_thread):
+    """COR-06, now on the one route that is left.
+
+    v1 answered `404 IPC_ERROR` for three different situations — no account
+    given, alias not registered, alias registered but unusable — so a caller
+    could not tell a typo from a revoked session. PR-12 removed the v1 routes
+    entirely; the claim moves to `/v1/op`, which is where every command goes.
+    """
     from tlgr.core.errors import EXIT_NOT_FOUND
-    from tlgr.ipc_client import ipc_request
 
     with pytest.raises(Exception) as caught:
-        await in_thread(
-            ipc_request,
-            "GET",
-            "/profile/get",
-            params={"account": "nope"},
-            base=tlgr_home,
-        )
-    # Classified, not the flat 404/IPC_ERROR v1 returned for every reason a
-    # client might be missing (COR-06).
+        await in_thread(client.op, "profile.get", {}, account="nope")
     assert caught.value.exit_code == EXIT_NOT_FOUND
+
+
+async def test_the_daemon_serves_only_v1_routes(live_daemon, client, in_thread):
+    """No route without the `/v1` prefix survives (§2.4, §12.4).
+
+    A v1 path answering anything at all would mean a command could reach the
+    daemon without the policy allowlist, the version handshake and the flood
+    budget the `/v1` middleware chain applies.
+    """
+    from tlgr.transport.client import RemoteError
+
+    with pytest.raises((RemoteError, Exception)) as caught:
+        await in_thread(client.request, "GET", "/profile/get", params={"account": "work"})
+    assert "404" in str(caught.value) or "not found" in str(caught.value).lower()
 
 
 async def test_the_socket_is_private(live_daemon):

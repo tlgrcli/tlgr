@@ -2,7 +2,7 @@
 
 Every action is an async function registered via ``@register_action``.
 Actions receive an :class:`~tlgr.gateway.event.Event`, the action's config
-from YAML, a :class:`~tlgr.core.client.ClientWrapper`, and an optional
+from YAML, a :class:`~tlgr.jobs.client.JobClient`, and an optional
 :class:`~tlgr.processors.ProcessorChain`.
 """
 
@@ -11,12 +11,12 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from tlgr.core.client import ClientWrapper
 from tlgr.gateway.event import Event
+from tlgr.jobs.client import JobClient
 from tlgr.processors import ProcessorChain
 
 ActionFunc = Callable[
-    [Event, Any, ClientWrapper, ProcessorChain | None],
+    [Event, Any, JobClient, ProcessorChain | None],
     Awaitable[None],
 ]
 

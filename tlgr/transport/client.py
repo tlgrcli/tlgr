@@ -53,10 +53,8 @@ __all__ = [
     "admin",
     "error_from_body",
     "events",
-    "legacy_request",
     "make_dispatcher",
     "op",
-    "set_default_flood_wait_max",
     "status",
     "stream",
 ]
@@ -697,43 +695,6 @@ def admin(action: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
 #: Set once by the CLI root from `--flood-wait-max`. Legacy commands do not
 #: thread the flag through their own bodies (there are forty of them), and
 #: dropping it silently is COR-15 — the flag existed and did nothing.
-_default_flood_wait_max: int | None = None
-
-
-def set_default_flood_wait_max(seconds: int | None) -> None:
-    global _default_flood_wait_max
-    _default_flood_wait_max = seconds
-
-
-def legacy_request(
-    method: str,
-    path: str,
-    *,
-    body: dict[str, Any] | None = None,
-    params: dict[str, Any] | None = None,
-    base: Path | None = None,
-    timeout: float = DEFAULT_TIMEOUT,
-) -> dict[str, Any]:
-    """The v1 IPC call, over the v2 transport (§12.4).
-
-    Unmigrated commands keep their route and their JSON shape, and gain
-    correct encoding, real timeouts and the §7.2 error mapping on day one
-    instead of at their own group's PR.
-    """
-    client = DaemonClient(base, timeout=timeout)
-    if _default_flood_wait_max is not None:
-        if body is not None:
-            body = {"flood_wait_max": _default_flood_wait_max, **body}
-        else:
-            params = {**(params or {}), "flood_wait_max": _default_flood_wait_max}
-    result = client.request(method, path, body=body, params=params, timeout=timeout)
-    if result is None:
-        return {}
-    if not isinstance(result, dict):
-        return {"result": result}
-    return result
-
-
 # ---------------------------------------------------------------------------
 # The CLI dispatcher
 # ---------------------------------------------------------------------------

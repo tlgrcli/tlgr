@@ -151,8 +151,10 @@ class Rights(Model):
     edit_stories: bool | None = None
     delete_stories: bool | None = None
     manage_direct_messages: bool | None = None
+    manage_ranks: bool | None = None
     anonymous: bool | None = None
     other: bool | None = None
+    view_messages: bool | None = None
     send_messages: bool | None = None
     send_media: bool | None = None
     send_photos: bool | None = None
@@ -167,8 +169,11 @@ class Rights(Model):
     send_inline: bool | None = None
     send_polls: bool | None = None
     send_plain: bool | None = None
+    send_reactions: bool | None = None
     embed_links: bool | None = None
+    edit_rank: bool | None = None
     until: str | None = None
+    until_unix: int | None = None
 
 
 class Chat(Model):

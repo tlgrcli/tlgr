@@ -18,11 +18,6 @@ final_pr = 12
 # ---------------------------------------------------------------------------
 
 [[domain]]
-name = "groups_channels_admin"
-pr = 7
-reason = "chat member/admin/invite/topic/permission land in PR-7."
-
-[[domain]]
 name = "stories"
 pr = 8
 reason = "the story group lands in PR-8, after media."
@@ -41,6 +36,50 @@ reason = "profile, privacy, notify, settings, business, premium, gift and stars 
 # Individual ids inside a domain that IS migrated. These are the ones that
 # matter: each is a decision, not a backlog entry.
 # ---------------------------------------------------------------------------
+
+# The groups_channels_admin ids PR-7 does not own. The domain-wide waiver is
+# gone: every id left in it names the group that owns it, which is what makes
+# "the groups-and-channels group is done" checkable rather than asserted.
+[[id]]
+id = "groups-channels-admin.channel-subscription-manage"
+pr = 12
+reason = "My own paid subscriptions are `stars subscription *` (PR-12); the admin side is `chat invite list`."
+
+[[id]]
+id = "groups-channels-admin.personal-channel"
+pr = 12
+reason = "Showing a channel on my profile is `profile set --channel` (PR-12)."
+
+[[id]]
+id = "groups-channels-admin.gift-code-redeem"
+pr = 12
+reason = "Gift codes are the `gift` noun (PR-12); `boost list --gifts` finds the winners."
+
+[[id]]
+id = "groups-channels-admin.giveaway-info"
+pr = 12
+reason = "`giveaway *` lands with gifts and Stars (PR-12); `boost get` reports the prepaid ones."
+
+[[id]]
+id = "groups-channels-admin.giveaway-prepaid-launch"
+pr = 12
+reason = "Launching a giveaway is `giveaway launch` (PR-12); `boost get` reports the prepaid slots it spends."
+
+[[id]]
+id = "groups-channels-admin.hide-peer-stories"
+pr = 8
+reason = "Hiding a peer's stories is `story hide` (PR-8); `user hide-stories` already does the user half."
+
+[[id]]
+id = "groups-channels-admin.stories-as-channel"
+pr = 8
+reason = "Posting as a channel is the story group (PR-8); the admin rights that gate it are `chat admin promote --rights post-stories`."
+
+[[id]]
+id = "groups-channels-admin.report-reaction"
+pr = 9
+reason = "Reporting a reaction is `reaction report` (PR-9)."
+
 
 # The dialogs_chats ids PR-3 does not own. Each names the group that does.
 [[id]]

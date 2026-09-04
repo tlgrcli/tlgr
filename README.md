@@ -155,13 +155,32 @@ tlgr chat theme set <chat> --emoji 🌷
 tlgr chat wallpaper set <chat> --slug pattern
 tlgr chat badge get --limits           # the unread badge, and the chat-list limits behind it
 tlgr chat report <chat> --spam --yes
-tlgr chat members <chat>               # --admins, --search, --limit
-tlgr chat create <name>                # --type group|channel, --members
+```
+
+Members, admins, invites and topics:
+
+```
+tlgr chat member list <chat> --filter admins    # `chat members` still works
+tlgr chat member ban <chat> @spammer --purge --report --yes
+tlgr chat member restrict <chat> @noisy --deny send-media --until 7d
+tlgr chat admin promote <chat> @alice --rights ban-users,delete-messages
+tlgr chat permission list --mask member         # the canonical right names
+tlgr chat permission set <chat> --deny send-stickers
+tlgr chat invite create <chat> --limit 25 --expires 7d
+tlgr chat request approve <chat> --all --yes
+tlgr chat topic create <chat> Releases          # the id `--topic` takes
+tlgr chat setting set <chat> --slow-mode 30s --hidden-members on
+tlgr chat create <name> --type supergroup       # --members, --photo, --username
+tlgr chat stats get <channel> --load-graphs
+tlgr boost add <channel>
 ```
 
 `chat list` returns a page of dialogs whose peer is nested under `chat`;
 `chat catchup` and `chat list` never emit a read receipt, `chat open` does on
-purpose, and `chat unread` restores only your own badge. Full reference:
+purpose, and `chat unread` restores only your own badge. A member row keeps
+its participant wrapper (status, rank, promoter, both rights masks) and every
+mask is allow-polarity, so `chat permission get` round-trips straight back
+into `chat permission set`. Full reference:
 [`docs/reference/chat.md`](docs/reference/chat.md).
 
 ### Folders

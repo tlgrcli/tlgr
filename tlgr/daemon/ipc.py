@@ -117,8 +117,6 @@ class LegacyRoutes:
         # through `legacy_paths` (§12.4).
 
         # Chats
-        app.router.add_post("/chat/create", self._chat_create)
-        app.router.add_get("/chat/members", self._chat_members)
 
         # Contacts
 
@@ -129,41 +127,6 @@ class LegacyRoutes:
         app.router.add_post("/profile/update", self._profile_update)
 
         # Media
-
-    # -- Chats --
-
-    async def _chat_create(self, request: web.Request) -> web.Response:
-        body = await _get_body(request)
-        account = body.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _no_client(account)
-        try:
-            result = await client.create_chat(
-                body["name"],
-                chat_type=body.get("type", "group"),
-                members=body.get("members"),
-            )
-            return _json_response(result)
-        except Exception as e:
-            return _handle_exception(e)
-
-    async def _chat_members(self, request: web.Request) -> web.Response:
-        q = request.query
-        account = q.get("account", "")
-        client = await self.daemon.ensure_client(account)
-        if not client:
-            return _no_client(account)
-        try:
-            members = await client.list_participants(
-                _ref(q["chat"]),
-                limit=int(q["limit"]) if q.get("limit") else None,
-                admins_only=q.get("admins") == "1",
-                search=q.get("search"),
-            )
-            return _json_response({"members": members})
-        except Exception as e:
-            return _handle_exception(e)
 
     # -- Profile --
 

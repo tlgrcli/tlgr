@@ -650,6 +650,39 @@ class World:
     #: Set when the peer should look uncallable to `call start --check`.
     calls_available: bool = True
 
+    # -- the administration world (Stage E) --------------------------------
+    #
+    # Everything the `chat member/admin/invite/topic/setting/stats` group
+    # touches, kept as state rather than as canned replies — so a test can
+    # ban somebody and then *list* them among the banned, which is the only
+    # way to catch a mask that was written back incomplete.
+
+    #: marked chat id → {user id: raw ChannelParticipant*}. Named `members`
+    #: because `participants` is the call world's, and one World holds both.
+    members: dict[int, dict[int, Any]] = field(default_factory=dict)
+    #: marked chat id → {user id: ChatBannedRights}, the restricted/removed set
+    banned: dict[int, dict[int, Any]] = field(default_factory=dict)
+    #: marked chat id → the settings `chat setting get` reads out of chatFull
+    settings: dict[int, dict[str, Any]] = field(default_factory=dict)
+    #: marked chat id → [chatInviteExported]
+    invites: dict[int, list[Any]] = field(default_factory=dict)
+    #: marked chat id → [chatInviteImporter] (join requests carry requested=True)
+    importers: dict[int, list[Any]] = field(default_factory=dict)
+    #: invite hash → what `messages.checkChatInvite` should answer
+    invite_previews: dict[str, Any] = field(default_factory=dict)
+    #: marked chat id → {topic id: forumTopic}
+    topics: dict[int, dict[int, Any]] = field(default_factory=dict)
+    #: marked chat id → [channelAdminLogEvent]
+    admin_log: dict[int, list[Any]] = field(default_factory=dict)
+    #: marked chat id → [boost]
+    boosts: dict[int, list[Any]] = field(default_factory=dict)
+    #: my premium boost slots
+    my_boosts: list[Any] = field(default_factory=list)
+    #: marked chat id → the default banned mask every member inherits
+    default_banned: dict[int, Any] = field(default_factory=dict)
+    #: usernames the server reports as already taken
+    taken_usernames: set[str] = field(default_factory=set)
+
     # -- behaviour knobs ---------------------------------------------------
 
     _fail_next: dict[str, BaseException] = field(default_factory=dict)
@@ -985,6 +1018,108 @@ class World:
         )
         self.call_log.append(message)
         return message
+
+    # -- the administration world ------------------------------------------
+
+    def add_member(
+        self,
+        chat_id: int,
+        user_id: int,
+        *,
+        status: str = "member",
+        rank: str | None = None,
+        admin_rights: Any = None,
+        inviter_id: int | None = None,
+        promoted_by: int | None = None,
+        can_edit: bool | None = None,
+    ) -> Any:
+        """Put a real `ChannelParticipant*` in a chat.
+
+        The wrapper, not a bare user: "is this person an admin, and who
+        promoted them" is exactly what v1's member list threw away, so the
+        fake has to be able to answer it.
+        """
+        now = datetime.now(timezone.utc)
+        if status == "creator":
+            row: Any = types.ChannelParticipantCreator(
+                user_id=user_id,
+                admin_rights=admin_rights or types.ChatAdminRights(change_info=True),
+                rank=rank,
+            )
+        elif status == "admin":
+            row = types.ChannelParticipantAdmin(
+                user_id=user_id,
+                promoted_by=promoted_by or self.me.id,
+                date=now,
+                admin_rights=admin_rights or types.ChatAdminRights(ban_users=True),
+                can_edit=True if can_edit is None else can_edit,
+                inviter_id=inviter_id,
+                rank=rank,
+            )
+        elif status == "self":
+            row = types.ChannelParticipantSelf(
+                user_id=user_id, inviter_id=inviter_id or self.me.id, date=now
+            )
+        else:
+            row = types.ChannelParticipant(user_id=user_id, date=now, rank=rank)
+        self.members.setdefault(chat_id, {})[user_id] = row
+        return row
+
+    def add_invite(self, chat_id: int, link: str, **kwargs: Any) -> Any:
+        invite = types.ChatInviteExported(
+            link=link,
+            admin_id=kwargs.pop("admin_id", self.me.id),
+            date=kwargs.pop("date", datetime.now(timezone.utc)),
+            **kwargs,
+        )
+        self.invites.setdefault(chat_id, []).append(invite)
+        return invite
+
+    def add_importer(
+        self, chat_id: int, user_id: int, *, requested: bool = False, **kw: Any
+    ) -> Any:
+        row = types.ChatInviteImporter(
+            user_id=user_id,
+            date=kw.pop("date", datetime.now(timezone.utc)),
+            requested=requested or None,
+            **kw,
+        )
+        self.importers.setdefault(chat_id, []).append(row)
+        return row
+
+    def add_topic(self, chat_id: int, topic_id: int, title: str, **kwargs: Any) -> Any:
+        topic = types.ForumTopic(
+            id=topic_id,
+            date=kwargs.pop("date", datetime.now(timezone.utc)),
+            peer=types.PeerChannel(channel_id=-1000000000000 - chat_id),
+            title=title,
+            icon_color=kwargs.pop("icon_color", 0x6FB9F0),
+            top_message=kwargs.pop("top_message", 0),
+            read_inbox_max_id=0,
+            read_outbox_max_id=0,
+            unread_count=kwargs.pop("unread_count", 0),
+            unread_mentions_count=0,
+            unread_reactions_count=0,
+            unread_poll_votes_count=0,
+            from_id=types.PeerUser(user_id=self.me.id),
+            notify_settings=types.PeerNotifySettings(),
+            **kwargs,
+        )
+        self.topics.setdefault(chat_id, {})[topic_id] = topic
+        return topic
+
+    def add_admin_log(self, chat_id: int, event_id: int, action: Any, *, user_id: int = 0) -> Any:
+        event = types.ChannelAdminLogEvent(
+            id=event_id,
+            date=datetime.now(timezone.utc),
+            user_id=user_id or self.me.id,
+            action=action,
+        )
+        self.admin_log.setdefault(chat_id, []).append(event)
+        return event
+
+    def settings_of(self, chat_id: int) -> dict[str, Any]:
+        return self.settings.setdefault(chat_id, {})
 
 
 class _Dialog:
@@ -1628,11 +1763,6 @@ class FakeTelegramClient:
             type=types.storage.FileUnknown(), mtime=0, bytes=self.world.stream_chunk
         )
 
-    def _raw_ExportChatInviteRequest(self, request: Any) -> Any:
-        return types.ChatInviteExported(
-            link="https://t.me/+fallback", admin_id=self.world.me.id, date=None
-        )
-
     def _raw_SendReactionRequest(self, request: Any) -> types.Updates:
         chat_id = self._chat_id(request.peer)
         message = self.world.find(chat_id, int(request.msg_id))
@@ -2243,44 +2373,6 @@ class FakeTelegramClient:
             return None
         return types.InputGroupCall(id=call.id, access_hash=call.access_hash)
 
-    def _full_channel(self, chat_id: int) -> Any:
-        return types.ChannelFull(
-            id=abs(chat_id) - 1000000000000 if chat_id < -1000000000000 else abs(chat_id),
-            about="",
-            read_inbox_max_id=0,
-            read_outbox_max_id=0,
-            unread_count=0,
-            chat_photo=types.PhotoEmpty(id=0),
-            notify_settings=types.PeerNotifySettings(),
-            bot_info=[],
-            pts=1,
-            available_reactions=self.world.chat_reactions.get(chat_id) or types.ChatReactionsNone(),
-            reactions_limit=self.world.reactions_limit.get(chat_id),
-            paid_reactions_available=self.world.paid_enabled.get(chat_id),
-            call=self._running_call(chat_id),
-        )
-
-    def _raw_GetFullChannelRequest(self, request: Any) -> Any:
-        chat_id = self._chat_id(request.channel)
-        return types.messages.ChatFull(full_chat=self._full_channel(chat_id), chats=[], users=[])
-
-    def _raw_GetFullChatRequest(self, request: Any) -> Any:
-        chat_id = int(request.chat_id)
-        return types.messages.ChatFull(
-            full_chat=types.ChatFull(
-                id=chat_id,
-                about="",
-                participants=types.ChatParticipantsForbidden(chat_id=chat_id),
-                notify_settings=types.PeerNotifySettings(),
-                available_reactions=self.world.chat_reactions.get(-chat_id)
-                or types.ChatReactionsNone(),
-                reactions_limit=self.world.reactions_limit.get(-chat_id),
-                call=self._running_call(-chat_id),
-            ),
-            chats=[],
-            users=[],
-        )
-
     def _raw_SetChatAvailableReactionsRequest(self, request: Any) -> types.Updates:
         chat_id = self._chat_id(request.peer)
         self.world.chat_reactions[chat_id] = request.available_reactions
@@ -2288,6 +2380,12 @@ class FakeTelegramClient:
             self.world.reactions_limit[chat_id] = int(request.reactions_limit)
         if request.paid_enabled is not None:
             self.world.paid_enabled[chat_id] = bool(request.paid_enabled)
+        # The admin world reads the policy back out of `chatFull`, so it is
+        # written to both places: `chat reaction get` reads the first, `chat
+        # setting get` the second, and they must not be able to disagree.
+        settings = self.world.settings_of(chat_id)
+        settings["available_reactions"] = request.available_reactions
+        settings["reactions_limit"] = request.reactions_limit
         return self._updates()
 
     def _raw_SetDefaultReactionRequest(self, request: Any) -> bool:
@@ -2864,7 +2962,17 @@ class FakeTelegramClient:
         return True
 
     def _raw_DismissSuggestionRequest(self, request: Any) -> bool:
-        self.auth.dismissed_suggestions.append(request.suggestion)
+        # An account-level suggestion carries `inputPeerEmpty`; a chat's own
+        # pending suggestion carries the chat. Two different lists.
+        peer = getattr(request, "peer", None)
+        if peer is None or type(peer).__name__ == "InputPeerEmpty":
+            self.auth.dismissed_suggestions.append(request.suggestion)
+            return True
+        chat_id = self._chat_id(peer)
+        settings = self.world.settings_of(chat_id)
+        settings["pending_suggestions"] = [
+            key for key in (settings.get("pending_suggestions") or []) if key != request.suggestion
+        ]
         return True
 
     def _raw_GetTermsOfServiceUpdateRequest(self, request: Any) -> Any:
@@ -3423,19 +3531,34 @@ class FakeTelegramClient:
     # dispatcher's per-kind branch is exercised rather than assumed.
 
     def _raw_CheckChatInviteRequest(self, request: Any) -> Any:
+        answer = self.world.invite_previews.get(request.hash)
+        if answer is not None:
+            return answer
         return types.ChatInvite(
             title="Shared group",
             photo=types.PhotoEmpty(id=0),
             participants_count=12,
             color=0,
+            about="A private group",
         )
 
     def _raw_GetBoostsStatusRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        rows = self.world.boosts.get(chat_id)
+        if not rows:
+            return types.premium.BoostsStatus(
+                level=3,
+                current_level_boosts=10,
+                boosts=12,
+                boost_url="https://t.me/boost/news",
+            )
         return types.premium.BoostsStatus(
-            level=3,
-            current_level_boosts=10,
-            boosts=12,
-            boost_url="https://t.me/boost/news",
+            level=len(rows) // 2,
+            current_level_boosts=len(rows),
+            boosts=len(rows),
+            boost_url=f"https://t.me/boost?c={abs(chat_id)}",
+            my_boost=any(getattr(b, "user_id", 0) == self.world.me.id for b in rows) or None,
+            next_level_boosts=len(rows) + 3,
         )
 
     def _raw_CheckGiftCodeRequest(self, request: Any) -> Any:
@@ -3474,6 +3597,753 @@ class FakeTelegramClient:
             date=datetime.now(timezone.utc),
             seq=0,
         )
+
+    # -- the administration world ------------------------------------------
+    #
+    # Written as state, not as canned replies: `chat member ban` really moves
+    # the person into `world.banned`, so `chat member list --filter banned`
+    # finds them there afterwards and a mask that was written back incomplete
+    # shows up as a wrong answer rather than as a plausible request object.
+
+    def _participants(self, chat_id: int) -> dict[int, Any]:
+        return self.world.members.setdefault(chat_id, {})
+
+    def _banned_row(self, chat_id: int, user_id: int) -> Any:
+        rights = self.world.banned[chat_id][user_id]
+        return types.ChannelParticipantBanned(
+            peer=types.PeerUser(user_id=user_id),
+            kicked_by=self.world.me.id,
+            date=datetime.now(timezone.utc),
+            banned_rights=rights,
+            left=bool(getattr(rights, "view_messages", False)),
+        )
+
+    def _people(self, ids: list[int]) -> list[Any]:
+        return [self.world.users[i] for i in ids if i in self.world.users]
+
+    def _raw_GetParticipantsRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.channel)
+        name = type(request.filter).__name__
+        rows: list[Any] = []
+        if name in ("ChannelParticipantsKicked", "ChannelParticipantsBanned"):
+            rows = [
+                self._banned_row(chat_id, user_id) for user_id in self.world.banned.get(chat_id, {})
+            ]
+            if name == "ChannelParticipantsKicked":
+                rows = [row for row in rows if row.left]
+            else:
+                rows = [row for row in rows if not row.left]
+        else:
+            rows = list(self._participants(chat_id).values())
+            if name == "ChannelParticipantsAdmins":
+                rows = [
+                    row
+                    for row in rows
+                    if type(row).__name__
+                    in ("ChannelParticipantAdmin", "ChannelParticipantCreator")
+                ]
+            elif name == "ChannelParticipantsBots":
+                rows = [
+                    row
+                    for row in rows
+                    if getattr(self.world.users.get(getattr(row, "user_id", 0)), "bot", False)
+                ]
+            query = (getattr(request.filter, "q", "") or "").lower()
+            if query:
+                rows = [
+                    row
+                    for row in rows
+                    if query
+                    in (
+                        getattr(self.world.users.get(getattr(row, "user_id", 0)), "first_name", "")
+                        or ""
+                    ).lower()
+                ]
+        total = len(rows)
+        window = rows[int(request.offset) : int(request.offset) + int(request.limit)]
+        ids = [
+            getattr(row, "user_id", None) or abs(self._chat_id(getattr(row, "peer", None)))
+            for row in window
+        ]
+        return types.channels.ChannelParticipants(
+            count=total, participants=window, chats=[], users=self._people(ids)
+        )
+
+    def _raw_GetParticipantRequest(self, request: Any) -> Any:
+        from telethon.errors import UserNotParticipantError
+
+        chat_id = self._chat_id(request.channel)
+        user_id = abs(self._chat_id(request.participant))
+        # A restricted member is still a member; the banned mask is the more
+        # specific answer, so it wins — which is what makes a second
+        # `chat member restrict` patch the mask instead of resetting it.
+        row = None
+        if user_id in self.world.banned.get(chat_id, {}):
+            row = self._banned_row(chat_id, user_id)
+        if row is None:
+            row = self._participants(chat_id).get(user_id)
+        if row is None:
+            raise UserNotParticipantError(request)
+        return types.channels.ChannelParticipant(
+            participant=row, chats=[], users=self._people([user_id])
+        )
+
+    def _raw_EditBannedRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.channel)
+        user_id = abs(self._chat_id(request.participant))
+        rights = request.banned_rights
+        flags = [
+            name
+            for name in dir(rights)
+            if not name.startswith("_") and isinstance(getattr(rights, name, None), bool)
+        ]
+        store = self.world.banned.setdefault(chat_id, {})
+        if any(getattr(rights, name, False) for name in flags):
+            store[user_id] = rights
+            if getattr(rights, "view_messages", False):
+                self._participants(chat_id).pop(user_id, None)
+        else:
+            store.pop(user_id, None)
+        return self._updates()
+
+    def _raw_EditAdminRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.channel)
+        user_id = abs(self._chat_id(request.user_id))
+        rights = request.admin_rights
+        granted = any(
+            getattr(rights, name, False)
+            for name in dir(rights)
+            if not name.startswith("_") and isinstance(getattr(rights, name, None), bool)
+        )
+        if granted:
+            self.world.add_member(
+                chat_id,
+                user_id,
+                status="admin",
+                admin_rights=rights,
+                rank=request.rank or None,
+            )
+        else:
+            self.world.add_member(chat_id, user_id, status="member")
+        return self._updates()
+
+    def _raw_InviteToChannelRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.channel)
+        missing = []
+        for user in request.users:
+            user_id = abs(self._chat_id(user))
+            if user_id in getattr(self.world, "_privacy_blocked", ()):  # pragma: no cover
+                missing.append(types.MissingInvitee(user_id=user_id))
+                continue
+            self.world.add_member(chat_id, user_id)
+        return types.messages.InvitedUsers(updates=self._updates(), missing_invitees=missing)
+
+    def _raw_CreateChatRequest(self, request: Any) -> Any:
+        return types.messages.InvitedUsers(updates=self._updates(), missing_invitees=[])
+
+    def _raw_EditChatAdminRequest(self, request: Any) -> bool:
+        return True
+
+    def _raw_ReportSpamRequest(self, request: Any) -> bool:
+        return True
+
+    def _raw_ReportAntiSpamFalsePositiveRequest(self, request: Any) -> bool:
+        return True
+
+    def _raw_EditChatParticipantRankRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.peer)
+        user_id = abs(self._chat_id(request.participant))
+        row = self._participants(chat_id).get(user_id)
+        if row is not None:
+            row.rank = request.rank
+        return self._updates()
+
+    def _raw_ToggleNoPaidMessagesExceptionRequest(self, request: Any) -> bool:
+        return True
+
+    def _raw_EditChatDefaultBannedRightsRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.peer)
+        self.world.default_banned[chat_id] = request.banned_rights
+        entity = self.world.entity_for(chat_id)
+        if entity is not None:
+            entity.default_banned_rights = request.banned_rights
+        return self._updates()
+
+    # -- full chat ---------------------------------------------------------
+
+    def _channel_full(self, chat_id: int) -> Any:
+        settings = self.world.settings_of(chat_id)
+        return types.ChannelFull(
+            id=abs(chat_id) - 1000000000000 if chat_id < -1000000000000 else abs(chat_id),
+            about=str(settings.get("about", "")),
+            read_inbox_max_id=0,
+            read_outbox_max_id=0,
+            unread_count=0,
+            chat_photo=types.PhotoEmpty(id=0),
+            notify_settings=types.PeerNotifySettings(),
+            bot_info=[],
+            pts=1,
+            participants_count=len(self._participants(chat_id)) or None,
+            exported_invite=(self.world.invites.get(chat_id) or [None])[0],
+            slowmode_seconds=settings.get("slowmode_seconds"),
+            hidden_prehistory=settings.get("hidden_prehistory"),
+            antispam=settings.get("antispam"),
+            participants_hidden=settings.get("participants_hidden"),
+            can_view_stats=settings.get("can_view_stats"),
+            can_set_stickers=settings.get("can_set_stickers"),
+            linked_chat_id=settings.get("linked_chat_id"),
+            pending_suggestions=settings.get("pending_suggestions"),
+            available_reactions=(
+                self.world.chat_reactions.get(chat_id)
+                or settings.get("available_reactions")
+                or types.ChatReactionsNone()
+            ),
+            reactions_limit=self.world.reactions_limit.get(
+                chat_id, settings.get("reactions_limit")
+            ),
+            paid_reactions_available=self.world.paid_enabled.get(chat_id),
+            call=self._running_call(chat_id),
+            send_paid_messages_stars=settings.get("send_paid_messages_stars"),
+            view_forum_as_messages=settings.get("view_forum_as_messages"),
+            restricted_sponsored=settings.get("restricted_sponsored"),
+            stats_dc=settings.get("stats_dc"),
+            default_send_as=settings.get("default_send_as"),
+        )
+
+    def _raw_GetFullChannelRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.channel)
+        entity = self.world.entity_for(chat_id)
+        return types.messages.ChatFull(
+            full_chat=self._channel_full(chat_id),
+            chats=[entity] if entity is not None else [],
+            users=list(self.world.users.values()),
+        )
+
+    def _raw_GetFullChatRequest(self, request: Any) -> Any:
+        chat_id = -int(request.chat_id)
+        entity = self.world.entity_for(chat_id)
+        rows = [
+            types.ChatParticipant(
+                user_id=user_id, inviter_id=self.world.me.id, date=datetime.now(timezone.utc)
+            )
+            if type(row).__name__ != "ChannelParticipantAdmin"
+            else types.ChatParticipantAdmin(
+                user_id=user_id, inviter_id=self.world.me.id, date=datetime.now(timezone.utc)
+            )
+            for user_id, row in self._participants(chat_id).items()
+        ]
+        full = types.ChatFull(
+            id=abs(chat_id),
+            about=str(self.world.settings_of(chat_id).get("about", "")),
+            participants=types.ChatParticipants(chat_id=abs(chat_id), participants=rows, version=1),
+            notify_settings=types.PeerNotifySettings(),
+            available_reactions=self.world.chat_reactions.get(chat_id) or types.ChatReactionsNone(),
+            reactions_limit=self.world.reactions_limit.get(chat_id),
+            call=self._running_call(chat_id),
+        )
+        return types.messages.ChatFull(
+            full_chat=full,
+            chats=[entity] if entity is not None else [],
+            users=list(self.world.users.values()),
+        )
+
+    # -- invites -----------------------------------------------------------
+
+    def _raw_ExportChatInviteRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        existing = self.world.invites.setdefault(chat_id, [])
+        link = f"https://t.me/+fake{len(existing) + 1}"
+        return self.world.add_invite(
+            chat_id,
+            link,
+            title=getattr(request, "title", None),
+            expire_date=getattr(request, "expire_date", None),
+            usage_limit=getattr(request, "usage_limit", None),
+            request_needed=getattr(request, "request_needed", None),
+            subscription_pricing=getattr(request, "subscription_pricing", None),
+            permanent=not existing or None,
+        )
+
+    def _find_invite(self, chat_id: int, link: str) -> Any:
+        for invite in self.world.invites.get(chat_id, []):
+            if invite.link == link:
+                return invite
+        return None
+
+    def _raw_EditExportedChatInviteRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        invite = self._find_invite(chat_id, request.link)
+        if invite is None:
+            invite = self.world.add_invite(chat_id, request.link)
+        for name in ("title", "expire_date", "usage_limit", "request_needed", "revoked"):
+            value = getattr(request, name, None)
+            if value is not None:
+                setattr(invite, name, value)
+        return types.messages.ExportedChatInvite(
+            invite=invite, users=list(self.world.users.values())
+        )
+
+    def _raw_GetExportedChatInviteRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        invite = self._find_invite(chat_id, request.link)
+        if invite is None:
+            from telethon.errors import RPCError
+
+            raise RPCError(request, "INVITE_HASH_EXPIRED", 400)
+        return types.messages.ExportedChatInvite(
+            invite=invite, users=list(self.world.users.values())
+        )
+
+    def _raw_GetExportedChatInvitesRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        wanted = bool(getattr(request, "revoked", False))
+        rows = [i for i in self.world.invites.get(chat_id, []) if bool(i.revoked) == wanted]
+        return types.messages.ExportedChatInvites(
+            count=len(rows),
+            invites=rows[: int(request.limit)],
+            users=list(self.world.users.values()),
+        )
+
+    def _raw_GetAdminsWithInvitesRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        rows = self.world.invites.get(chat_id, [])
+        by_admin: dict[int, list[Any]] = {}
+        for invite in rows:
+            by_admin.setdefault(int(invite.admin_id), []).append(invite)
+        return types.messages.ChatAdminsWithInvites(
+            admins=[
+                types.ChatAdminWithInvites(
+                    admin_id=admin_id,
+                    invites_count=len([i for i in items if not i.revoked]),
+                    revoked_invites_count=len([i for i in items if i.revoked]),
+                )
+                for admin_id, items in by_admin.items()
+            ],
+            users=list(self.world.users.values()),
+        )
+
+    def _raw_DeleteExportedChatInviteRequest(self, request: Any) -> bool:
+        chat_id = self._chat_id(request.peer)
+        self.world.invites[chat_id] = [
+            i for i in self.world.invites.get(chat_id, []) if i.link != request.link
+        ]
+        return True
+
+    def _raw_DeleteRevokedExportedChatInvitesRequest(self, request: Any) -> bool:
+        chat_id = self._chat_id(request.peer)
+        self.world.invites[chat_id] = [
+            i for i in self.world.invites.get(chat_id, []) if not i.revoked
+        ]
+        return True
+
+    def _raw_GetChatInviteImportersRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        want_requests = bool(getattr(request, "requested", False))
+        rows = [
+            row
+            for row in self.world.importers.get(chat_id, [])
+            if bool(getattr(row, "requested", False)) == want_requests
+        ]
+        window = rows[: int(request.limit)]
+        return types.messages.ChatInviteImporters(
+            count=len(rows),
+            importers=window,
+            users=self._people([int(row.user_id) for row in window]),
+        )
+
+    def _raw_HideChatJoinRequestRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.peer)
+        user_id = abs(self._chat_id(request.user_id))
+        self.world.importers[chat_id] = [
+            row
+            for row in self.world.importers.get(chat_id, [])
+            if int(row.user_id) != user_id or not getattr(row, "requested", False)
+        ]
+        if getattr(request, "approved", False):
+            self.world.add_member(chat_id, user_id)
+        return self._updates()
+
+    def _raw_HideAllChatJoinRequestsRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.peer)
+        pending = [
+            row for row in self.world.importers.get(chat_id, []) if getattr(row, "requested", False)
+        ]
+        self.world.importers[chat_id] = [
+            row
+            for row in self.world.importers.get(chat_id, [])
+            if not getattr(row, "requested", False)
+        ]
+        if getattr(request, "approved", False):
+            for row in pending:
+                self.world.add_member(chat_id, int(row.user_id))
+        return self._updates()
+
+    def _raw_ImportChatInviteRequest(self, request: Any) -> types.Updates:
+        chats = list(self.world.chats.values())
+        return types.Updates(
+            updates=[], users=[], chats=chats[:1], date=datetime.now(timezone.utc), seq=0
+        )
+
+    def _raw_JoinChannelRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.channel)
+        entity = self.world.entity_for(chat_id)
+        return types.Updates(
+            updates=[],
+            users=[],
+            chats=[entity] if entity is not None else [],
+            date=datetime.now(timezone.utc),
+            seq=0,
+        )
+
+    # -- topics ------------------------------------------------------------
+
+    def _raw_CreateForumTopicRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.peer)
+        self.world.next_message_id += 1
+        topic_id = self.world.next_message_id
+        self.world.add_topic(
+            chat_id, topic_id, request.title, icon_emoji_id=getattr(request, "icon_emoji_id", None)
+        )
+        message = make_message(topic_id, chat_id=chat_id)
+        return types.Updates(
+            updates=[types.UpdateNewChannelMessage(message=message, pts=1, pts_count=1)],
+            users=[],
+            chats=[],
+            date=datetime.now(timezone.utc),
+            seq=0,
+        )
+
+    def _raw_EditForumTopicRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.peer)
+        topic = self.world.topics.setdefault(chat_id, {}).get(int(request.topic_id))
+        if topic is None:
+            topic = self.world.add_topic(chat_id, int(request.topic_id), "General")
+        for name in ("title", "icon_emoji_id", "closed", "hidden"):
+            value = getattr(request, name, None)
+            if value is not None:
+                setattr(topic, name, value)
+        return self._updates()
+
+    def _forum_topics(self, chat_id: int, rows: list[Any]) -> Any:
+        return types.messages.ForumTopics(
+            count=len(rows),
+            topics=rows,
+            messages=[],
+            chats=[],
+            users=[],
+            pts=1,
+        )
+
+    def _raw_GetForumTopicsRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        rows = list(self.world.topics.get(chat_id, {}).values())
+        query = (getattr(request, "q", "") or "").lower()
+        if query:
+            rows = [row for row in rows if query in (row.title or "").lower()]
+        offset_topic = int(getattr(request, "offset_topic", 0) or 0)
+        if offset_topic:
+            rows = [row for row in rows if row.id > offset_topic]
+        return self._forum_topics(chat_id, rows[: int(request.limit)])
+
+    def _raw_GetForumTopicsByIDRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        known = self.world.topics.get(chat_id, {})
+        rows = [
+            known[int(topic_id)]
+            if int(topic_id) in known
+            else types.ForumTopicDeleted(id=int(topic_id))
+            for topic_id in request.topics
+        ]
+        return self._forum_topics(chat_id, rows)
+
+    def _raw_UpdatePinnedForumTopicRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.peer)
+        topic = self.world.topics.get(chat_id, {}).get(int(request.topic_id))
+        if topic is not None:
+            topic.pinned = bool(request.pinned) or None
+        return self._updates()
+
+    def _raw_ReorderPinnedForumTopicsRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.peer)
+        wanted = {int(t) for t in request.order}
+        for topic_id, topic in self.world.topics.get(chat_id, {}).items():
+            if topic_id in wanted:
+                topic.pinned = True
+            elif getattr(request, "force", False):
+                topic.pinned = None
+        return self._updates()
+
+    def _raw_DeleteTopicHistoryRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        self.world.topics.get(chat_id, {}).pop(int(request.top_msg_id), None)
+        return types.messages.AffectedHistory(pts=1, pts_count=1, offset=0)
+
+    def _raw_ReadDiscussionRequest(self, request: Any) -> bool:
+        return True
+
+    def _raw_ExportMessageLinkRequest(self, request: Any) -> Any:
+        """Only a public chat gets a server-minted link.
+
+        A private one answers with an empty link, which is what makes the
+        caller fall back to the `t.me/c/<raw id>/<msg>` form — the shape the
+        message group already relies on.
+        """
+        chat_id = self._chat_id(request.channel)
+        name = getattr(self.world.entity_for(chat_id), "username", None)
+        if not name:
+            return types.ExportedMessageLink(link="", html="")
+        return types.ExportedMessageLink(link=f"https://t.me/{name}/{request.id}", html="")
+
+    # -- the admin log -----------------------------------------------------
+
+    def _raw_GetAdminLogRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.channel)
+        rows = sorted(self.world.admin_log.get(chat_id, []), key=lambda e: -e.id)
+        max_id = int(getattr(request, "max_id", 0) or 0)
+        if max_id:
+            rows = [row for row in rows if row.id < max_id]
+        window = rows[: int(request.limit)]
+        return types.channels.AdminLogResults(
+            events=window, chats=[], users=list(self.world.users.values())
+        )
+
+    # -- settings ----------------------------------------------------------
+
+    def _setting_toggle(self, request: Any, key: str, attribute: str = "enabled") -> types.Updates:
+        chat_id = self._chat_id(getattr(request, "channel", None) or getattr(request, "peer", None))
+        self.world.settings_of(chat_id)[key] = getattr(request, attribute, None)
+        return self._updates()
+
+    def _raw_ToggleSlowModeRequest(self, request: Any) -> types.Updates:
+        return self._setting_toggle(request, "slowmode_seconds", "seconds")
+
+    def _raw_TogglePreHistoryHiddenRequest(self, request: Any) -> types.Updates:
+        return self._setting_toggle(request, "hidden_prehistory")
+
+    def _raw_ToggleAntiSpamRequest(self, request: Any) -> types.Updates:
+        return self._setting_toggle(request, "antispam")
+
+    def _raw_ToggleParticipantsHiddenRequest(self, request: Any) -> types.Updates:
+        return self._setting_toggle(request, "participants_hidden")
+
+    def _raw_ToggleJoinToSendRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.channel)
+        entity = self.world.entity_for(chat_id)
+        if entity is not None:
+            entity.join_to_send = request.enabled
+        return self._updates()
+
+    def _raw_ToggleJoinRequestRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.channel)
+        entity = self.world.entity_for(chat_id)
+        if entity is not None:
+            entity.join_request = request.enabled
+        return self._updates()
+
+    def _raw_ToggleForumRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.channel)
+        entity = self.world.entity_for(chat_id)
+        if entity is not None:
+            entity.forum = request.enabled
+            entity.forum_tabs = request.tabs
+        return self._updates()
+
+    def _raw_ToggleSignaturesRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.channel)
+        entity = self.world.entity_for(chat_id)
+        if entity is not None:
+            entity.signatures = request.signatures_enabled
+            entity.signature_profiles = request.profiles_enabled
+        return self._updates()
+
+    def _raw_ToggleAutotranslationRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.channel)
+        entity = self.world.entity_for(chat_id)
+        if entity is not None:
+            entity.autotranslation = request.enabled
+        return self._updates()
+
+    def _raw_RestrictSponsoredMessagesRequest(self, request: Any) -> types.Updates:
+        return self._setting_toggle(request, "restricted_sponsored", "restricted")
+
+    def _raw_ToggleNoForwardsRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.peer)
+        entity = self.world.entity_for(chat_id)
+        if entity is not None:
+            entity.noforwards = request.enabled
+        return self._updates()
+
+    def _raw_UpdatePaidMessagesPriceRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.channel)
+        self.world.settings_of(chat_id)["send_paid_messages_stars"] = (
+            request.send_paid_messages_stars
+        )
+        return self._updates()
+
+    def _raw_CheckUsernameRequest(self, request: Any) -> bool:
+        return request.username.lower() not in self.world.taken_usernames
+
+    def _raw_UpdateUsernameRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.channel)
+        entity = self.world.entity_for(chat_id)
+        if entity is not None:
+            entity.username = request.username or None
+        return self._updates()
+
+    def _raw_GetGroupsForDiscussionRequest(self, request: Any) -> Any:
+        return types.messages.Chats(chats=list(self.world.chats.values()))
+
+    def _raw_SetDiscussionGroupRequest(self, request: Any) -> bool:
+        return True
+
+    def _raw_GetChannelRecommendationsRequest(self, request: Any) -> Any:
+        return types.messages.Chats(chats=list(self.world.chats.values()))
+
+    def _raw_ReportSponsoredMessageRequest(self, request: Any) -> Any:
+        if not request.option:
+            return types.channels.SponsoredMessageReportResultChooseOption(
+                title="Why?",
+                options=[types.SponsoredMessageReportOption(text="Spam", option=b"\x09")],
+            )
+        return types.channels.SponsoredMessageReportResultReported()
+
+    def _raw_SetCustomVerificationRequest(self, request: Any) -> bool:
+        return True
+
+    # -- boosts, stats and revenue ----------------------------------------
+
+    def _raw_GetBoostsListRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        rows = self.world.boosts.get(chat_id, [])
+        return types.premium.BoostsList(
+            count=len(rows), boosts=rows[: int(request.limit)], users=[], next_offset=None
+        )
+
+    def _raw_GetUserBoostsRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        user_id = abs(self._chat_id(request.user_id))
+        rows = [
+            b for b in self.world.boosts.get(chat_id, []) if getattr(b, "user_id", 0) == user_id
+        ]
+        return types.premium.BoostsList(count=len(rows), boosts=rows, users=[], next_offset=None)
+
+    def _raw_GetMyBoostsRequest(self, request: Any) -> Any:
+        return types.premium.MyBoosts(my_boosts=list(self.world.my_boosts), chats=[], users=[])
+
+    def _raw_ApplyBoostRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        rows = self.world.boosts.setdefault(chat_id, [])
+        for slot in request.slots or []:
+            rows.append(
+                types.Boost(
+                    id=f"slot{slot}",
+                    date=datetime.now(timezone.utc),
+                    expires=datetime.now(timezone.utc),
+                    user_id=self.world.me.id,
+                )
+            )
+        return self._raw_GetBoostsStatusRequest(request)
+
+    def _graph(self, token: str = "") -> Any:
+        if token:
+            return types.StatsGraphAsync(token=token)
+        return types.StatsGraph(json=types.DataJSON(data='{"columns": []}'))
+
+    def _abs_prev(self, current: float, previous: float) -> Any:
+        return types.StatsAbsValueAndPrev(current=current, previous=previous)
+
+    def _raw_GetBroadcastStatsRequest(self, request: Any) -> Any:
+        return types.stats.BroadcastStats(
+            period=types.StatsDateRangeDays(
+                min_date=datetime.now(timezone.utc), max_date=datetime.now(timezone.utc)
+            ),
+            followers=self._abs_prev(120.0, 100.0),
+            views_per_post=self._abs_prev(50.0, 40.0),
+            shares_per_post=self._abs_prev(5.0, 4.0),
+            reactions_per_post=self._abs_prev(9.0, 8.0),
+            views_per_story=self._abs_prev(0.0, 0.0),
+            shares_per_story=self._abs_prev(0.0, 0.0),
+            reactions_per_story=self._abs_prev(0.0, 0.0),
+            enabled_notifications=types.StatsPercentValue(part=60.0, total=120.0),
+            growth_graph=self._graph("growth-token"),
+            followers_graph=self._graph(),
+            mute_graph=self._graph(),
+            top_hours_graph=self._graph(),
+            interactions_graph=self._graph(),
+            iv_interactions_graph=self._graph(),
+            views_by_source_graph=self._graph(),
+            new_followers_by_source_graph=self._graph(),
+            languages_graph=self._graph(),
+            reactions_by_emotion_graph=self._graph(),
+            story_interactions_graph=self._graph(),
+            story_reactions_by_emotion_graph=self._graph(),
+            recent_posts_interactions=[
+                types.PostInteractionCountersMessage(msg_id=918, views=100, forwards=3, reactions=7)
+            ],
+        )
+
+    def _raw_LoadAsyncGraphRequest(self, request: Any) -> Any:
+        return types.StatsGraph(json=types.DataJSON(data='{"columns": ["x"]}'))
+
+    def _raw_GetMessagePublicForwardsRequest(self, request: Any) -> Any:
+        chats = list(self.world.chats.values())
+        forwards = [
+            types.PublicForwardMessage(message=make_message(12, chat_id=-1000000000000 - 5150))
+        ]
+        return types.stats.PublicForwards(
+            count=1, forwards=forwards, chats=chats, users=[], next_offset=None
+        )
+
+    def _raw_GetStarsRevenueStatsRequest(self, request: Any) -> Any:
+        return types.payments.StarsRevenueStats(
+            revenue_graph=self._graph(),
+            status=types.StarsRevenueStatus(
+                current_balance=types.StarsAmount(amount=120, nanos=0),
+                available_balance=types.StarsAmount(amount=100, nanos=0),
+                overall_revenue=types.StarsAmount(amount=900, nanos=0),
+                withdrawal_enabled=True,
+            ),
+            usd_rate=0.013,
+        )
+
+    def _raw_GetStarsTransactionsRequest(self, request: Any) -> Any:
+        return types.payments.StarsStatus(
+            balance=types.StarsAmount(amount=120, nanos=0),
+            chats=[],
+            users=[],
+            history=[
+                types.StarsTransaction(
+                    id="tx1",
+                    amount=types.StarsAmount(amount=50, nanos=0),
+                    date=datetime.now(timezone.utc),
+                    peer=types.StarsTransactionPeerFragment(),
+                    title="Subscription",
+                )
+            ],
+            next_offset=None,
+        )
+
+    def _raw_GetConnectedStarRefBotsRequest(self, request: Any) -> Any:
+        return types.payments.ConnectedStarRefBots(
+            count=1,
+            connected_bots=[
+                types.ConnectedBotStarRef(
+                    url="https://t.me/refbot?start=x",
+                    date=datetime.now(timezone.utc),
+                    bot_id=8800,
+                    commission_permille=200,
+                    participants=3,
+                    revenue=500,
+                )
+            ],
+            users=[],
+        )
+
+    def _raw_ConnectStarRefBotRequest(self, request: Any) -> Any:
+        return self._raw_GetConnectedStarRefBotsRequest(request)
+
+    def _raw_EditConnectedStarRefBotRequest(self, request: Any) -> Any:
+        return self._raw_GetConnectedStarRefBotsRequest(request)
 
     # -- entities ----------------------------------------------------------
 
@@ -3846,7 +4716,20 @@ class FakeTelegramClient:
         return True
 
     def _raw_GetSponsoredMessagesRequest(self, request: Any) -> Any:
-        return types.messages.SponsoredMessagesEmpty()
+        return types.messages.SponsoredMessages(
+            messages=[
+                types.SponsoredMessage(
+                    url="https://example.invalid",
+                    title="Sponsor",
+                    message="An advert",
+                    button_text="Open",
+                    random_id=b"\x01\x02\x03",
+                    can_report=True,
+                )
+            ],
+            chats=[],
+            users=[],
+        )
 
     def _raw_GetStoriesByIDRequest(self, request: Any) -> Any:
         return _FakeStories([self.world.stories[i] for i in request.id if i in self.world.stories])

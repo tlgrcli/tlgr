@@ -25,10 +25,10 @@ ROOT = Path(__file__).resolve().parent.parent
 #: Every P0 catalog id the landed PRs claim. Raised by each group PR, never
 #: lowered. ARCHITECTURE §1.3: "P0 coverage may never decrease and must reach
 #: 100 % before 2.0.0 final".
-P0_FLOOR = 136
+P0_FLOOR = 148
 
 #: The floor for total covered ids. Same rule, weaker guarantee.
-COVERED_FLOOR = 1132
+COVERED_FLOOR = 1285
 
 #: Every P0 catalog id PR-1's own operations cover, named rather than
 #: counted, so a swap (one dropped, one added) cannot pass a count check
@@ -244,15 +244,71 @@ PR5_P0_IDS = frozenset(
 )
 
 
+#: The P0 ids PR-7's own operations cover. They share the `chat.` prefix with
+#: PR-3's, so they are told apart by the module the implementation lives in —
+#: a swap between the two groups must not pass a count check either.
+PR7_MODULES = frozenset(
+    {
+        "chat_admin",
+        "chat_extra",
+        "chat_invite",
+        "chat_manage",
+        "chat_member",
+        "chat_stats",
+        "chat_topic",
+    }
+)
+
+PR7_P0_IDS = frozenset(
+    {
+        "groups-channels-admin.add-members",
+        "groups-channels-admin.create-basic-group",
+        "groups-channels-admin.create-channel",
+        "groups-channels-admin.create-supergroup",
+        "groups-channels-admin.invite-link-create",
+        "groups-channels-admin.invite-link-primary",
+        "groups-channels-admin.join-by-invite",
+        "groups-channels-admin.join-by-username",
+        "groups-channels-admin.members-list",
+        "groups-channels-admin.remove-member",
+        "groups-channels-admin.topic-list",
+        "groups-channels-admin.topic-messages",
+    }
+)
+
+
+def _module_of(spec) -> str:
+    return spec.impl.__module__.rsplit(".", 1)[-1]
+
+
+def _by_prefix(*prefixes: str):
+    """The usual case: a group owns whole nouns, so the id prefix names it."""
+    return lambda op_id, spec: op_id.startswith(prefixes)
+
+
+def _chat_group(op_id, spec) -> bool:
+    """PR-3's half of `chat`: everything the admin modules do not implement."""
+    return op_id.startswith(("chat.", "folder.")) and _module_of(spec) not in PR7_MODULES
+
+
+def _admin_group(op_id, spec) -> bool:
+    """PR-7's half. It shares the `chat.` prefix, so the module tells them apart."""
+    return _module_of(spec) in PR7_MODULES
+
+
+#: Who owns which P0 ids, as a selector over the registry and the named set it
+#: must equal exactly. Two entries select by module rather than by prefix,
+#: because `chat.` is shared between the dialog group and the admin group.
 P0_OWNERS = (
-    (("message.", "draft."), PR1_P0_IDS),
-    (("auth.", "account.", "passport."), PR2_P0_IDS),
-    (("chat.", "folder."), PR3_P0_IDS),
-    (("contact.", "user.", "resolve."), PR5_P0_IDS),
-    (PR4_GROUPS, PR4_P0_IDS),
-    (("media.", "sticker.", "gif.", "emoji."), PR6_P0_IDS),
-    (("poll.", "reaction.", "todo.", "location.", "search."), PR9_P0_IDS),
-    (("call.", "vc.", "conference."), PR11_P0_IDS),
+    ("pr1", _by_prefix("message.", "draft."), PR1_P0_IDS),
+    ("pr2", _by_prefix("auth.", "account.", "passport."), PR2_P0_IDS),
+    ("pr3", _chat_group, PR3_P0_IDS),
+    ("pr5", _by_prefix("contact.", "user.", "resolve."), PR5_P0_IDS),
+    ("pr4", _by_prefix(*PR4_GROUPS), PR4_P0_IDS),
+    ("pr6", _by_prefix("media.", "sticker.", "gif.", "emoji."), PR6_P0_IDS),
+    ("pr7", _admin_group, PR7_P0_IDS),
+    ("pr9", _by_prefix("poll.", "reaction.", "todo.", "location.", "search."), PR9_P0_IDS),
+    ("pr11", _by_prefix("call.", "vc.", "conference."), PR11_P0_IDS),
 )
 
 
@@ -318,17 +374,25 @@ class TestTheGate:
 
     def test_every_p0_id_this_pr_owns_is_covered(self):
         owned: set[str] = set()
-        for _, expected in P0_OWNERS:
+        for _, _selects, expected in P0_OWNERS:
             owned |= set(expected)
         missing = sorted(owned - _covered_ids())
         assert missing == [], f"a landed PR dropped coverage of {missing}"
 
+    def test_every_p0_id_the_chat_group_owns_is_covered(self):
+        missing = sorted(PR3_P0_IDS - _covered_ids())
+        assert missing == [], f"PR-3 dropped coverage of {missing}"
+
+    def test_every_p0_id_the_admin_group_owns_is_covered(self):
+        missing = sorted(PR7_P0_IDS - _covered_ids())
+        assert missing == [], f"PR-7 dropped coverage of {missing}"
+
     @pytest.mark.parametrize(
-        "prefixes,expected",
-        P0_OWNERS,
-        ids=["pr1", "pr2", "pr3", "pr5", "pr4", "pr6", "pr9", "pr11"],
+        "selects,expected",
+        [(selects, expected) for _, selects, expected in P0_OWNERS],
+        ids=[name for name, _, _ in P0_OWNERS],
     )
-    def test_the_floor_is_the_whole_truth(self, prefixes, expected):
+    def test_the_floor_is_the_whole_truth(self, selects, expected):
         """Each named list is exactly the P0 set its own groups claim.
 
         A floor that is a subset is a floor with holes in it: an op could drop
@@ -340,7 +404,7 @@ class TestTheGate:
         actual = {
             cid
             for op_id, spec in REGISTRY.items()
-            if op_id.startswith(prefixes)
+            if selects(op_id, spec)
             for cid in (*spec.covers, *spec.covers_partial)
             if cid in catalogue and catalogue[cid].priority == "P0"
         }
@@ -349,7 +413,7 @@ class TestTheGate:
     def test_the_floor_is_the_sum_of_what_the_landed_prs_own(self):
         """The floor is not a number somebody typed: it is those lists, added up."""
         named: set[str] = set()
-        for _, expected in P0_OWNERS:
+        for _, _selects, expected in P0_OWNERS:
             named |= set(expected)
         assert len(named) == P0_FLOOR
 
@@ -424,6 +488,15 @@ class TestTheGate:
 
     def test_the_contacts_users_domain_is_no_longer_waived_wholesale(self):
         assert "contacts_users" not in waivers().domains
+
+    def test_groups_channels_admin_is_fully_accounted_for(self, report):
+        """PR-7's own domain: implemented, or waived to a named later PR."""
+        stats = report.by_domain["groups_channels_admin"]
+        assert stats["accounted_percent"] == 100.0
+        assert stats["covered"] >= 150
+
+    def test_the_groups_channels_admin_domain_is_no_longer_waived_wholesale(self):
+        assert "groups_channels_admin" not in waivers().domains
 
 
 class TestReport:

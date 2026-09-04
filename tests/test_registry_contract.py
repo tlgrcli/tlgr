@@ -190,8 +190,19 @@ class TestModuleDiscovery:
             assert declared <= set(REGISTRY), f"{name}: {sorted(declared - set(REGISTRY))}"
 
     def test_every_registered_op_comes_from_a_discovered_module(self):
-        groups = {spec.id.split(".", 1)[0] for spec in SPECS}
-        assert groups <= set(tlgr.ops.op_module_names())
+        """Checked against the module a spec's `impl` lives in, not its noun.
+
+        The first segment of the id was a usable proxy only while every module
+        owned exactly one noun. `chat_stats` registers `chat stats`, `chat
+        revenue` *and* `boost`, because they read the same statistics DC — so
+        the proxy would fail on a layout that is correct. The module the
+        implementation is defined in is the thing discovery actually finds.
+        """
+        discovered = set(tlgr.ops.op_module_names())
+        for spec in SPECS:
+            module = spec.impl.__module__
+            assert module.startswith("tlgr.ops."), f"{spec.id} is implemented in {module}"
+            assert module.rsplit(".", 1)[-1] in discovered, f"{spec.id} came from {module}"
 
 
 class TestTreeShape:

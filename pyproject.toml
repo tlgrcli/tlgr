@@ -57,6 +57,8 @@ dev = [
 fast = ["cryptg>=0.4"]
 proxy = ["python-socks[asyncio]>=2.4"]
 media = ["pillow>=10.0", "hachoir>=3.2"]
+# `chat invite get --qr` renders locally; the API contributes only the link.
+qr = ["segno>=1.6"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

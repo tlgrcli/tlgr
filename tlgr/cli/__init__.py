@@ -230,7 +230,6 @@ def cli(
 # ---------------------------------------------------------------------------
 
 from tlgr.cli.gen import build_click_tree  # noqa: E402
-from tlgr.cli.legacy.chat import chat_create, chat_members  # noqa: E402
 from tlgr.cli.legacy.profile import profile_group  # noqa: E402
 
 cli.add_command(profile_group, "profile")
@@ -244,13 +243,10 @@ cli.add_command(profile_group, "profile")
 #: Commands that still live in `cli/legacy` *inside* a group the registry now
 #: generates. Each entry is a promise to delete, and an enumerated list is
 #: the only kind of overlap that is a decision rather than an accident. PR-2
-#: took `agent whoami` out of it, PR-4 took `daemon` and `job`; what is left
-#: is the sanctioned overlap for the group PRs still to come.
-LEGACY_EXTRAS: dict[str, list[click.Command]] = {
-    # `chat create` and `chat members` are member/admin operations and
-    # migrate with the groups-and-channels group (PR-7).
-    "chat": [chat_members, chat_create],
-}
+#: took `agent whoami` out of it, PR-4 took `daemon` and `job`, PR-7 took
+#: `chat create` and `chat members`. Nothing is left: the dict is empty and
+#: stays that way unless a future migration needs the same escape hatch.
+LEGACY_EXTRAS: dict[str, list[click.Command]] = {}
 
 
 def build_cli() -> click.Group:

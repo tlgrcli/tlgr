@@ -873,7 +873,10 @@ class TestVideoChatVideoAndLinks:
         group_call.raw["ExportGroupCallInviteRequest"] = refuse
         envelope = await call(client, in_thread, "vc.link", {"chat": str(CHANNEL_ID)})
         assert envelope["result"]["fallback"] is True
-        assert envelope["result"]["link"] == "https://t.me/+fallback"
+        # The chat invite the fake mints for `messages.exportChatInvite` — the
+        # same object `chat invite create` would return, since PR-7 taught the
+        # fake to hold invites as state rather than answer with a fixed link.
+        assert envelope["result"]["link"] == group_call.invites[CHANNEL_ID][0].link
 
     async def test_revoking_resets_the_invite_hash(
         self, live_daemon, client, in_thread, group_call

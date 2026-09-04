@@ -730,13 +730,24 @@ async def daemon_status(ctx: OpContext, req: DaemonStatusReq) -> DaemonStatus:
     are the questions people were actually asking, and v1 could not tell them
     apart: an account whose connection had died was still counted (COR-37).
     """
+    from tlgr.core.paths import TlgrPaths
     from tlgr.core.process import read_pid
 
     base = _base()
     pid = read_pid(base)
     status = _probe()
     if status is None:
-        result = DaemonStatus(running=pid is not None, ready=False, healthy=False, pid=pid)
+        # The socket it *would* have asked, so "not running" says where it
+        # looked rather than only that it found nothing.
+        result = DaemonStatus(
+            running=pid is not None,
+            ready=False,
+            healthy=False,
+            pid=pid,
+            layer=_telethon_layer(),
+            socket=str(TlgrPaths(base).socket),
+            socket_owner=os.getuid(),
+        )
         if req.check:
             raise DaemonNotRunningError("the daemon is not answering on its socket")
         return result
@@ -752,7 +763,7 @@ async def daemon_status(ctx: OpContext, req: DaemonStatusReq) -> DaemonStatus:
         healthy=bool(info.get("ready")) and not unhealthy,
         pid=info.get("pid") or pid,
         uptime_seconds=int(info.get("uptime_s") or 0),
-        version=str(info.get("version", "")),
+        version=str(info["version"]) if info.get("version") else None,
         protocol=int(info.get("protocol") or 0),
         layer=_telethon_layer(),
         socket=str(info.get("socket", "")),

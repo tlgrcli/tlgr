@@ -84,6 +84,51 @@ tlgr --version           # expect 2.0.0
 
 `pip install -U tlgr` works the same way if that is how it was installed.
 
+### A pipx editable install — the checkout *is* the install
+
+If tlgr was installed with `pipx install -e <checkout>`, there is nothing to
+download: the pipx venv holds a link to that working tree, so the version
+that runs is whatever the checkout is currently on. Upgrading is a `git`
+command, and that is exactly why it needs care — **moving the branch swaps
+the running code under the daemon**, with no install step in between to warn
+you. Section 1 is not optional here, and neither is stopping your own
+watchdog: a supervisor that restarts the v1 daemon while the checkout is
+mid-upgrade starts it on half-new code.
+
+With the daemon stopped, move the checkout:
+
+```bash
+git -C <checkout> fetch
+git -C <checkout> checkout main            # or, on the deployed branch:
+git -C <checkout> merge --ff-only origin/main
+tlgr --version                             # expect 2.0.0
+```
+
+`--ff-only` on purpose: a merge commit in a deployment checkout is a local
+edit nobody will remember making, and it fails loudly when the branch has
+drifted instead of quietly resolving it.
+
+Reinstall **only when the dependencies changed** — the code itself is already
+live through the link. 2.0.0 is such a release: it adds `msgspec` and pins
+`telethon~=1.44.0`, and neither of those reaches the pipx venv from a `git
+checkout`. Install them into it:
+
+```bash
+pipx runpip tlgr install -e '<checkout>[fast]'
+```
+
+`pipx runpip` runs that venv's own pip, which is the only pip that can see
+it; plain `pip install` from your shell installs into whatever else is on
+`PATH`. Keep the extras you originally installed with — `[fast]` above, plus
+`proxy`, `media` or `qr` if you use them — because the reinstall replaces the
+extra set rather than adding to it. Then check the imports resolve before
+starting anything:
+
+```bash
+tlgr --version           # expect 2.0.0
+tlgr agent whoami --json # imports msgspec and Telethon; fails loudly if either is missing
+```
+
 ---
 
 ## 3. Clear the production marker

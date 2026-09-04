@@ -79,15 +79,25 @@ class EventBusStatus(Model):
     dropped: int = 0
 
 
-class DaemonStatus(Model):
-    """`tlgr daemon status`. `running` and `healthy` are different questions."""
+class DaemonStatus(Model, omit_defaults=False):
+    """`tlgr daemon status`. `running` and `healthy` are different questions.
+
+    `omit_defaults=False` for the whole struct: the answer this operation
+    exists to give is "no", and `omit_defaults` drops every false and every
+    zero — so a stopped daemon serialised to `{}`, which printed nothing at
+    all in human mode and made `status["running"]` a KeyError for the exact
+    caller the flag is for. v1 printed `RUNNING false`; a field here is
+    always present, whichever way the answer went.
+    """
 
     running: bool = False
     ready: bool = False
     healthy: bool = False
     pid: int | None = None
     uptime_seconds: int = 0
-    version: str = ""
+    #: `None` rather than `""` when the daemon is not answering: nobody read
+    #: a version off a process that is not there.
+    version: str | None = None
     protocol: int = 0
     layer: int = 0
     socket: str = ""
@@ -102,8 +112,14 @@ class DaemonStatus(Model):
     disconnected: list[str] = []
 
 
-class HealthSummary(Model):
-    """`tlgr status`: one screen, the states where everything else fails."""
+class HealthSummary(Model, omit_defaults=False):
+    """`tlgr status`: one screen, the states where everything else fails.
+
+    `omit_defaults=False` for the same reason as `DaemonStatus`: this screen
+    is read when nothing works, which is precisely when every answer on it is
+    false — and a screen that prints only the fields that happened to be true
+    is at its least useful exactly then.
+    """
 
     account: str = ""
     user_id: int | None = None

@@ -48,6 +48,16 @@ def test_lint_is_clean():
     assert lint() == []
 
 
+def test_only_the_schema_document_is_json_only():
+    """`json-only` prints an envelope where a person asked for a table.
+
+    Right for exactly one operation — a JSON Schema document has no table
+    shape — and wrong for every other, most of all for the ones an operator
+    reads when something is broken.
+    """
+    assert {spec.id for spec in SPECS if "json-only" in spec.tags} == {"agent.schema"}
+
+
 class TestOperationContract:
     @pytest.mark.parametrize("spec", SPECS, ids=IDS)
     def test_example_validates(self, spec):

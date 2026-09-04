@@ -54,6 +54,28 @@ def local(op_id: str, request: dict[str, Any] | None = None, **state: Any) -> An
     return asyncio.run(spec.impl(context, payload))
 
 
+def _human(*args: str) -> dict[str, str]:
+    """Run a command through the real CLI and read back its key/value table.
+
+    Through click rather than the renderer directly: the bug being pinned was
+    a model that serialised to `{}`, which no assertion on the *object* can
+    see and which printed an empty screen.
+    """
+    from click.testing import CliRunner
+
+    from tlgr.cli import cli
+
+    outcome = CliRunner().invoke(cli, list(args))
+    assert outcome.exit_code == 0, outcome.output
+    assert not outcome.output.lstrip().startswith("{"), "human mode printed an envelope"
+    rows: dict[str, str] = {}
+    for line in outcome.output.splitlines():
+        key, _, value = line.partition("  ")
+        if key:
+            rows[key.strip()] = value.strip()
+    return rows
+
+
 async def alocal(in_thread, op_id: str, request: dict[str, Any] | None = None, **state: Any):
     """`local`, off the event loop.
 
@@ -85,6 +107,36 @@ class TestDaemonStatus:
         assert status.running is False
         assert status.ready is False
         assert status.healthy is False
+
+    def test_a_stopped_daemon_serialises_the_false_answers(self, tlgr_home, stub_account):
+        """`omit_defaults` dropped every false and every zero, so the whole
+        result encoded to `{}` — the one shape this operation must never
+        return, because "no" is the answer it exists to give."""
+        import msgspec
+
+        payload = msgspec.to_builtins(local("daemon.status"))
+        assert payload["running"] is False
+        assert payload["ready"] is False
+        assert payload["healthy"] is False
+        assert payload["pid"] is None
+        assert payload["version"] is None
+        assert payload["socket"].endswith("daemon.sock")
+
+    def test_a_stopped_daemon_prints_a_table_not_an_envelope(self, tlgr_home, stub_account):
+        """Human mode is the key/value table every other op renders; v1
+        printed `RUNNING false` and the empty result printed nothing."""
+        rendered = _human("daemon", "status")
+        assert rendered["running"] == "no"
+        assert rendered["ready"] == "no"
+        assert rendered["healthy"] == "no"
+        assert rendered["pid"] == "-"
+
+    def test_the_status_shortcut_answers_the_same_way(self, tlgr_home, stub_account):
+        """`tlgr status` is a different operation asking the same question."""
+        rendered = _human("status")
+        assert rendered["daemon_running"] == "no"
+        assert rendered["connected"] == "no"
+        assert "the daemon is not running" in rendered["problems"]
 
     def test_check_turns_an_unhealthy_daemon_into_an_exit_code(self, tlgr_home, stub_account):
         from tlgr.core.errors import DaemonNotRunningError

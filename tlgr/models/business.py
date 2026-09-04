@@ -15,6 +15,8 @@ Two of these carry real risk and the models say so out loud.
 
 from __future__ import annotations
 
+from typing import Any
+
 from tlgr.models.base import Model
 from tlgr.models.message import MessageEntity
 from tlgr.models.peer import Peer
@@ -27,6 +29,7 @@ __all__ = [
     "BusinessGreeting",
     "BusinessIntro",
     "BusinessLocation",
+    "BusinessMessage",
     "BusinessOpen",
     "BusinessProfile",
     "BusinessRecipients",
@@ -104,6 +107,29 @@ class BusinessAway(Model):
     since: str | None = None
     until: str | None = None
     offline_only: bool = False
+    recipients: BusinessRecipients | None = None
+    enabled: bool = True
+
+
+class BusinessMessage(Model):
+    """`business message set`, whichever of the two it configured.
+
+    One shape for both, because a caller that just switched a greeting on
+    should not have to know that the away message answers with a different
+    struct — and the difference between them is two fields, not two ideas.
+    """
+
+    #: greeting | away
+    kind: str = "greeting"
+    shortcut_id: int = 0
+    shortcut: str | None = None
+    #: away only: always | outside-hours | custom
+    schedule: str | None = None
+    since: str | None = None
+    until: str | None = None
+    offline_only: bool = False
+    #: greeting only.
+    no_activity_days: int | None = None
     recipients: BusinessRecipients | None = None
     enabled: bool = True
 
@@ -212,7 +238,7 @@ class BusinessProfile(Model):
     sponsored_enabled: bool | None = None
     connected_bots: list[BotConnection] = []
     chat_links: list[ChatLink] = []
-    timezones: list[dict[str, object]] = []
+    timezones: list[dict[str, Any]] = []
     premium: bool = False
 
 

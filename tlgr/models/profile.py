@@ -19,6 +19,8 @@ Two shapes are deliberate.
 
 from __future__ import annotations
 
+from typing import Any
+
 from tlgr.models.base import Model
 from tlgr.models.peer import Peer
 
@@ -199,7 +201,7 @@ class ProfileLink(Model):
     qr: str | None = None
     qr_path: str | None = None
     #: `fragment.getCollectibleInfo`, when `--collectible` was given.
-    collectible: dict[str, object] | None = None
+    collectible: dict[str, Any] | None = None
     resolvable_by_strangers: bool = True
 
 

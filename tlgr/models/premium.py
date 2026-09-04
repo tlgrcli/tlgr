@@ -12,6 +12,8 @@ reports the price and says, in `reason`, that tlgr does not sign the form.
 
 from __future__ import annotations
 
+from typing import Any
+
 from tlgr.models.base import Model
 from tlgr.models.peer import Peer
 
@@ -51,11 +53,11 @@ class PremiumLimit(Model):
 
 class PremiumFeatures(Model):
     status_text: str = ""
-    period_options: list[dict[str, object]] = []
+    period_options: list[dict[str, Any]] = []
     video_sections: list[str] = []
     limits: list[PremiumLimit] = []
     #: Assembled from `channel_*_level_min` / `group_*_level_min`.
-    boost_levels: list[dict[str, object]] = []
+    boost_levels: list[dict[str, Any]] = []
     channel_level: int | None = None
 
 

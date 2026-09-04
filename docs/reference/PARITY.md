@@ -7,64 +7,65 @@ Coverage against the Telegram feature catalog, computed from the registry: every
 `covered` is implemented today. `acct%` is covered **plus** waived — an id that belongs to a group a later PR owns, named in `tlgr/data/parity_waivers.toml` with the PR that closes it. Ids whose feasibility is `not-applicable` or `prohibited` are excluded from the denominator once and never counted again.
 
 ```
-catalog 2026-09-02 — 509 operations, 722 invocable paths
+catalog 2026-09-02 — 588 operations, 835 invocable paths
 
 domain                        covered    req       %   acct%  ops
-auth_sessions_security             87     89   97.8%  100.0%  44
-bots_inline_payments               18    175   10.3%  100.0%  8
+auth_sessions_security             89     89  100.0%  100.0%  45
+bots_inline_payments              158    175   90.3%  100.0%  82
 calls_voicechats                  131    133   98.5%  100.0%  55
-contacts_users                    108    121   89.3%  100.0%  51
-dialogs_chats                     137    146   93.8%  100.0%  74
+contacts_users                    109    121   90.1%  100.0%  52
+dialogs_chats                     137    146   93.8%  100.0%  76
 groups_channels_admin             158    162   97.5%  100.0%  104
-media_files                       124    143   86.7%  100.0%  62
-messages_core                     164    167   98.2%  100.0%  58
+media_files                       129    143   90.2%  100.0%  67
+messages_core                     165    167   98.8%  100.0%  59
 polls_reactions_content           130    174   74.7%  100.0%  68
-profile_settings_privacy           32    178   18.0%  100.0%  30
+profile_settings_privacy           33    178   18.5%  100.0%  31
 stories                           113    120   94.2%  100.0%  43
-updates_sync_network              188    189   99.5%  100.0%  67
+updates_sync_network              189    189  100.0%  100.0%  68
 
 priority                      covered    req       %   acct%
-P0                                161    178   90.4%  100.0%
-P1                                323    379   85.2%  100.0%
-P2                                459    610   75.2%  100.0%
-P3                                447    630   71.0%  100.0%
+P0                                172    178   96.6%  100.0%
+P1                                345    379   91.0%  100.0%
+P2                                511    610   83.8%  100.0%
+P3                                513    630   81.4%  100.0%
 
-TOTAL                            1390   1797   77.4%  100.0%
+TOTAL                            1541   1797   85.8%  100.0%
 excluded: not-applicable 79, prohibited 40
-uncovered: 407 (407 waived with a PR number)
+uncovered: 256 (256 waived with a PR number)
 ```
 
 ## By domain
 
 | Domain | Covered | Required | % | Accounted % | Ops |
 |---|---:|---:|---:|---:|---:|
-| `auth_sessions_security` | 87 | 89 | 97.8% | 100.0% | 44 |
-| `bots_inline_payments` | 18 | 175 | 10.3% | 100.0% | 8 |
+| `auth_sessions_security` | 89 | 89 | 100.0% | 100.0% | 45 |
+| `bots_inline_payments` | 158 | 175 | 90.3% | 100.0% | 82 |
 | `calls_voicechats` | 131 | 133 | 98.5% | 100.0% | 55 |
-| `contacts_users` | 108 | 121 | 89.3% | 100.0% | 51 |
-| `dialogs_chats` | 137 | 146 | 93.8% | 100.0% | 74 |
+| `contacts_users` | 109 | 121 | 90.1% | 100.0% | 52 |
+| `dialogs_chats` | 137 | 146 | 93.8% | 100.0% | 76 |
 | `groups_channels_admin` | 158 | 162 | 97.5% | 100.0% | 104 |
-| `media_files` | 124 | 143 | 86.7% | 100.0% | 62 |
-| `messages_core` | 164 | 167 | 98.2% | 100.0% | 58 |
+| `media_files` | 129 | 143 | 90.2% | 100.0% | 67 |
+| `messages_core` | 165 | 167 | 98.8% | 100.0% | 59 |
 | `polls_reactions_content` | 130 | 174 | 74.7% | 100.0% | 68 |
-| `profile_settings_privacy` | 32 | 178 | 18.0% | 100.0% | 30 |
+| `profile_settings_privacy` | 33 | 178 | 18.5% | 100.0% | 31 |
 | `stories` | 113 | 120 | 94.2% | 100.0% | 43 |
-| `updates_sync_network` | 188 | 189 | 99.5% | 100.0% | 67 |
+| `updates_sync_network` | 189 | 189 | 100.0% | 100.0% | 68 |
 
 ## By priority
 
 | Priority | Covered | Required | % | Accounted % |
 |---|---:|---:|---:|---:|
-| P0 | 161 | 178 | 90.4% | 100.0% |
-| P1 | 323 | 379 | 85.2% | 100.0% |
-| P2 | 459 | 610 | 75.2% | 100.0% |
-| P3 | 447 | 630 | 71.0% | 100.0% |
+| P0 | 172 | 178 | 96.6% | 100.0% |
+| P1 | 345 | 379 | 91.0% | 100.0% |
+| P2 | 511 | 610 | 83.8% | 100.0% |
+| P3 | 513 | 630 | 81.4% | 100.0% |
 
 ## Partial coverage
 
 | Catalog id | Operation | Why partial |
 |---|---|---|
 | `auth.passport-authorize` | `passport.form.get` | The request can be read in full; accepting it needs the Passport secure-value crypto Telethon does not provide (see `passport authorize`). |
+| `bots.business-invoke-with-connection` | `bot.connection.invoke` | The wrapper is implemented on `bot command send`, `bot press` and `inline send`; wrapping an arbitrary command is refused with exit 13. |
 | `bots.rich-message-translate` | `message.translate` | Rich-body translation is layer 229 and refused with NOT_SUPPORTED. |
 | `bots.rich-message-view` | `message.get` | --rich is refused with NOT_SUPPORTED until Telethon carries layer 229. |
 | `calls.emoji-fingerprint` | `call.get` | the four verification values are reported as indices into Telegram's 333-emoji table; tlgr does not bundle the table, and guessing it for a security check would be worse than not printing it |
@@ -87,6 +88,7 @@ uncovered: 407 (407 waived with a PR number)
 | `richmsg.tasks` | `message.edit` | Checklist tasks live in a layer-229 rich body; --toggle-task is refused. |
 | `richmsg.translate` | `message.translate` | Rich-body translation is layer 229 and refused with NOT_SUPPORTED. |
 | `stories.live-join` | `story.live.get` | The live story is reported; its group call is not reachable from layer 227's storyItem, and joining a broadcast needs a media engine tlgr does not have. |
+| `updates.invoke-business-connection` | `bot.connection.invoke` | The wrapper is implemented on `bot command send`, `bot press` and `inline send`; wrapping an arbitrary command is refused with exit 13. |
 
 ## Gaps in a migrated domain
 
@@ -96,17 +98,28 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 |---|---|---|---|
 | `calls.privacy-who-can-call` | P0 | Privacy: who can call me | waived until PR-12: inputPrivacyKeyPhoneCall is a privacy rule, set with `privacy set` in the privacy group (PR-12); `call start` already reports the peer's side of it. |
 | `profile.photo-set` | P0 | Set profile photo | waived until PR-12: Setting your profile photo is `profile photo set` (PR-12). |
+| `bots.bot-stars-balance` | P1 | Bot Stars balance | waived until PR-12: The Star balance is the `stars` surface (PR-12). |
+| `bots.ephemeral-callback-press` | P1 | Press a button on an ephemeral bot message | waived until PR-12: layer 229: `ephemeral.*` and the rich-message keyboard are not in Telethon 1.44. The commands are registered and exit 13 (NOT_SUPPORTED) so an agent can tell 'unavailable in this build' from 'no such command'. |
+| `bots.ephemeral-command-send` | P1 | Send an ephemeral bot command / reply to an ephemeral message | waived until PR-12: layer 229: `ephemeral.*` and the rich-message keyboard are not in Telethon 1.44. The commands are registered and exit 13 (NOT_SUPPORTED) so an agent can tell 'unavailable in this build' from 'no such command'. |
 | `calls.privacy-p2p` | P1 | Privacy: peer-to-peer calls | waived until PR-12: inputPrivacyKeyPhoneP2P is the same account.setPrivacy surface as every other privacy key (PR-12). |
 | `contacts-users.privacy-added-by-phone` | P1 | Privacy: who can find me by my phone number | waived until PR-12: Privacy keys are the `privacy` group (PR-12); `contact add --share-phone` is the per-user exception. |
 | `contacts-users.privacy-global` | P1 | Global privacy settings | waived until PR-12: `privacy global set` is the account-wide privacy surface (PR-12). |
 | `contacts-users.privacy-phone-number` | P1 | Privacy: who can see my phone number | waived until PR-12: Privacy keys are the `privacy` group (PR-12). |
-| `contacts-users.url-auth-login` | P1 | Log in to a website with Telegram (URL authorization) | waived until PR-10: URL authorization is a bot surface (PR-10); `resolve link` classifies the link and delegates. |
 | `dialogs.notify-exceptions` | P1 | List notification exceptions | waived until PR-12: The exceptions *list* is `notify exceptions` (PR-12); one chat's exception is `chat notify`. |
 | `profile.photos-list-history` | P1 | View own / another user's profile photo history | waived until PR-12: Profile photo history is the `profile` group (PR-12). |
 | `stars.balance` | P1 | Telegram Stars balance | waived until PR-12: the Star balance and top-up packages are the `stars` surface (PR-12). |
 | `stories.notify-peer` | P1 | Per-peer story notifications | waived until PR-12: Per-peer story notifications are `notify set --stories` (PR-12). |
-| `attach.menu-bots` | P2 | Attachment-menu / side-menu mini-app bots: list, info, add, remove | waived until PR-10: Attachment-menu bots are the `bot` group (PR-10). |
-| `auth.url-auth-bot-button` | P2 | Log in to a website via a bot's login button (Seamless Telegram Login) | waived until PR-10: Seamless Telegram Login is a bot keyboard button (messages.requestUrlAuth / acceptUrlAuth); it lands with the bots group in PR-10. |
+| `bots.bot-revenue-stats` | P2 | Bot revenue statistics (Stars and TON graphs) | waived until PR-12: Bot revenue graphs are the `stars`/`stats` surface (PR-12). |
+| `bots.business-bot-connect` | P2 | Connect / reconfigure a business bot | waived until PR-12: Business bots are the `business` surface (PR-12). |
+| `bots.business-bot-disconnect` | P2 | Disconnect a business bot | waived until PR-12: Business bots are the `business` surface (PR-12). |
+| `bots.business-bot-remove-from-chat` | P2 | Remove the business bot from one chat permanently | waived until PR-12: Business bots are the `business` surface (PR-12). |
+| `bots.business-bots-list` | P2 | List business bots connected to my account | waived until PR-12: Business bots are the `business` surface (PR-12). |
+| `bots.ephemeral-message-send` | P2 | Send / edit / delete an ephemeral message (bot side) | waived until PR-12: layer 229: `ephemeral.*` and the rich-message keyboard are not in Telethon 1.44. The commands are registered and exit 13 (NOT_SUPPORTED) so an agent can tell 'unavailable in this build' from 'no such command'. |
+| `bots.privacy-rule-bots` | P2 | Allow / disallow bots and mini apps in a privacy rule | waived until PR-12: Allowing or disallowing bots in a privacy rule is `privacy set` (PR-12). |
+| `bots.rich-message-buttons` | P2 | Buttons inside a rich bot message | waived until PR-12: layer 229: `ephemeral.*` and the rich-message keyboard are not in Telethon 1.44. The commands are registered and exit 13 (NOT_SUPPORTED) so an agent can tell 'unavailable in this build' from 'no such command'. |
+| `bots.stars-topup-options` | P2 | Buy Telegram Stars | waived until PR-12: Buying Stars is the `stars` surface (PR-12). |
+| `bots.welcome-messages-manage` | P2 | Add / edit / delete a chat's welcome messages | waived until PR-12: layer 229: `ephemeral.*` and the rich-message keyboard are not in Telethon 1.44. The commands are registered and exit 13 (NOT_SUPPORTED) so an agent can tell 'unavailable in this build' from 'no such command'. |
+| `bots.welcome-messages-view` | P2 | Bot welcome messages in an empty chat | waived until PR-12: layer 229: `ephemeral.*` and the rich-message keyboard are not in Telethon 1.44. The commands are registered and exit 13 (NOT_SUPPORTED) so an agent can tell 'unavailable in this build' from 'no such command'. |
 | `contacts-users.privacy-about` | P2 | Privacy: bio | waived until PR-12: Privacy keys are the `privacy` group (PR-12). |
 | `contacts-users.privacy-chat-invite` | P2 | Privacy: who can add me to groups | waived until PR-12: Privacy keys are the `privacy` group (PR-12). |
 | `contacts-users.privacy-exception-lists` | P2 | Always/Never allow exception lists | waived until PR-12: Always/Never lists are privacy rules (PR-12); the close-friends list is `contact close-friends`. |
@@ -141,15 +154,13 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `stories.boost-status` | P2 | Boost level needed to post channel stories | waived until PR-7: Boost levels are the `boost` group (PR-7); `story can-post` reports the gate. |
 | `stories.notify-global` | P2 | Global story notification settings | waived until PR-12: Global story notification settings are `notify set` (PR-12). |
 | `stories.notify-reactions` | P2 | Notifications for reactions to my stories | waived until PR-12: Notifications for reactions to my stories are `notify set` (PR-12). |
-| `attach.file-download-check` | P3 | Mini-app file download permission check | waived until PR-10: Mini-app download permission is the `webapp` surface (PR-10). |
-| `attach.open-mini-app` | P3 | Open an attachment-menu mini app in a chat | waived until PR-10: Opening a mini app is the `webapp` group (PR-10). |
 | `auction.acquired-gifts` | P3 | Gifts I won in an auction | waived until PR-12: collectible-gift auctions are the `gift` surface (PR-12). |
 | `auction.active-list` | P3 | Auctions I am bidding in | waived until PR-12: collectible-gift auctions are the `gift` surface (PR-12). |
 | `auction.position-estimate` | P3 | My position in the auction | waived until PR-12: collectible-gift auctions are the `gift` surface (PR-12). |
 | `auction.state` | P3 | Auction state and bid ladder | waived until PR-12: collectible-gift auctions are the `gift` surface (PR-12). |
-| `auth.oauth-deep-link` | P3 | Authorize an OAuth login request from a website/app (tg://oauth deep link) | waived until PR-10: A tg://oauth request is a bot authorization flow (messages.requestUrlAuth); it lands with the bots group in PR-10. |
-| `bot.media-previews` | P3 | Manage a bot's Mini App media previews (owned bots) | waived until PR-10: A bot's Mini App previews are the `bot` group (PR-10). |
-| `bot.profile-photo-set` | P3 | Set profile photo of an owned bot | waived until PR-10: Setting an owned bot's photo is the `bot` group (PR-10). |
+| `bots.chat-join-webview` | P3 | Guard-bot join webview (chat approval mini app) | waived until PR-12: messages.requestChatJoinWebView is absent from Telethon 1.44; `webapp open --join-query-id` is registered and exits 13. |
+| `bots.ephemeral-report` | P3 | Report an ephemeral bot message | waived until PR-12: layer 229: `ephemeral.*` and the rich-message keyboard are not in Telethon 1.44. The commands are registered and exit 13 (NOT_SUPPORTED) so an agent can tell 'unavailable in this build' from 'no such command'. |
+| `bots.stars-topup-deeplink` | P3 | Stars top-up deep link | waived until PR-12: The Stars top-up deep link is the `stars` surface (PR-12). |
 | `contacts-users.privacy-gifts` | P3 | Privacy: who can see / send me gifts | waived until PR-12: Gift privacy is the `privacy` group (PR-12). |
 | `contacts-users.privacy-no-paid-messages` | P3 | Privacy: who may message me without paying | waived until PR-12: Paid-message privacy is a privacy key (PR-12); reading the price is `user can-message`. |
 | `contacts-users.privacy-voice-messages` | P3 | Privacy: who can send me voice messages | waived until PR-12: Privacy keys are the `privacy` group (PR-12). |
@@ -186,7 +197,6 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `groups-channels-admin.giveaway-info` | P3 | Inspect a giveaway's state and results | waived until PR-12: `giveaway *` lands with gifts and Stars (PR-12); `boost get` reports the prepaid ones. |
 | `groups-channels-admin.giveaway-prepaid-launch` | P3 | Launch a prepaid giveaway | waived until PR-12: Launching a giveaway is `giveaway launch` (PR-12); `boost get` reports the prepaid slots it spends. |
 | `location.business-address` | P3 | Business account location | waived until PR-12: a business account's address is the `business` surface (PR-12). |
-| `messages-core.url-authorization` | P3 | Seamless Telegram login when opening a link / login-url button | waived until PR-10: Seamless login-url authorisation is a bot surface (PR-10). |
 | `profile.main-tab` | P3 | Main profile tab (Posts / Gifts / Media) for own profile and channels | waived until PR-12: The profile tab layout is the `profile` group (PR-12). |
 | `profile.photo-fallback-public` | P3 | Public (fallback) profile photo for users who cannot see the main one | waived until PR-12: The public fallback photo is the `profile` group (PR-12). |
 | `profile.photo-set-emoji-sticker` | P3 | Profile photo from sticker / custom emoji on a colour background | waived until PR-12: An emoji avatar is the `profile` group (PR-12). |
@@ -197,4 +207,3 @@ Domains no PR has reached yet are waived wholesale and not listed here. These ar
 | `stories.notify-exceptions` | P3 | List peers with custom story notification settings | waived until PR-12: Per-peer notification exceptions are the `notify` group (PR-12). |
 | `stories.story-music-save` | P3 | Save a story's soundtrack (Add to Profile / Saved Messages) | waived until PR-12: Saving a story's soundtrack to the profile is the profile group (PR-12). |
 | `theme.cloud-themes` | P3 | Cloud themes (list, install, create, update, upload theme file) | waived until PR-12: Cloud themes are the `settings` group (PR-12). |
-| `updates.invoke-business-connection` | P3 | Act on behalf of a connected business account | waived until PR-12: Acting on behalf of a connected business account is the business surface (PR-12). |

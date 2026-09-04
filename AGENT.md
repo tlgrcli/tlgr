@@ -999,6 +999,53 @@ outreach campaign has contacted. Idempotent: it reads the fresh
 there is nothing to do, so repeating a pass over hundreds of peers is nearly
 free.
 
+### Bots, inline mode, mini apps and payments
+
+```
+tlgr bot get <bot>                        # the whole profile card in one call
+→ {"id": …, "username": "…", "about": "…", "description": "…",
+   "commands": [{"command": "start", "description": "…", "has_help": true}],
+   "menu_button": {"kind": "commands"}, "bot_info_version": 3, …}
+
+tlgr bot start <bot> [--param X]          # /start, with a hidden deep-link payload
+tlgr bot stop <bot> [--delete-chat]       # block, optionally wiping the history
+tlgr bot command send <bot> <cmd> [args]  # --chat adds '@botusername' for you
+tlgr bot press <chat> <msg_id> --button N # every button kind, one dispatcher
+→ {"kind": "callback", "n": 0, "message": "Saved", "alert": false}
+
+tlgr inline query <bot> <query>           # @bot query, paginated by the bot
+tlgr inline send <bot> <query> --chat <c> --pick 0
+tlgr webapp open <bot> --main             # prints the signed URL; never opens it
+tlgr payment form get --slug <slug>       # read a checkout form; never pays
+```
+
+Four rules matter before scripting against these:
+
+- **`message get --json` prints the keyboard, and `n` is the address.** Each
+  button carries a flat row-major `n`; `bot press --button <n>` takes exactly
+  that number. `--button "<text>"` and `--button "<row>,<col>"` also work, and
+  `--data` addresses a callback button by its payload.
+- **A button that discloses something is not pressed without saying so.**
+  `request_phone`, `request_geo`, `request_poll` and `request_peer` need
+  `--share-phone`, `--share-geo`, `--poll` and `--peers`; without one tlgr
+  prints what it *would* send and exits 2. A Pay button exits 6, always.
+- **tlgr never spends money.** Reading a form, a receipt or a subscription is
+  implemented; creating an invoice (asking somebody else to pay) is
+  implemented; paying is absent from the surface. `payment form get` reports
+  `"payable_here": false` with the reason in `reason`.
+- **A mini-app URL is a credential.** `webapp open` prints the signed URL and
+  stops — it carries your signed init data. A session that comes back with a
+  `query_id` dies in about a minute unless `webapp watch` keeps it alive
+  (`needs_prolong` says which).
+
+The bot-only half of the surface — `bot answer`, `bot command set`,
+`bot menu set`, `bot api send`, `inline edit`, `payment invoice export` —
+needs an account added from a bot token and exits **4** on a user session.
+Five commands (`bot ephemeral send|delete`, `bot welcome list|set|delete`) are
+registered and exit **13** with `NOT_SUPPORTED`: their methods need API layer
+229, which this build does not speak. That is deliberately different from "no
+such command".
+
 ### Agent Helpers
 
 ```

@@ -2,7 +2,7 @@
 
 # Command reference
 
-509 operations across 34 groups, generated from the operation registry. Groups still served by v1's hand-written commands are not listed here; they arrive with their own PR.
+588 operations across 38 groups, generated from the operation registry. Groups still served by v1's hand-written commands are not listed here; they arrive with their own PR.
 
 | Group | Operations | Reference |
 |---|---:|---|
@@ -10,6 +10,7 @@
 | `agent` | 7 | [agent.md](agent.md) |
 | `auth` | 11 | [auth.md](auth.md) |
 | `boost` | 3 | [boost.md](boost.md) |
+| `bot` | 57 | [bot.md](bot.md) |
 | `call` | 13 | [call.md](call.md) |
 | `chat` | 117 | [chat.md](chat.md) |
 | `conference` | 9 | [conference.md](conference.md) |
@@ -22,12 +23,14 @@
 | `export` | 5 | [export.md](export.md) |
 | `folder` | 13 | [folder.md](folder.md) |
 | `gif` | 5 | [gif.md](gif.md) |
+| `inline` | 7 | [inline.md](inline.md) |
 | `job` | 8 | [job.md](job.md) |
 | `location` | 9 | [location.md](location.md) |
 | `media` | 28 | [media.md](media.md) |
 | `message` | 39 | [message.md](message.md) |
 | `net` | 5 | [net.md](net.md) |
 | `passport` | 5 | [passport.md](passport.md) |
+| `payment` | 9 | [payment.md](payment.md) |
 | `poll` | 9 | [poll.md](poll.md) |
 | `proxy` | 6 | [proxy.md](proxy.md) |
 | `reaction` | 17 | [reaction.md](reaction.md) |
@@ -39,6 +42,7 @@
 | `todo` | 5 | [todo.md](todo.md) |
 | `user` | 12 | [user.md](user.md) |
 | `vc` | 23 | [vc.md](vc.md) |
+| `webapp` | 6 | [webapp.md](webapp.md) |
 | `webhook` | 3 | [webhook.md](webhook.md) |
 
 - [PARITY.md](PARITY.md) — coverage against the Telegram feature catalog.

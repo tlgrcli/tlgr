@@ -347,6 +347,38 @@ complete; **joining**, **removing somebody** and **sending inside** need a
 signed `e2e.chain` block that tlgr cannot build — pass one with `--block` and
 `--public-key`, or the command exits 2 naming what is missing.
 
+### Bots, inline mode, mini apps and payments
+
+```bash
+tlgr bot get <bot>                     # the profile card: commands, menu, flags
+tlgr bot list --owned|--similar-to|--popular-apps|--recent
+tlgr bot start <bot> --param <payload> # /start with a hidden deep-link payload
+tlgr bot command send <bot> start      # '@botusername' added in a group
+tlgr bot press <chat> <msg_id> --button 0
+tlgr bot url-auth get|accept|decline   # Telegram Login, inspected before granted
+tlgr bot menu|permission|access|preview|affiliate|verification|token …
+
+tlgr inline query <bot> <query>        # @bot query, the bot's own paging
+tlgr inline send <bot> <q> --chat <c> --pick 0
+tlgr inline search gif|venue|image     # the built-in bots, named by the server
+
+tlgr webapp get|open|send|invoke|watch # mini apps; `open` prints the URL only
+tlgr payment form get|receipt get|info get|card get
+tlgr payment invoice export|send       # asking someone else to pay
+tlgr payment subscription list|set     # cancel or resume a Star subscription
+```
+
+Three things this group does *not* do, on purpose:
+
+- **It never pays.** `sendPaymentForm`, `sendStarsForm`, `validateRequestedInfo`
+  and `fulfillStarsSubscription` are absent from the surface, not hidden behind
+  a flag. `payment form get` reports `payable_here: false` and says why.
+- **It never opens a browser.** `webapp open` prints the signed mini-app URL,
+  which carries your init data and is a credential, not a link.
+- **It never presses a button that discloses something without being told to.**
+  A phone number, a location, a chat or a poll each needs its own flag;
+  without one tlgr prints what it would send and exits 2.
+
 ### Profile
 
 ```bash

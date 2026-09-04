@@ -764,6 +764,52 @@ class World:
     default_banned: dict[int, Any] = field(default_factory=dict)
     #: usernames the server reports as already taken
     taken_usernames: set[str] = field(default_factory=set)
+    # -- the bot world -----------------------------------------------------
+    #
+    # Bot *state*, not canned replies: the profile card, the per-scope command
+    # lists, the attachment menu, the preview gallery, the affiliate links and
+    # the payment shapes all live here, so a test asserts that a command moved
+    # something a later command reads back.
+
+    #: user id → the bot's profile state (about, description, commands, …).
+    bots: dict[int, Any] = field(default_factory=dict)
+    admined_bots: list[int] = field(default_factory=list)
+    similar_bots: list[int] = field(default_factory=list)
+    similar_bots_count: int = 0
+    popular_apps: list[int] = field(default_factory=list)
+    popular_apps_next: str = ""
+    top_peer_bots: list[int] = field(default_factory=list)
+    next_bot_id: int = 5_000_000
+    bot_tokens: dict[int, str] = field(default_factory=dict)
+    #: (scope class name, lang) → [(command, description)].
+    bot_commands: dict[tuple[str, str], list[Any]] = field(default_factory=dict)
+    menu_buttons: dict[int, Any] = field(default_factory=dict)
+    default_rights: dict[str, Any] = field(default_factory=dict)
+    attach_menu: dict[int, Any] = field(default_factory=dict)
+    connected_refs: list[Any] = field(default_factory=list)
+    suggested_refs: list[Any] = field(default_factory=list)
+    suggested_refs_next: str = ""
+    callback_answer: Any = None
+    url_auth: Any = None
+    match_code: str = "cat"
+    custom_response: str = '{"ok":true}'
+    business_dc: int = 4
+    emoji_game: Any = None
+    high_scores: list[Any] = field(default_factory=list)
+    report_result: Any = None
+    webapp_url: str = "https://example.org/app#tgWebAppData=signed"
+    webapp_query_id: int = 987654321
+    prolongs: int = 0
+    #: short name → `messages.BotApp`.
+    bot_apps: dict[str, Any] = field(default_factory=dict)
+    download_allowed: bool = True
+    prepared_peer_types: list[Any] = field(default_factory=list)
+    sponsored_peers: list[int] = field(default_factory=list)
+    payment_form: Any = None
+    saved_credentials: bool = True
+    saved_order_info: Any = None
+    subscriptions: list[Any] = field(default_factory=list)
+    subscriptions_next: str = ""
 
     # -- behaviour knobs ---------------------------------------------------
 
@@ -1691,27 +1737,55 @@ class FakeTelegramClient:
 
     def _raw_GetFullUserRequest(self, request: Any) -> Any:
         user = self._user_of(request.id)
+        if user is None and self.world.bots:
+            user = self.world.users.get(self._user_id_of(request.id)) or self.world.me
         if user is None:
             from telethon.errors import RPCError
 
             raise RPCError(request, "USER_ID_INVALID", 400)
         uid = int(user.id)
+        state = self.world.bots.get(uid, {})
+        for name, value in state.get("user_flags", {}).items():
+            setattr(user, name, value)
+        info = None
+        if state and state.get("bot", True):
+            info = types.BotInfo(
+                user_id=uid,
+                description=state.get("description"),
+                commands=[
+                    types.BotCommand(command=c, description=d) for c, d in state.get("commands", [])
+                ],
+                menu_button=state.get("menu_button"),
+                privacy_policy_url=state.get("privacy_policy_url"),
+                has_preview_medias=bool(state.get("previews")),
+                app_settings=state.get("app_settings"),
+                verifier_settings=state.get("verifier_settings"),
+            )
         overrides = dict(self.world.user_full.get(uid, {}))
         note = self.world.contact_notes.get(uid)
         available = self.world.calls_available
+        about = overrides.pop("about", None)
+        photo = overrides.pop("profile_photo", None)
         full = types.UserFull(
             id=uid,
             settings=self.world.peer_settings.get(uid) or types.PeerSettings(),
             notify_settings=types.PeerNotifySettings(),
             common_chats_count=overrides.pop("common_chats_count", 0),
-            about=overrides.pop("about", None),
-            blocked=uid in self.world.blocked or None,
+            about=state.get("about", about) if state else about,
+            bot_info=info,
+            blocked=uid in self.world.blocked or bool(state.get("blocked")) or None,
             blocked_my_stories_from=uid in self.world.blocked_stories or None,
             birthday=self.world.birthdays.get(uid),
             note=types.TextWithEntities(text=note, entities=[]) if note else None,
             phone_calls_available=available,
             video_calls_available=available,
             phone_calls_private=not available,
+            bot_group_admin_rights=state.get("group_rights"),
+            bot_broadcast_admin_rights=state.get("channel_rights"),
+            starref_program=state.get("starref"),
+            bot_verification=state.get("verification"),
+            bot_can_manage_emoji_status=bool(state.get("emoji_status_allowed")),
+            profile_photo=state.get("profile_photo", photo),
             **overrides,
         )
         return types.users.UserFull(
@@ -3549,6 +3623,8 @@ class FakeTelegramClient:
             if not getattr(request, flag, None):
                 continue
             rows = self.world.top_peers.get(flag.replace("_", "-"), [])
+            if flag == "bots_pm" and not rows:
+                rows = [(uid, 1.0) for uid in self.world.top_peer_bots]
             categories.append(
                 types.TopPeerCategoryPeers(
                     category=getattr(types, constructor)(),
@@ -4316,7 +4392,8 @@ class FakeTelegramClient:
         return self._updates()
 
     def _raw_CheckUsernameRequest(self, request: Any) -> bool:
-        return request.username.lower() not in self.world.taken_usernames
+        taken = self.world.taken_usernames
+        return request.username not in taken and request.username.lower() not in taken
 
     def _raw_UpdateUsernameRequest(self, request: Any) -> types.Updates:
         chat_id = self._chat_id(request.channel)
@@ -4335,6 +4412,8 @@ class FakeTelegramClient:
         return types.messages.Chats(chats=list(self.world.chats.values()))
 
     def _raw_ReportSponsoredMessageRequest(self, request: Any) -> Any:
+        if self.world.report_result is not None:
+            return self.world.report_result
         if not request.option:
             return types.channels.SponsoredMessageReportResultChooseOption(
                 title="Why?",
@@ -4461,28 +4540,6 @@ class FakeTelegramClient:
             ],
             next_offset=None,
         )
-
-    def _raw_GetConnectedStarRefBotsRequest(self, request: Any) -> Any:
-        return types.payments.ConnectedStarRefBots(
-            count=1,
-            connected_bots=[
-                types.ConnectedBotStarRef(
-                    url="https://t.me/refbot?start=x",
-                    date=datetime.now(timezone.utc),
-                    bot_id=8800,
-                    commission_permille=200,
-                    participants=3,
-                    revenue=500,
-                )
-            ],
-            users=[],
-        )
-
-    def _raw_ConnectStarRefBotRequest(self, request: Any) -> Any:
-        return self._raw_GetConnectedStarRefBotsRequest(request)
-
-    def _raw_EditConnectedStarRefBotRequest(self, request: Any) -> Any:
-        return self._raw_GetConnectedStarRefBotsRequest(request)
 
     # -- entities ----------------------------------------------------------
 
@@ -5798,6 +5855,607 @@ class FakeTelegramClient:
 
     def _raw_SetContentSettingsRequest(self, request: Any) -> Any:
         self.world.sensitive_enabled = bool(request.sensitive_enabled)
+        return True
+
+    # -- the bot world -----------------------------------------------------
+    #
+    # Stage E adds bots. The world holds bot *state* — the profile card, the
+    # command lists per scope, the attachment menu, the preview gallery, the
+    # affiliate program, the payment forms — so a test asserts that a command
+    # moved something rather than that a canned reply came back: `bot access
+    # set --add` really appends to an allow-list, and `bot preview edit
+    # --order` really reorders a gallery the next `bot preview list` reads.
+
+    def _bot_state(self, user_id: int) -> dict[str, Any]:
+        return self.world.bots.setdefault(int(user_id), {})
+
+    def _user_id_of(self, ref: Any) -> int:
+        for attribute in ("user_id", "id", "chat_id", "channel_id"):
+            value = getattr(ref, attribute, None)
+            if isinstance(value, int):
+                return value
+        return int(self.world.me.id)
+
+    # -- listings ----------------------------------------------------------
+
+    def _raw_GetAdminedBotsRequest(self, request: Any) -> Any:
+        return [self.world.users[b] for b in self.world.admined_bots if b in self.world.users]
+
+    def _raw_GetBotRecommendationsRequest(self, request: Any) -> Any:
+        users = [self.world.users[b] for b in self.world.similar_bots if b in self.world.users]
+        if self.world.similar_bots_count:
+            return types.users.UsersSlice(count=self.world.similar_bots_count, users=users)
+        return types.users.Users(users=users)
+
+    def _raw_GetPopularAppBotsRequest(self, request: Any) -> Any:
+        return types.bots.PopularAppBots(
+            users=[self.world.users[b] for b in self.world.popular_apps if b in self.world.users],
+            next_offset=self.world.popular_apps_next or None,
+        )
+
+    # -- profile -----------------------------------------------------------
+
+    def _raw_GetBotInfoRequest(self, request: Any) -> Any:
+        state = self._bot_state(self._user_id_of(request.bot))
+        localized = state.get("localized", {}).get(request.lang_code, {})
+        return types.bots.BotInfo(
+            name=localized.get("name", ""),
+            about=localized.get("about", state.get("about") or ""),
+            description=localized.get("description", state.get("description") or ""),
+        )
+
+    def _raw_SetBotInfoRequest(self, request: Any) -> Any:
+        state = self._bot_state(self._user_id_of(request.bot))
+        localized = state.setdefault("localized", {}).setdefault(request.lang_code, {})
+        for name in ("name", "about", "description"):
+            value = getattr(request, name, None)
+            if value is not None:
+                localized[name] = value
+                state[name] = value
+        return True
+
+    def _raw_CreateBotRequest(self, request: Any) -> Any:
+        self.world.next_bot_id += 1
+        user = make_user(self.world.next_bot_id, username=request.username, first=request.name)
+        user.bot = True
+        user.bot_can_edit = True
+        self.world.add_user(user)
+        self.world.bots[user.id] = {"bot": True}
+        self.world.admined_bots.append(user.id)
+        self.world.taken_usernames.add(request.username)
+        return types.Updates(updates=[], users=[user], chats=[], date=None, seq=0)
+
+    def _raw_ExportBotTokenRequest(self, request: Any) -> Any:
+        bot_id = self._user_id_of(request.bot)
+        if request.revoke:
+            self.world.bot_tokens[bot_id] = f"{bot_id}:REVOKED-AND-NEW"
+        return types.bots.ExportedBotToken(
+            token=self.world.bot_tokens.setdefault(bot_id, f"{bot_id}:TESTTOKEN")
+        )
+
+    def _raw_ToggleUsernameRequest(self, request: Any) -> Any:
+        # `bots.toggleUsername` and `channels.toggleUsername` share a class
+        # name and so share this handler. Only the bot one carries `bot`;
+        # the channel one wants the empty-Updates default it always had.
+        if getattr(request, "bot", None) is None:
+            return True
+        state = self._bot_state(self._user_id_of(request.bot))
+        names = state.setdefault("usernames", [])
+        if request.active and request.username not in names:
+            names.append(request.username)
+        if not request.active and request.username in names:
+            names.remove(request.username)
+        self._sync_usernames(self._user_id_of(request.bot), names)
+        return True
+
+    def _raw_ReorderUsernamesRequest(self, request: Any) -> Any:
+        if getattr(request, "bot", None) is None:  # the `channels.` twin
+            return True
+        state = self._bot_state(self._user_id_of(request.bot))
+        state["usernames"] = list(request.order)
+        self._sync_usernames(self._user_id_of(request.bot), state["usernames"])
+        return True
+
+    def _sync_usernames(self, bot_id: int, names: list[str]) -> None:
+        user = self.world.users.get(bot_id)
+        if user is not None:
+            user.usernames = [types.Username(username=n, active=True) for n in names]
+
+    # -- commands, menu, rights, permissions -------------------------------
+
+    def _scope_key(self, scope: Any, lang: str) -> tuple[str, str]:
+        return (type(scope).__name__, lang)
+
+    def _raw_GetBotCommandsRequest(self, request: Any) -> Any:
+        return [
+            types.BotCommand(command=c, description=d)
+            for c, d in self.world.bot_commands.get(
+                self._scope_key(request.scope, request.lang_code), []
+            )
+        ]
+
+    def _raw_SetBotCommandsRequest(self, request: Any) -> Any:
+        self.world.bot_commands[self._scope_key(request.scope, request.lang_code)] = [
+            (c.command, c.description) for c in request.commands
+        ]
+        return True
+
+    def _raw_ResetBotCommandsRequest(self, request: Any) -> Any:
+        self.world.bot_commands.pop(self._scope_key(request.scope, request.lang_code), None)
+        return True
+
+    def _raw_GetBotMenuButtonRequest(self, request: Any) -> Any:
+        return self.world.menu_buttons.get(
+            self._user_id_of(request.user_id), types.BotMenuButtonDefault()
+        )
+
+    def _raw_SetBotMenuButtonRequest(self, request: Any) -> Any:
+        self.world.menu_buttons[self._user_id_of(request.user_id)] = request.button
+        return True
+
+    def _raw_SetBotGroupDefaultAdminRightsRequest(self, request: Any) -> Any:
+        self.world.default_rights["group"] = request.admin_rights
+        return True
+
+    def _raw_SetBotBroadcastDefaultAdminRightsRequest(self, request: Any) -> Any:
+        self.world.default_rights["channel"] = request.admin_rights
+        return True
+
+    def _raw_CanSendMessageRequest(self, request: Any) -> Any:
+        return bool(self._bot_state(self._user_id_of(request.bot)).get("can_send"))
+
+    def _raw_AllowSendMessageRequest(self, request: Any) -> Any:
+        self._bot_state(self._user_id_of(request.bot))["can_send"] = True
+        return types.Updates(updates=[], users=[], chats=[], date=None, seq=0)
+
+    def _raw_ToggleUserEmojiStatusPermissionRequest(self, request: Any) -> Any:
+        self._bot_state(self._user_id_of(request.bot))["emoji_status_allowed"] = bool(
+            request.enabled
+        )
+        return True
+
+    def _raw_GetAccessSettingsRequest(self, request: Any) -> Any:
+        state = self._bot_state(self._user_id_of(request.bot))
+        return types.bots.AccessSettings(
+            restricted=state.get("restricted"),
+            add_users=[
+                self.world.users[u] for u in state.get("allowed", []) if u in self.world.users
+            ],
+        )
+
+    def _raw_EditAccessSettingsRequest(self, request: Any) -> Any:
+        state = self._bot_state(self._user_id_of(request.bot))
+        state["restricted"] = bool(request.restricted)
+        state["allowed"] = [self._user_id_of(u) for u in (request.add_users or [])]
+        return True
+
+    # -- previews ----------------------------------------------------------
+
+    def _preview_list(self, bot_id: int) -> list[Any]:
+        return self.world.bots.setdefault(bot_id, {}).setdefault("previews", [])
+
+    def _raw_GetPreviewMediasRequest(self, request: Any) -> Any:
+        return list(self._preview_list(self._user_id_of(request.bot)))
+
+    def _raw_GetPreviewInfoRequest(self, request: Any) -> Any:
+        return types.bots.PreviewInfo(
+            media=list(self._preview_list(self._user_id_of(request.bot))), lang_codes=["en"]
+        )
+
+    def _preview_media(self, media: Any) -> Any:
+        """An already-uploaded `InputMedia*` as the media a gallery stores."""
+        name = type(media).__name__
+        if name == "InputMediaPhoto":
+            return types.MessageMediaPhoto(photo=make_photo(int(media.id.id)))
+        if name == "InputMediaDocument":
+            document = self.world.documents.get(int(media.id.id)) or make_document(int(media.id.id))
+            return types.MessageMediaDocument(document=document)
+        return self.realise(media)
+
+    def _raw_AddPreviewMediaRequest(self, request: Any) -> Any:
+        media = types.BotPreviewMedia(
+            date=datetime.now(timezone.utc), media=self._preview_media(request.media)
+        )
+        self._preview_list(self._user_id_of(request.bot)).append(media)
+        return media
+
+    def _raw_EditPreviewMediaRequest(self, request: Any) -> Any:
+        gallery = self._preview_list(self._user_id_of(request.bot))
+        replacement = types.BotPreviewMedia(
+            date=datetime.now(timezone.utc), media=self._preview_media(request.new_media)
+        )
+        for index, entry in enumerate(gallery):
+            if self._media_id(entry) == self._media_id(request.media):
+                gallery[index] = replacement
+                break
+        return replacement
+
+    def _raw_ReorderPreviewMediasRequest(self, request: Any) -> Any:
+        gallery = self._preview_list(self._user_id_of(request.bot))
+        by_id = {self._media_id(entry): entry for entry in gallery}
+        gallery[:] = [by_id[self._media_id(m)] for m in request.order if self._media_id(m) in by_id]
+        return True
+
+    def _raw_DeletePreviewMediaRequest(self, request: Any) -> Any:
+        gallery = self._preview_list(self._user_id_of(request.bot))
+        doomed = {self._media_id(m) for m in request.media}
+        gallery[:] = [entry for entry in gallery if self._media_id(entry) not in doomed]
+        return True
+
+    def _media_id(self, value: Any) -> int:
+        inner = getattr(value, "media", value)
+        for attribute in ("document", "photo", "id"):
+            found = getattr(inner, attribute, None)
+            if found is not None:
+                return int(getattr(found, "id", found) or 0)
+        return 0
+
+    # -- affiliate programs ------------------------------------------------
+
+    def _raw_UpdateStarRefProgramRequest(self, request: Any) -> Any:
+        bot_id = self._user_id_of(request.bot)
+        program = types.StarRefProgram(
+            bot_id=bot_id,
+            commission_permille=request.commission_permille,
+            duration_months=request.duration_months,
+            end_date=datetime.now(timezone.utc) if not request.commission_permille else None,
+        )
+        self._bot_state(bot_id)["starref"] = program
+        return program
+
+    def _raw_ConnectStarRefBotRequest(self, request: Any) -> Any:
+        bot_id = self._user_id_of(request.bot)
+        entry = types.ConnectedBotStarRef(
+            url=f"https://t.me/bot{bot_id}?start=_tgr_ref",
+            date=datetime.now(timezone.utc),
+            bot_id=bot_id,
+            commission_permille=200,
+            participants=0,
+            revenue=0,
+        )
+        self.world.connected_refs.append(entry)
+        return types.payments.ConnectedStarRefBots(
+            count=len(self.world.connected_refs), connected_bots=[entry], users=[]
+        )
+
+    def _raw_GetConnectedStarRefBotsRequest(self, request: Any) -> Any:
+        entries = list(self.world.connected_refs) or [
+            types.ConnectedBotStarRef(
+                url="https://t.me/refbot?start=x",
+                date=datetime.now(timezone.utc),
+                bot_id=8800,
+                commission_permille=200,
+                participants=3,
+                revenue=500,
+            )
+        ]
+        limit = getattr(request, "limit", None) or len(entries)
+        return types.payments.ConnectedStarRefBots(
+            count=len(entries), connected_bots=entries[:limit], users=[]
+        )
+
+    def _raw_GetConnectedStarRefBotRequest(self, request: Any) -> Any:
+        bot_id = self._user_id_of(request.bot)
+        for entry in self.world.connected_refs:
+            if entry.bot_id == bot_id:
+                return types.payments.ConnectedStarRefBots(
+                    count=1, connected_bots=[entry], users=[]
+                )
+        return types.payments.ConnectedStarRefBots(count=0, connected_bots=[], users=[])
+
+    def _raw_GetSuggestedStarRefBotsRequest(self, request: Any) -> Any:
+        return types.payments.SuggestedStarRefBots(
+            count=len(self.world.suggested_refs),
+            suggested_bots=list(self.world.suggested_refs),
+            users=[],
+            next_offset=self.world.suggested_refs_next or None,
+        )
+
+    def _raw_EditConnectedStarRefBotRequest(self, request: Any) -> Any:
+        for entry in self.world.connected_refs:
+            if entry.url == request.link:
+                entry.revoked = bool(request.revoked)
+                return types.payments.ConnectedStarRefBots(
+                    count=1, connected_bots=[entry], users=[]
+                )
+        return types.payments.ConnectedStarRefBots(count=0, connected_bots=[], users=[])
+
+    # -- attachment menu ---------------------------------------------------
+
+    def _attach_entry(self, bot_id: int) -> Any:
+        state = self.world.attach_menu.setdefault(bot_id, {})
+        return types.AttachMenuBot(
+            bot_id=bot_id,
+            short_name=state.get("short_name", f"app{bot_id}"),
+            icons=[],
+            inactive=state.get("inactive"),
+            request_write_access=state.get("request_write_access"),
+            show_in_attach_menu=state.get("installed"),
+            show_in_side_menu=state.get("side_menu"),
+            side_menu_disclaimer_needed=state.get("disclaimer"),
+            peer_types=[types.AttachMenuPeerTypePM()],
+        )
+
+    def _raw_GetAttachMenuBotsRequest(self, request: Any) -> Any:
+        bots = [b for b, s in self.world.attach_menu.items() if s.get("installed")]
+        return types.AttachMenuBots(
+            hash=1,
+            bots=[self._attach_entry(b) for b in bots],
+            users=[self.world.users[b] for b in bots if b in self.world.users],
+        )
+
+    def _raw_GetAttachMenuBotRequest(self, request: Any) -> Any:
+        bot_id = self._user_id_of(request.bot)
+        user = self.world.users.get(bot_id)
+        return types.AttachMenuBotsBot(bot=self._attach_entry(bot_id), users=[user] if user else [])
+
+    def _raw_ToggleBotInAttachMenuRequest(self, request: Any) -> Any:
+        state = self.world.attach_menu.setdefault(self._user_id_of(request.bot), {})
+        state["installed"] = bool(request.enabled)
+        state["write_allowed"] = bool(request.write_allowed)
+        return True
+
+    # -- buttons, url auth, start ------------------------------------------
+
+    def _raw_StartBotRequest(self, request: Any) -> types.Updates:
+        chat_id = self._chat_id(request.peer)
+        message = self.world.add_message(
+            chat_id, f"/start {request.start_param}".strip(), out=True, sender_id=self.world.me.id
+        )
+        return self._updates(message)
+
+    def _raw_GetBotCallbackAnswerRequest(self, request: Any) -> Any:
+        return self.world.callback_answer or types.messages.BotCallbackAnswer(
+            cache_time=0, message="OK"
+        )
+
+    def _raw_RequestUrlAuthRequest(self, request: Any) -> Any:
+        return self.world.url_auth or types.UrlAuthResultRequest(
+            bot=self.world.me, domain="example.org", request_write_access=True
+        )
+
+    def _raw_AcceptUrlAuthRequest(self, request: Any) -> Any:
+        return types.UrlAuthResultAccepted(url="https://example.org/login?token=abc")
+
+    def _raw_DeclineUrlAuthRequest(self, request: Any) -> Any:
+        return True
+
+    def _raw_CheckUrlAuthMatchCodeRequest(self, request: Any) -> Any:
+        return request.match_code == self.world.match_code
+
+    def _raw_SendBotRequestedPeerRequest(self, request: Any) -> types.Updates:
+        return types.Updates(updates=[], users=[], chats=[], date=None, seq=0)
+
+    def _raw_GetRequestedWebViewButtonRequest(self, request: Any) -> Any:
+        return types.KeyboardButtonRequestPeer(
+            text="Pick a chat",
+            button_id=7,
+            peer_type=types.RequestPeerTypeUser(),
+            max_quantity=1,
+        )
+
+    # -- bot-side plumbing -------------------------------------------------
+
+    def _raw_SendCustomRequestRequest(self, request: Any) -> Any:
+        return types.DataJSON(data=self.world.custom_response)
+
+    def _raw_InvokeWebViewCustomMethodRequest(self, request: Any) -> Any:
+        return types.DataJSON(data=self.world.custom_response)
+
+    def _raw_AnswerWebhookJSONQueryRequest(self, request: Any) -> Any:
+        return True
+
+    def _raw_GetBotBusinessConnectionRequest(self, request: Any) -> Any:
+        return types.Updates(
+            updates=[
+                types.UpdateBotBusinessConnect(
+                    connection=types.BotBusinessConnection(
+                        connection_id=request.connection_id,
+                        user_id=4242,
+                        dc_id=self.world.business_dc,
+                        date=datetime.now(timezone.utc),
+                        rights=types.BusinessBotRights(reply=True),
+                    ),
+                    qts=1,
+                )
+            ],
+            users=[],
+            chats=[],
+            date=None,
+            seq=0,
+        )
+
+    def _raw_InvokeWithBusinessConnectionRequest(self, request: Any) -> Any:
+        return self._sync_call(request.query)
+
+    def _sync_call(self, request: Any) -> Any:
+        """Run a wrapped request through the same handler table."""
+        self.world.calls.append((type(request).__name__, request))
+        handler = self.world.raw.get(type(request).__name__)
+        if callable(handler):
+            return handler(request)
+        default = getattr(self, f"_raw_{type(request).__name__}", None)
+        if default is not None:
+            return default(request)
+        return types.Updates(updates=[], users=[], chats=[], date=None, seq=0)
+
+    # -- games, ads, reports -----------------------------------------------
+
+    def _raw_GetEmojiGameInfoRequest(self, request: Any) -> Any:
+        return self.world.emoji_game or types.messages.EmojiGameUnavailable()
+
+    def _raw_GetGameHighScoresRequest(self, request: Any) -> Any:
+        return types.messages.HighScores(scores=list(self.world.high_scores), users=[])
+
+    def _raw_GetInlineGameHighScoresRequest(self, request: Any) -> Any:
+        return types.messages.HighScores(scores=list(self.world.high_scores), users=[])
+
+    def _raw_SetGameScoreRequest(self, request: Any) -> Any:
+        self.world.high_scores.append(
+            types.HighScore(pos=len(self.world.high_scores) + 1, user_id=4242, score=request.score)
+        )
+        return types.Updates(updates=[], users=[], chats=[], date=None, seq=0)
+
+    def _raw_SetInlineGameScoreRequest(self, request: Any) -> Any:
+        return True
+
+    def _raw_GetSponsoredPeersRequest(self, request: Any) -> Any:
+        if not self.world.sponsored_peers:
+            return types.contacts.SponsoredPeersEmpty()
+        return types.contacts.SponsoredPeers(
+            peers=[
+                types.SponsoredPeer(
+                    peer=types.PeerChannel(channel_id=chat_id),
+                    random_id=f"sp{chat_id}".encode(),
+                    sponsor_info="Example Ltd",
+                )
+                for chat_id in self.world.sponsored_peers
+            ],
+            chats=[
+                self.world.chats[c] for c in self.world.sponsored_peers if c in self.world.chats
+            ],
+            users=[],
+        )
+
+    def _raw_ViewSponsoredMessageRequest(self, request: Any) -> Any:
+        return True
+
+    def _raw_ClickSponsoredMessageRequest(self, request: Any) -> Any:
+        return True
+
+    # -- mini apps ---------------------------------------------------------
+
+    def _web_view(self, *, with_query: bool = True) -> Any:
+        return types.WebViewResultUrl(
+            url=self.world.webapp_url,
+            fullsize=True,
+            query_id=self.world.webapp_query_id if with_query else None,
+        )
+
+    def _raw_RequestWebViewRequest(self, request: Any) -> Any:
+        return self._web_view()
+
+    def _raw_RequestAppWebViewRequest(self, request: Any) -> Any:
+        return self._web_view(with_query=False)
+
+    def _raw_RequestMainWebViewRequest(self, request: Any) -> Any:
+        return self._web_view()
+
+    def _raw_RequestSimpleWebViewRequest(self, request: Any) -> Any:
+        return self._web_view(with_query=False)
+
+    def _raw_ProlongWebViewRequest(self, request: Any) -> Any:
+        self.world.prolongs += 1
+        return True
+
+    def _raw_SendWebViewDataRequest(self, request: Any) -> Any:
+        return types.Updates(updates=[], users=[], chats=[], date=None, seq=0)
+
+    def _raw_GetBotAppRequest(self, request: Any) -> Any:
+        entry = self.world.bot_apps.get(str(getattr(request.app, "short_name", "")))
+        if entry is None:
+            return types.messages.BotApp(app=types.BotAppNotModified())
+        return entry
+
+    def _raw_CheckDownloadFileParamsRequest(self, request: Any) -> Any:
+        return self.world.download_allowed
+
+    # -- inline mode -------------------------------------------------------
+
+    def _raw_GetPreparedInlineMessageRequest(self, request: Any) -> Any:
+        return types.messages.PreparedInlineMessage(
+            query_id=987654321,
+            result=self.world.inline_results[0]
+            if self.world.inline_results
+            else types.BotInlineResult(
+                id="r1",
+                type="article",
+                send_message=types.BotInlineMessageText(message="hi"),
+            ),
+            peer_types=list(self.world.prepared_peer_types),
+            cache_time=300,
+            users=[],
+        )
+
+    def _raw_SavePreparedInlineMessageRequest(self, request: Any) -> Any:
+        return types.messages.BotPreparedInlineMessage(
+            id="prep1", expire_date=datetime.now(timezone.utc)
+        )
+
+    def _raw_EditInlineBotMessageRequest(self, request: Any) -> Any:
+        return True
+
+    # -- payments ----------------------------------------------------------
+
+    def _raw_GetPaymentFormRequest(self, request: Any) -> Any:
+        return self.world.payment_form or types.payments.PaymentForm(
+            form_id=555,
+            bot_id=5000001,
+            title="T-shirt",
+            description="A shirt",
+            invoice=types.Invoice(
+                currency="USD", prices=[types.LabeledPrice(label="Shirt", amount=1999)]
+            ),
+            provider_id=1,
+            url="https://provider.example/pay",
+            users=[],
+            can_save_credentials=True,
+        )
+
+    def _raw_GetPaymentReceiptRequest(self, request: Any) -> Any:
+        return types.payments.PaymentReceipt(
+            date=datetime.now(timezone.utc),
+            bot_id=5000001,
+            provider_id=1,
+            title="T-shirt",
+            description="A shirt",
+            invoice=types.Invoice(
+                currency="USD", prices=[types.LabeledPrice(label="Shirt", amount=1999)]
+            ),
+            currency="USD",
+            total_amount=1999,
+            credentials_title="Visa •1234",
+            users=[],
+        )
+
+    def _raw_GetSavedInfoRequest(self, request: Any) -> Any:
+        return types.payments.SavedInfo(
+            has_saved_credentials=self.world.saved_credentials,
+            saved_info=self.world.saved_order_info,
+        )
+
+    def _raw_ClearSavedInfoRequest(self, request: Any) -> Any:
+        if request.credentials:
+            self.world.saved_credentials = False
+        if request.info:
+            self.world.saved_order_info = None
+        return True
+
+    def _raw_ExportInvoiceRequest(self, request: Any) -> Any:
+        return types.payments.ExportedInvoice(url="https://t.me/$abc123")
+
+    def _raw_GetBankCardDataRequest(self, request: Any) -> Any:
+        return types.payments.BankCardData(
+            title="Example Bank",
+            open_urls=[types.BankCardOpenUrl(url="https://bank.example", name="Online banking")],
+        )
+
+    def _raw_GetStarsSubscriptionsRequest(self, request: Any) -> Any:
+        return types.payments.StarsStatus(
+            balance=types.StarsAmount(amount=self.world.star_balance, nanos=0),
+            chats=[],
+            users=[],
+            subscriptions=list(self.world.subscriptions),
+            subscriptions_next_offset=self.world.subscriptions_next or None,
+        )
+
+    def _raw_ChangeStarsSubscriptionRequest(self, request: Any) -> Any:
+        for entry in self.world.subscriptions:
+            if entry.id == request.subscription_id:
+                entry.canceled = bool(request.canceled)
+        return True
+
+    def _raw_BotCancelStarsSubscriptionRequest(self, request: Any) -> Any:
         return True
 
 

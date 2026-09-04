@@ -25,10 +25,10 @@ ROOT = Path(__file__).resolve().parent.parent
 #: Every P0 catalog id the landed PRs claim. Raised by each group PR, never
 #: lowered. ARCHITECTURE §1.3: "P0 coverage may never decrease and must reach
 #: 100 % before 2.0.0 final".
-P0_FLOOR = 161
+P0_FLOOR = 172
 
 #: The floor for total covered ids. Same rule, weaker guarantee.
-COVERED_FLOOR = 1390
+COVERED_FLOOR = 1541
 
 #: Every P0 catalog id PR-1's own operations cover, named rather than
 #: counted, so a swap (one dropped, one added) cannot pass a count check
@@ -235,6 +235,28 @@ PR8_P0_IDS = frozenset(
     }
 )
 
+#: Every P0 catalog id PR-10's operations cover. Named rather than counted,
+#: for the same reason as PR-1's list: a swap must not pass a count check.
+#:
+#: The two keyboard-rendering P0s of this domain are deliberately *not* here.
+#: They were PR-1's from the start; PR-10 only made them true, by filling in
+#: the `reply_markup` PR-1 declared and never populated.
+PR10_P0_IDS = frozenset(
+    {
+        "bots.callback-button-press",
+        "bots.inline-query",
+        "bots.list-commands",
+        "bots.reply-keyboard-press-text",
+        "bots.resolve-bot",
+        "bots.restart-bot",
+        "bots.send-command",
+        "bots.send-inline-result",
+        "bots.start-private",
+        "bots.start-with-deeplink-param",
+        "bots.stop-bot",
+    }
+)
+
 #: `(group prefixes, the P0 ids those groups claim)` for each landed PR.
 #: The P0 ids PR-5's own operations cover, named for the same reason.
 PR5_P0_IDS = frozenset(
@@ -329,6 +351,7 @@ P0_OWNERS = (
     ("pr9", _by_prefix("poll.", "reaction.", "todo.", "location.", "search."), PR9_P0_IDS),
     ("pr8", _by_prefix("story."), PR8_P0_IDS),
     ("pr11", _by_prefix("call.", "vc.", "conference."), PR11_P0_IDS),
+    ("pr10", _by_prefix("bot.", "inline.", "webapp.", "payment."), PR10_P0_IDS),
 )
 
 
@@ -505,6 +528,21 @@ class TestTheGate:
 
     def test_the_stories_domain_is_no_longer_waived_wholesale(self):
         assert "stories" not in waivers().domains
+
+    def test_bots_inline_payments_is_fully_accounted_for(self, report):
+        """PR-10's own domain. The 22 remaining ids are named one by one.
+
+        Nine of them need API layer 229 and have a registered command that
+        exits 13 rather than not existing; the rest belong to another group's
+        command surface. The domain-wide waiver is gone, so "the bots group is
+        done" is checkable rather than asserted.
+        """
+        stats = report.by_domain["bots_inline_payments"]
+        assert stats["accounted_percent"] == 100.0
+        assert stats["covered"] >= 153
+
+    def test_the_bots_domain_is_no_longer_waived_wholesale(self):
+        assert "bots_inline_payments" not in waivers().domains
 
     def test_media_files_is_fully_accounted_for(self, report):
         """PR-6's own domain. The 22 remaining ids belong to other groups.

@@ -441,9 +441,15 @@ def _lint_spec(spec: OperationSpec, problems: list[str]) -> None:
     if spec.empty_exit not in (EXIT_SUCCESS, EXIT_EMPTY):
         bad("empty_exit must be 0 or 3")
 
-    # L13 — every op is either catalogued or explicitly infrastructure.
-    if not spec.covers and not spec.covers_partial and "infrastructure" not in spec.tags:
-        bad("declares no catalog coverage and is not tagged infrastructure")
+    # L13 — every op is either catalogued, explicitly infrastructure, or
+    # registered-and-refused. The third case arrived with PR-10: an operation
+    # whose method needs a newer API layer is registered so that
+    # `agent capabilities` can answer "unavailable in this build" rather than
+    # "no such command" — and it must NOT claim catalog coverage for something
+    # it cannot do, which is why the tag exists instead of a partial cover.
+    exempt = {"infrastructure", "not-supported"} & set(spec.tags)
+    if not spec.covers and not spec.covers_partial and not exempt:
+        bad("declares no catalog coverage and is not tagged infrastructure/not-supported")
 
     if spec.surface is Surface.LOCAL and spec.needs_account:
         bad("local ops must set needs_account=False")

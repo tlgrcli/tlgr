@@ -120,7 +120,9 @@ not an error. Every command answers in this envelope: 2.0.0 removed the last
 hand-written v1 command, so there is no second output shape to branch on.
 
 `tlgr agent whoami --json` reports `output_schema_version: 2`; branch on that
-rather than probing for each changed shape.
+rather than probing for each changed shape. Coming from 1.x, the six shapes
+that changed and what to do about each are in
+[docs/UPGRADING.md](docs/UPGRADING.md).
 
 ## Pagination
 

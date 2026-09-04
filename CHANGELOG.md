@@ -87,6 +87,19 @@ registered and exit 13 `NOT_SUPPORTED`: they need API layer 229, which the
 pinned Telethon does not speak. They exist so that "unavailable in this build"
 is a different answer from "no such command".
 
+`user dialog-status` gained the peer's read state — `read_outbox_max_id` (the
+highest message of *ours* they have read), `unread_count` and `top_message` —
+on every return path, `null` when nothing could be established and `0` on the
+definitive negative. The server's dialog object always carried these and the op
+threw them away, so the command could not answer "have they read our message?"
+and answered it *wrongly by omission*: the key was simply absent, so a caller
+reading it back got `null`, which is indistinguishable from "not read". `chat
+list` has always reported the same field, so the two routes disagreed about the
+same peer. No derived `they_read_it` boolean, on purpose: the comparison only
+means "they saw our last message" when the last message is in fact ours, which
+only the caller knows. The three keys are additions — nothing moved or was
+renamed, and the three-valued contract and exit 13 are untouched.
+
 One bug fix rides along: `message get --json` now actually prints
 `reply_markup`. PR-1 declared the shape and nothing ever populated it, which
 made its two keyboard-rendering P0 ids true only on paper — a caller could see

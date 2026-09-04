@@ -317,6 +317,17 @@ class DialogStatus(ContactModel):
     `has_dialog` is deliberately `bool | None`: there is no third boolean,
     and a caller that reads `null` as `false` re-introduces the cold-contact
     bug this command exists to remove.
+
+    The server's dialog object carries more than "does it exist", and the
+    three read-state fields are echoed verbatim rather than reduced to a
+    convenience boolean: `read_outbox_max_id` (the highest message of OURS
+    the peer has read), `unread_count` and `top_message`. They are always
+    present — a *missing* key is what makes an unanswerable question look
+    answered, since a caller reading it back gets `null` and cannot tell
+    "not read" from "never reported". `read_outbox_max_id >= top_message`
+    only means "they saw our last message" when the last message is in fact
+    ours, so that comparison is left to the caller, which is the only party
+    that knows.
     """
 
     ref: str = ""
@@ -325,6 +336,9 @@ class DialogStatus(ContactModel):
     resolved: bool = False
     has_dialog: bool | None = None
     message_count: int | None = None
+    read_outbox_max_id: int | None = None
+    unread_count: int | None = None
+    top_message: int | None = None
     source: str = "unknown"
     reason: str | None = None
     scanned_dialogs: int | None = None

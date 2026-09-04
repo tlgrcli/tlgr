@@ -536,6 +536,16 @@ async def dialog_status(ctx: OpContext, req: DialogStatusReq) -> DialogStatus:
 
     It reports on the dialog list: a conversation this account itself deleted
     is gone server-side too and correctly reads as no dialog.
+
+    `messages.getPeerDialogs` already hands back the whole dialog object, so
+    the peer's read state rides along rather than being thrown away:
+    `read_outbox_max_id` (the highest message of OURS they have read),
+    `unread_count` and `top_message`. All three are on EVERY return path,
+    including the indeterminate one (null) and the definitive negative (0) —
+    an absent key reads back as `null`, which is indistinguishable from "they
+    have not read it". There is deliberately no derived `they_read_it`
+    boolean: that comparison is only meaningful when the last message is
+    ours, which only the caller knows.
     """
     from telethon import utils
     from telethon.tl import types
@@ -609,6 +619,9 @@ async def dialog_status(ctx: OpContext, req: DialogStatusReq) -> DialogStatus:
             out.resolved = True
             out.has_dialog = False
             out.message_count = 0
+            out.read_outbox_max_id = 0
+            out.unread_count = 0
+            out.top_message = 0
             out.source = "dialog_scan"
             out.reason = "absent from the account's complete dialog list"
             out.id = target_id
@@ -621,7 +634,11 @@ async def dialog_status(ctx: OpContext, req: DialogStatusReq) -> DialogStatus:
             mfn.GetPeerDialogsRequest(peers=[types.InputDialogPeer(peer=input_peer)])
         )
         dialogs = list(getattr(answer, "dialogs", None) or [])
-        top = max((int(getattr(d, "top_message", 0) or 0) for d in dialogs), default=0)
+        # The peer's own dialog object — the one with the newest message when
+        # the server hands back more than one — carries the read state as
+        # well as the top message.
+        dlg = max(dialogs, key=lambda d: int(getattr(d, "top_message", 0) or 0), default=None)
+        top = int(getattr(dlg, "top_message", 0) or 0) if dlg is not None else 0
         messages = await client.get_messages(input_peer, limit=1)
         total = getattr(messages, "total", None)
         total = int(total if total is not None else len(messages or []))
@@ -638,6 +655,12 @@ async def dialog_status(ctx: OpContext, req: DialogStatusReq) -> DialogStatus:
     # history: presence in the dialog list *is* the dialog.
     out.has_dialog = out.source == "dialog_scan" or bool(top) or total > 0
     out.message_count = total
+    if dlg is not None:
+        read = getattr(dlg, "read_outbox_max_id", None)
+        unread = getattr(dlg, "unread_count", None)
+        out.read_outbox_max_id = None if read is None else int(read)
+        out.unread_count = None if unread is None else int(unread)
+        out.top_message = top
     if out.source != "dialog_scan":
         out.source = "peer_dialogs"
     return out
@@ -655,12 +678,28 @@ SPEC_DIALOG_STATUS = OperationSpec(
         "definitively none, because the COMPLETE dialog list was enumerated. "
         "resolved=false/has_dialog=null — exit 13, and `reason` says why. "
         "Exit 13 means UNKNOWN: a caller gating a cold first message must "
-        "treat it as a refusal, never as a green light."
+        "treat it as a refusal, never as a green light. The peer's read "
+        "state — read_outbox_max_id (the highest message of OURS they have "
+        "read), unread_count, top_message — is on every return path, null "
+        "when nothing could be established. 'Did they see our last message?' "
+        "is read_outbox_max_id >= top_message AND the last message being "
+        "ours; this op does not guess at the second half, because only the "
+        "caller knows it."
     ),
     legacy_paths=("user dialog-status",),
     rate_class="bulk",
     timeout_s=600,
-    columns=("id", "username", "resolved", "has_dialog", "message_count", "source"),
+    columns=(
+        "id",
+        "username",
+        "resolved",
+        "has_dialog",
+        "message_count",
+        "read_outbox_max_id",
+        "top_message",
+        "unread_count",
+        "source",
+    ),
     example={
         "ref": "@alice",
         "id": 777123,
@@ -668,6 +707,9 @@ SPEC_DIALOG_STATUS = OperationSpec(
         "resolved": True,
         "has_dialog": True,
         "message_count": 12,
+        "read_outbox_max_id": 893,
+        "unread_count": 0,
+        "top_message": 893,
         "source": "peer_dialogs",
         "reason": None,
     },

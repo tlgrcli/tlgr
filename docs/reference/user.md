@@ -148,7 +148,7 @@ Full: `contacts-users.user-leave-common-groups`
 
 Does this account have prior history with this user? (three-valued, never guessed).
 
-resolved=true/has_dialog=true — a dialog exists, message_count is the server's exact total. resolved=true/has_dialog=false — definitively none, because the COMPLETE dialog list was enumerated. resolved=false/has_dialog=null — exit 13, and `reason` says why. Exit 13 means UNKNOWN: a caller gating a cold first message must treat it as a refusal, never as a green light.
+resolved=true/has_dialog=true — a dialog exists, message_count is the server's exact total. resolved=true/has_dialog=false — definitively none, because the COMPLETE dialog list was enumerated. resolved=false/has_dialog=null — exit 13, and `reason` says why. Exit 13 means UNKNOWN: a caller gating a cold first message must treat it as a refusal, never as a green light. The peer's read state — read_outbox_max_id (the highest message of OURS they have read), unread_count, top_message — is on every return path, null when nothing could be established. 'Did they see our last message?' is read_outbox_max_id >= top_message AND the last message being ours; this op does not guess at the second half, because only the caller knows it.
 
 ```
 tlgr user dialog-status <USER> [OPTIONS]

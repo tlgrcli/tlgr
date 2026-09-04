@@ -162,14 +162,20 @@ async def _read(ctx: OpContext, key: str, tail: str, peer: str | None) -> Settin
         elif key == "browser-close-button":
             value = "on" if getattr(settings, "display_close_button", False) else "off"
         else:
+            # The server keeps two vectors, not one list with a flag on each
+            # row, so the mode is the vector a domain is *in*.
             value = [
                 {
+                    "domain": getattr(entry, "domain", ""),
                     "url": getattr(entry, "url", ""),
-                    "mode": (
-                        "external" if getattr(entry, "open_external_browser", False) else "in-app"
-                    ),
+                    "title": getattr(entry, "title", ""),
+                    "mode": mode,
                 }
-                for entry in getattr(settings, "exceptions", None) or []
+                for mode, vector in (
+                    ("external", getattr(settings, "external_exceptions", None) or []),
+                    ("in-app", getattr(settings, "inapp_exceptions", None) or []),
+                )
+                for entry in vector
             ]
     elif key == "no-forwards":
         answer = await handle(ufn.GetFullUserRequest(id=types.InputUserSelf()))

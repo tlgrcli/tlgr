@@ -55,7 +55,7 @@ class SettingChange(Model):
 
 class SettingUnset(Model):
     key: str
-    removed: int = 0
+    removed: int
     values: list[str] = []
     already: bool = False
 

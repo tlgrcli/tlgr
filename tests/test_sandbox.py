@@ -14,12 +14,12 @@ def runner():
 
 
 class TestEnableCommands:
-    """Two exit codes on purpose, until every group is generated.
+    """One exit code, now that every group is generated.
 
-    A registry-generated command enforces the allowlist by canonical op id and
-    answers PERMISSION_DENIED (exit 6, §7.2). The v1 path matching in
-    `TlgrGroup.resolve_command` still answers exit 2, and goes when the last
-    hand-written group does.
+    Every command is registry-generated now, so every block is
+    PERMISSION_DENIED (exit 6, §7.2). The v1 path matching in
+    `TlgrGroup.resolve_command` that answered exit 2 went with the last
+    hand-written group in PR-12.
     """
 
     def test_top_level_block(self, runner):
@@ -27,10 +27,14 @@ class TestEnableCommands:
         assert result.exit_code == 6
         assert "not enabled" in result.output
 
-    def test_legacy_top_level_block_still_exits_2(self, runner):
-        """`profile` is the last hand-written group; `contact` is generated in PR-5."""
+    def test_the_last_hand_written_group_now_blocks_the_same_way(self, runner):
+        """`profile` was the last hand-written group and answered exit 2.
+
+        PR-12 generated it, so it answers PERMISSION_DENIED like everything
+        else — which is the point of the migration: one refusal, one code.
+        """
         result = runner.invoke(cli, ["--enable-commands", "message", "profile", "get"])
-        assert result.exit_code == 2
+        assert result.exit_code == 6
         assert "not enabled" in result.output
 
     def test_a_generated_group_blocks_with_permission_denied(self, runner):

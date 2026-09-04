@@ -471,6 +471,30 @@ _MESSAGE_RULES: tuple[tuple[re.Pattern[str], ErrorRule], ...] = (
     (re.compile(r"Cannot send requests while disconnected"), _RETRY),
     (re.compile(r"Could not find the input entity"), _NOT_FOUND),
     (re.compile(r"^AUTH_KEY_(UNREGISTERED|INVALID|DUPLICATED|PERM_EMPTY)$"), _SESSION),
+    # PR-12. The settings surface names things by slug, id and code, and
+    # Telethon has no generated class for any of these — without a rule they
+    # all arrive as exit 1, which tells a caller nothing about whether to
+    # retry, to fix the name, or to give up.
+    (
+        re.compile(
+            r"\b(GIFT_SLUG_INVALID|SLUG_INVALID|THEME_INVALID|LANG_PACK_INVALID"
+            r"|COLLECTION_ID_INVALID|AUCTION_INVALID|BUSINESS_LINK_INVALID"
+            r"|STARGIFT_INVALID|SHORTCUT_INVALID|RINGTONE_INVALID)\b"
+        ),
+        _NOT_FOUND,
+    ),
+    # Limits the server enforces and names. They are usage errors, not
+    # failures: the fix is to pass fewer of something.
+    (
+        re.compile(
+            r"\b(CHATLINKS_TOO_MUCH|QUICK_REPLIES_TOO_MUCH|REPLY_MESSAGES_TOO_MUCH"
+            r"|USERNAMES_ACTIVE_TOO_MUCH|BIRTHDAY_INVALID|TTL_DAYS_INVALID)\b"
+        ),
+        _USAGE,
+    ),
+    # `USERNAME_PURCHASE_AVAILABLE` means the name is free *on Fragment*,
+    # which is neither "taken" nor an error tlgr can retry past.
+    (re.compile(r"\bUSERNAME_PURCHASE_AVAILABLE\b"), _USAGE),
 )
 
 _GENERIC = ErrorRule("GENERIC", EXIT_GENERIC, 500)

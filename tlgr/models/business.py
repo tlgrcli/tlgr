@@ -120,7 +120,8 @@ class BusinessMessage(Model):
     """
 
     #: greeting | away
-    kind: str = "greeting"
+    kind: str
+    enabled: bool
     shortcut_id: int = 0
     shortcut: str | None = None
     #: away only: always | outside-hours | custom
@@ -131,7 +132,6 @@ class BusinessMessage(Model):
     #: greeting only.
     no_activity_days: int | None = None
     recipients: BusinessRecipients | None = None
-    enabled: bool = True
 
 
 class BotRights(Model):
@@ -258,8 +258,8 @@ class StarsTransferQuote(Model):
     """
 
     bot_id: int
+    ok: bool
     stars: int = 0
     currency: str = "XTR"
-    ok: bool = False
     reason: str = ""
     form_id: int | None = None

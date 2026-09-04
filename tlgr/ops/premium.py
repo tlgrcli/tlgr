@@ -405,7 +405,14 @@ SPEC_GIFT_SEND = OperationSpec(
 
 
 def _code_model(slug: str, raw: Any) -> GiftCode:
+    """`payments.checkedGiftCode` as a model.
+
+    The wire says `days`; every client and every price option says *months*,
+    so both are reported and neither is invented — `months` is the whole
+    months the day count buys.
+    """
     date = getattr(raw, "date", None)
+    days = getattr(raw, "days", None)
     return GiftCode(
         slug=slug,
         link=f"https://t.me/giftcode/{slug}",
@@ -413,8 +420,8 @@ def _code_model(slug: str, raw: Any) -> GiftCode:
         to_id=getattr(raw, "to_id", None),
         date=fmt_dt(date),
         date_unix=to_unix(date),
-        months=getattr(raw, "months", None),
-        days=getattr(raw, "months", None) and int(getattr(raw, "months", 0)) * 30,
+        months=int(days) // 30 if days else None,
+        days=int(days) if days else None,
         used_date=fmt_dt(getattr(raw, "used_date", None)),
         via_giveaway=bool(getattr(raw, "via_giveaway", False)),
         giveaway_msg_id=getattr(raw, "giveaway_msg_id", None),

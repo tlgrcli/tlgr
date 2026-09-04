@@ -180,24 +180,24 @@ class GiftDisplay(Model):
 
 class GiftConverted(Model):
     ref: str
-    stars_received: int = 0
+    stars_received: int
     balance_after: int | None = None
 
 
 class GiftUpgraded(Model):
     ref: str
+    upgraded: bool
     slug: str | None = None
     num: int | None = None
     attributes: list[GiftAttribute] = []
-    upgraded: bool = False
     price_stars: int | None = None
     refused_reason: str | None = None
 
 
 class GiftTransferred(Model):
     ref: str
+    transferred: bool
     to: int | None = None
-    transferred: bool = False
     price_stars: int | None = None
     can_transfer_at: str | None = None
     refused_reason: str | None = None
@@ -207,7 +207,7 @@ class GiftListing(Model):
     """A collectible put on (or taken off) the resale market."""
 
     ref: str
-    listed: bool = False
+    listed: bool
     price_stars: int | None = None
     price_ton: int | None = None
     can_resell_at: str | None = None
@@ -236,17 +236,17 @@ class GiftVariant(Model):
 
 
 class GiftCrafted(Model):
+    crafted: bool
     ref: str | None = None
     slug: str | None = None
     burned: list[str] = []
-    crafted: bool = False
     candidates: list[OwnedGift] = []
 
 
 class GiftOfferResolved(Model):
     msg_id: int
     #: accepted | declined | refused
-    state: str = "declined"
+    state: str
     price_stars: int | None = None
     buyer: int | None = None
     reason: str | None = None
@@ -263,9 +263,9 @@ class GiftAuction(Model):
 
 
 class GiftAuctionState(Model):
+    state: str
+    version: int
     auction: str = ""
-    state: str = ""
-    version: int = 0
     min_bid_amount: int | None = None
     my_bid: int | None = None
     position: int | None = None

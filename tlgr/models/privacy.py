@@ -54,8 +54,10 @@ class PrivacySettings(Model):
     """
 
     key: str
-    #: everybody | contacts | close-friends | premium | bots | nobody
-    base: str = "nobody"
+    #: everybody | contacts | close-friends | premium | bots | nobody. No
+    #: default: it is the headline, and `omit_defaults` would hide the most
+    #: restrictive answer exactly when a caller most wants to see it.
+    base: str
     allow_users: list[int] = []
     deny_users: list[int] = []
     allow_chats: list[int] = []

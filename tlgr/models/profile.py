@@ -194,6 +194,9 @@ class PhotosDeleted(Model):
 class ProfileLink(Model):
     """`profile link`: the public handle, and what Fragment knows about it."""
 
+    #: No default: `omit_defaults` would drop the reassuring answer and
+    #: leave a caller unable to tell "public" from "not reported".
+    resolvable_by_strangers: bool
     link: str = ""
     username: str | None = None
     user_id: int | None = None
@@ -202,7 +205,6 @@ class ProfileLink(Model):
     qr_path: str | None = None
     #: `fragment.getCollectibleInfo`, when `--collectible` was given.
     collectible: dict[str, Any] | None = None
-    resolvable_by_strangers: bool = True
 
 
 class AdminedChannel(Model):

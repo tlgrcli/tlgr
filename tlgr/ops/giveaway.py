@@ -46,14 +46,6 @@ from tlgr.ops._spec import OpContext, OperationSpec
 
 __all__ = [name for name in dir() if name.startswith("SPEC_")]
 
-#: `giveawayInfo.disallowed_reason` → the word tlgr reports.
-DISALLOWED = {
-    "GiveawayInfoDisallowedCountry": "disallowed-country",
-    "GiveawayInfoDisallowedAdminRequired": "admin",
-    "GiveawayInfoDisallowedJoinedTooEarly": "joined-too-early",
-}
-
-
 # ---------------------------------------------------------------------------
 # giveaway get
 # ---------------------------------------------------------------------------
@@ -81,7 +73,7 @@ async def get(ctx: OpContext, req: GetReq) -> GiveawayInfo:
     peer = await _settings.resolve(ctx, req.chat)
     chat_id = _settings.peer_of(peer)
     raw = await handle(fn.GetGiveawayInfoRequest(peer=peer, msg_id=int(req.msg_id)))
-    finished = type(raw).__name__ == "PaymentsGiveawayInfoResults"
+    finished = type(raw).__name__.endswith("GiveawayInfoResults")
     info = GiveawayInfo(
         chat_id=chat_id,
         msg_id=int(req.msg_id),
@@ -95,12 +87,15 @@ async def get(ctx: OpContext, req: GetReq) -> GiveawayInfo:
         activated_count=getattr(raw, "activated_count", None),
         until_date=fmt_dt(getattr(raw, "finish_date", None)),
         stars=getattr(raw, "stars_prize", None),
+        winners_count=getattr(raw, "winners_count", None),
     )
 
     media = await _giveaway_media(ctx, peer, int(req.msg_id))
     if media is not None:
-        info.winners_count = getattr(media, "quantity", None) or getattr(
-            media, "winners_count", None
+        info.winners_count = (
+            info.winners_count
+            or getattr(media, "quantity", None)
+            or getattr(media, "winners_count", None)
         )
         info.months = getattr(media, "months", None)
         info.only_new_subscribers = bool(getattr(media, "only_new_subscribers", False))
@@ -121,17 +116,18 @@ async def get(ctx: OpContext, req: GetReq) -> GiveawayInfo:
 
 
 def _disallowed_word(raw: Any) -> str | None:
-    """The `giveawayInfo` reason, whichever of the three flavours it is."""
-    for reason in getattr(raw, "disallowed_reason", None) or []:
-        word = DISALLOWED.get(type(reason).__name__)
-        if word:
-            return word
-    if getattr(raw, "admin_disallowed", False):
+    """Why this account cannot take part, as one word.
+
+    `giveawayInfo` spells the three refusals as three unrelated optional
+    fields — a country code, a chat id and a date — so the mapping happens
+    once, here, rather than in whatever reads the answer.
+    """
+    if getattr(raw, "disallowed_country", None):
+        return "disallowed-country"
+    if getattr(raw, "admin_disallowed_chat_id", None):
         return "admin"
     if getattr(raw, "joined_too_early_date", None):
         return "joined-too-early"
-    if getattr(raw, "disallowed_country", None):
-        return "disallowed-country"
     return None
 
 
@@ -303,11 +299,12 @@ async def _received_codes(ctx: OpContext) -> Page[PrepaidGiveaway]:
         except Exception as exc:
             ctx.warn(f"could not check the code {slug}: {exc}")
             continue
+        days = getattr(checked, "days", None)
         rows.append(
             PrepaidGiveaway(
                 id=0,
                 quantity=1,
-                months=getattr(checked, "months", None),
+                months=int(days) // 30 if days else None,
                 slug=slug,
                 used=getattr(checked, "used_date", None) is not None,
                 date=fmt_dt(getattr(checked, "date", None)),

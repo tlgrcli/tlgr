@@ -83,7 +83,7 @@ class ExceptionsCleared(Model):
 
 
 class NotifyReset(Model):
-    ok: bool = True
+    ok: bool
 
 
 class Ringtone(Model):

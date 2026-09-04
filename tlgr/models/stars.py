@@ -83,9 +83,9 @@ class StarsRevenue(Model):
 class StarsUrl(Model):
     """A Fragment URL. Opening it — and the transfer — is the human's job."""
 
-    url: str = ""
     #: withdrawal | ads
-    kind: str = "withdrawal"
+    kind: str
+    url: str = ""
     chat_id: int = 0
     amount: int | None = None
     ton: bool = False
@@ -95,7 +95,7 @@ class StarsRefulfill(Model):
     """Re-joining a lapsed Star subscription, reported and not performed."""
 
     id: str
-    ok: bool = False
+    ok: bool
     can_refulfill: bool | None = None
     stars: int | None = None
     reason: str = ""

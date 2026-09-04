@@ -618,6 +618,7 @@ async def message_set(ctx: OpContext, req: MessageSetReq) -> BusinessMessage:
         ctx.emit("business_message", {"kind": kind, "shortcut_id": shortcut_id})
         return BusinessMessage(
             kind=kind,
+            enabled=True,
             shortcut_id=shortcut_id,
             shortcut=req.shortcut,
             no_activity_days=req.no_activity_days,
@@ -648,6 +649,7 @@ async def message_set(ctx: OpContext, req: MessageSetReq) -> BusinessMessage:
     ctx.emit("business_message", {"kind": kind, "shortcut_id": shortcut_id})
     return BusinessMessage(
         kind=kind,
+        enabled=True,
         shortcut_id=shortcut_id,
         shortcut=req.shortcut,
         schedule=word,

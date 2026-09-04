@@ -1382,15 +1382,15 @@ async def auction_list(ctx: OpContext, req: AuctionListReq) -> Page[GiftAuction]
         if req.gift_id is None:
             raise UsageError("--won needs --gift-id <id>", field="gift_id")
         result = await handle(fn.GetStarGiftAuctionAcquiredGiftsRequest(gift_id=int(req.gift_id)))
-        known = _settings.entity_map(result)
         rows = [
             GiftAuction(
-                auction=str(getattr(gift, "slug", "") or ""),
+                auction=str(req.gift_id),
                 gift_id=int(req.gift_id),
-                slug=_unique(gift, known).slug,
+                my_bid=int(getattr(row, "bid_amount", 0) or 0) or None,
+                ends_at=fmt_dt(getattr(row, "date", None)),
                 state="won",
             )
-            for gift in getattr(result, "gifts", None) or []
+            for row in getattr(result, "gifts", None) or []
         ]
         return Page(items=rows, has_more=False, total=len(rows))
 
@@ -1398,20 +1398,32 @@ async def auction_list(ctx: OpContext, req: AuctionListReq) -> Page[GiftAuction]
     rows = []
     for raw in getattr(result, "auctions", None) or []:
         gift = getattr(raw, "gift", None)
-        my_bid, _ = _settings.stars_of(getattr(raw, "my_bid", None))
-        min_bid, _ = _settings.stars_of(getattr(raw, "min_bid_amount", None))
+        state = getattr(raw, "state", None)
+        user = getattr(raw, "user_state", None)
+        gift_id = int(getattr(gift, "gift_id", 0) or getattr(gift, "id", 0) or 0)
+        slug = getattr(gift, "slug", None)
         rows.append(
             GiftAuction(
-                auction=str(getattr(gift, "slug", "") or getattr(raw, "gift_id", "") or ""),
-                gift_id=getattr(raw, "gift_id", None) or getattr(gift, "gift_id", None),
-                slug=getattr(gift, "slug", None),
-                my_bid=my_bid or None,
-                min_bid=min_bid or None,
-                ends_at=fmt_dt(getattr(raw, "end_date", None)),
-                state=type(raw).__name__.removeprefix("StarGiftAuction").lower() or "active",
+                auction=slug or str(gift_id),
+                gift_id=gift_id or None,
+                slug=slug,
+                my_bid=getattr(user, "bid_amount", None),
+                min_bid=getattr(state, "min_bid_amount", None),
+                ends_at=fmt_dt(getattr(state, "end_date", None)),
+                state=_state_word(state),
             )
         )
     return Page(items=rows, has_more=False, total=len(rows))
+
+
+def _state_word(state: Any) -> str:
+    """`starGiftAuctionState*` as one word. `finished` always wins a race."""
+    name = type(state).__name__
+    if name == "StarGiftAuctionStateFinished":
+        return "finished"
+    if name == "StarGiftAuctionStateNotModified":
+        return "not-modified"
+    return "active"
 
 
 SPEC_AUCTION_LIST = OperationSpec(
@@ -1465,44 +1477,67 @@ async def auction_get(ctx: OpContext, req: AuctionGetReq) -> Any:
         else types.InputStarGiftAuctionSlug(slug=_settings.slug_of(text))
     )
     version = int(req.version)
+    seen = -1
     while True:
         raw = await handle(fn.GetStarGiftAuctionStateRequest(auction=auction, version=version))
-        state = _auction_state(text, raw)
-        if state.version >= version:
+        state = _auction_state(text, raw, with_position=req.with_position)
+        # A state only counts when its version *increased*; a finished state
+        # always wins, because a slow reply must not overwrite the end.
+        last = not req.watch or state.finished
+        if state.finished or state.version > seen:
+            seen = state.version
             version = state.version
-            yield state
-        if not req.watch or state.finished:
+            yield Page(items=[state], has_more=not last)
+        if last:
             return
 
 
-def _auction_state(name: str, raw: Any) -> GiftAuctionState:
-    my_bid, _ = _settings.stars_of(getattr(raw, "my_bid", None))
-    min_bid, _ = _settings.stars_of(getattr(raw, "min_bid_amount", None))
-    kind = type(raw).__name__.removeprefix("StarGiftAuctionState").lower()
+def _auction_state(name: str, raw: Any, *, with_position: bool = False) -> GiftAuctionState:
+    """`payments.starGiftAuctionState` flattened.
+
+    The server nests three things — the gift, the auction and *my* side of
+    it — and the numbers a bidder wants are spread across all three.
+    """
+    inner = getattr(raw, "state", None)
+    user = getattr(raw, "user_state", None)
+    word = _state_word(inner)
+    position = None
+    if with_position:
+        bid = getattr(user, "bid_amount", None)
+        if bid is not None:
+            levels = getattr(inner, "bid_levels", None) or []
+            position = 1 + sum(
+                1 for level in levels if int(getattr(level, "amount", 0) or 0) > int(bid)
+            )
     return GiftAuctionState(
         auction=name,
-        state=kind or "active",
-        version=int(getattr(raw, "version", 0) or 0),
-        min_bid_amount=min_bid or None,
-        my_bid=my_bid or None,
-        position=getattr(raw, "position", None),
-        ends_at=fmt_dt(getattr(raw, "end_date", None)),
+        state=word,
+        version=int(getattr(inner, "version", 0) or 0),
+        min_bid_amount=getattr(inner, "min_bid_amount", None),
+        my_bid=getattr(user, "bid_amount", None),
+        position=position,
+        ends_at=fmt_dt(getattr(inner, "end_date", None)),
         timeout=getattr(raw, "timeout", None),
-        finished=kind == "finished",
+        finished=word == "finished",
     )
 
 
 SPEC_AUCTION_GET = OperationSpec(
     id="gift.auction.get",
     request=AuctionGetReq,
-    response=GiftAuctionState,
+    response=Page[GiftAuctionState],
     impl=auction_get,
     summary="Auction state, bid ladder and my position",
     stream=True,
     idempotent=True,
     columns=("auction", "state", "version", "min_bid_amount", "my_bid", "position", "ends_at"),
     headers=("Auction", "State", "Version", "Min bid", "My bid", "Place", "Ends"),
-    example={"auction": "PlushPepe-42", "state": "active", "version": 3, "min_bid_amount": 5500},
+    example={
+        "items": [
+            {"auction": "PlushPepe-42", "state": "active", "version": 3, "min_bid_amount": 5500}
+        ],
+        "has_more": False,
+    },
     example_args="gift auction get PlushPepe-42",
     covers=("auction.position-estimate", "auction.state"),
     tags=frozenset({"agent-safe"}),

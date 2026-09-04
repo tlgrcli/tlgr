@@ -811,6 +811,96 @@ class World:
     subscriptions: list[Any] = field(default_factory=list)
     subscriptions_next: str = ""
 
+    # -- the settings world (PR-12) ----------------------------------------
+    #
+    # Nine command groups share one Settings screen in the official clients,
+    # and they share one world here for the same reason: `privacy set` writes
+    # a rule vector that `privacy get` must read back, `notify set` writes an
+    # exception `notify exception list` must find, and a gift that has been
+    # converted must stop appearing in `gift list`. Canned replies could not
+    # express any of that.
+
+    #: `inputPrivacyKey*` class name -> the rule vector the server holds.
+    privacy: dict[str, list[Any]] = field(default_factory=dict)
+    #: "users" | "chats" | "broadcasts" -> the scope's `peerNotifySettings`.
+    notify_scopes: dict[str, Any] = field(default_factory=dict)
+    #: marked chat id -> its notification exception.
+    notify_peers: dict[int, Any] = field(default_factory=dict)
+    reactions_notify: Any = None
+    notify_reset_calls: int = 0
+    ringtones: list[Any] = field(default_factory=list)
+    #: slug -> `types.Theme`, plus what is installed and what is saved.
+    themes: dict[str, Any] = field(default_factory=dict)
+    installed_theme: str | None = None
+    saved_themes: list[str] = field(default_factory=list)
+    languages: list[Any] = field(default_factory=list)
+    web_browser: Any = None
+    peer_colors: list[Any] = field(default_factory=list)
+    profile_colors: list[Any] = field(default_factory=list)
+    background_emojis: list[Any] = field(default_factory=list)
+    #: "recent" | "default" | "collectible" -> emoji statuses.
+    emoji_statuses: dict[str, list[Any]] = field(default_factory=dict)
+    emoji_status_groups: list[Any] = field(default_factory=list)
+    recent_statuses_cleared: int = 0
+    #: The channels `channels.getAdminedPublicChannels` answers with.
+    admined_public: list[int] = field(default_factory=list)
+    #: `fragment.getCollectibleInfo`.
+    collectible: Any = None
+    #: Where `account.updateProfile`/`updateBirthday`/`updatePersonalChannel` land.
+    profile: dict[str, Any] = field(default_factory=dict)
+    my_color: Any = None
+    my_profile_color: Any = None
+
+    # -- the business world ------------------------------------------------
+
+    business: dict[str, Any] = field(default_factory=dict)
+    connected_bots: list[Any] = field(default_factory=list)
+    bot_connection: Any = None
+    confirmed_bots: list[int] = field(default_factory=list)
+    #: marked chat id -> "paused" | "resumed" | "removed" for the connected bot.
+    bot_chat_state: dict[int, str] = field(default_factory=dict)
+    chat_links: dict[str, Any] = field(default_factory=dict)
+    #: shortcut id -> {"shortcut": name, "messages": [types.Message]}.
+    quick_replies: dict[int, dict[str, Any]] = field(default_factory=dict)
+    quick_reply_order: list[int] = field(default_factory=list)
+    next_shortcut_id: int = 1
+
+    # -- the gift and Stars world ------------------------------------------
+
+    #: The catalogue, as `types.StarGift`.
+    gift_catalog: list[Any] = field(default_factory=list)
+    #: marked peer id -> the `savedStarGift` rows on that profile.
+    saved_gifts: dict[int, list[Any]] = field(default_factory=dict)
+    #: slug -> `types.StarGiftUnique`.
+    unique_gifts: dict[str, Any] = field(default_factory=dict)
+    #: marked peer id -> `types.StarGiftCollection` rows, in display order.
+    gift_collections: dict[int, list[Any]] = field(default_factory=dict)
+    next_collection_id: int = 1
+    #: gift id -> the collectibles listed for resale.
+    resale_gifts: dict[int, list[Any]] = field(default_factory=dict)
+    #: gift id -> the sample attributes an upgrade would draw from.
+    upgrade_preview: dict[int, list[Any]] = field(default_factory=dict)
+    auctions: list[Any] = field(default_factory=list)
+    auction_states: list[Any] = field(default_factory=list)
+    auction_acquired: dict[int, list[Any]] = field(default_factory=dict)
+    gift_offers: list[int] = field(default_factory=list)
+    star_transactions: list[Any] = field(default_factory=list)
+    star_subscriptions: list[Any] = field(default_factory=list)
+    star_nanos: int = 0
+    ton_balance: int = 0
+    stars_revenue: Any = None
+    stars_url: str = "https://fragment.com/stars/withdraw?token=fake"
+    paid_message_revenue: int = 0
+    #: slug -> `types.payments.CheckedGiftCode`.
+    gift_codes: dict[str, Any] = field(default_factory=dict)
+    applied_codes: list[str] = field(default_factory=list)
+    premium_promo: Any = None
+    giveaway_info: Any = None
+    #: marked channel id -> its prepaid giveaways.
+    prepaid_giveaways: dict[int, list[Any]] = field(default_factory=dict)
+    launched_giveaways: list[int] = field(default_factory=list)
+    premium_gift_options: list[Any] = field(default_factory=list)
+
     # -- behaviour knobs ---------------------------------------------------
 
     _fail_next: dict[str, BaseException] = field(default_factory=dict)
@@ -6458,6 +6548,955 @@ class FakeTelegramClient:
     def _raw_BotCancelStarsSubscriptionRequest(self, request: Any) -> Any:
         return True
 
+    # ======================================================================
+    # The settings world (PR-12)
+    # ======================================================================
+    #
+    # `profile`, `privacy`, `notify`, `settings`, `business`, `premium`,
+    # `stars`, `gift` and `giveaway`. A few of the names below already exist
+    # earlier in this class as canned stubs from an earlier PR; these
+    # definitions replace them, because a stub that always answers the same
+    # thing cannot express "I wrote this, now read it back", which is what
+    # every test in this group is about.
+
+    # -- profile -----------------------------------------------------------
+
+    def _raw_UpdateProfileRequest(self, request: Any) -> Any:
+        for name in ("first_name", "last_name", "about"):
+            value = getattr(request, name, None)
+            if value is not None:
+                self.world.profile[name] = value
+                if name == "about":
+                    self._self_full()["about"] = value
+                else:
+                    setattr(self.world.me, name, value)
+        return self.world.me
+
+    def _self_full(self) -> dict[str, Any]:
+        """The `userFull` overrides for my own account.
+
+        `world.user_full` already feeds `users.getFullUser`; writing here
+        rather than into a second dict is what makes `profile update` and
+        `profile get` talk about the same bio.
+        """
+        return self.world.user_full.setdefault(int(self.world.me.id), {})
+
+    def _raw_UpdateBirthdayRequest(self, request: Any) -> bool:
+        self.world.profile["birthday"] = request.birthday
+        self.world.birthdays[int(self.world.me.id)] = request.birthday
+        return True
+
+    def _raw_UpdatePersonalChannelRequest(self, request: Any) -> bool:
+        raw_id = getattr(request.channel, "channel_id", None)
+        self.world.profile["personal_channel_id"] = raw_id
+        self._self_full()["personal_channel_id"] = raw_id
+        return True
+
+    def _raw_UpdateStatusRequest(self, request: Any) -> bool:
+        self.world.profile["offline"] = bool(request.offline)
+        return True
+
+    def _raw_UpdateColorRequest(self, request: Any) -> bool:
+        if getattr(request, "for_profile", False):
+            self.world.my_profile_color = request.color
+            self.world.me.profile_color = request.color
+        else:
+            self.world.my_color = request.color
+            self.world.me.color = request.color
+        return True
+
+    def _raw_UpdateEmojiStatusRequest(self, request: Any) -> bool:
+        self.world.profile["emoji_status"] = request.emoji_status
+        self.world.me.emoji_status = request.emoji_status
+        return True
+
+    def _raw_GetRecentEmojiStatusesRequest(self, request: Any) -> Any:
+        return types.account.EmojiStatuses(
+            hash=0, statuses=list(self.world.emoji_statuses.get("recent", []))
+        )
+
+    def _raw_GetDefaultEmojiStatusesRequest(self, request: Any) -> Any:
+        return types.account.EmojiStatuses(
+            hash=0, statuses=list(self.world.emoji_statuses.get("default", []))
+        )
+
+    def _raw_GetCollectibleEmojiStatusesRequest(self, request: Any) -> Any:
+        return types.account.EmojiStatuses(
+            hash=0, statuses=list(self.world.emoji_statuses.get("collectible", []))
+        )
+
+    def _raw_ClearRecentEmojiStatusesRequest(self, request: Any) -> bool:
+        self.world.emoji_statuses["recent"] = []
+        self.world.recent_statuses_cleared += 1
+        return True
+
+    def _raw_GetPeerColorsRequest(self, request: Any) -> Any:
+        return types.help.PeerColors(hash=0, colors=list(self.world.peer_colors))
+
+    def _raw_GetPeerProfileColorsRequest(self, request: Any) -> Any:
+        return types.help.PeerColors(hash=0, colors=list(self.world.profile_colors))
+
+    def _raw_GetAdminedPublicChannelsRequest(self, request: Any) -> Any:
+        return types.messages.Chats(
+            chats=[
+                self.world.chats[raw]
+                for raw in self.world.admined_public
+                if raw in self.world.chats
+            ]
+        )
+
+    def _raw_GetCollectibleInfoRequest(self, request: Any) -> Any:
+        if self.world.collectible is None:
+            from telethon.errors import RPCError
+
+            raise RPCError(request, "USERNAME_NOT_OCCUPIED", 400)
+        return self.world.collectible
+
+    def _raw_UploadProfilePhotoRequest(self, request: Any) -> Any:
+        photo = make_photo(5151 + len(self.world.user_photos.get(int(self.world.me.id), [])))
+        self.world.user_photos.setdefault(int(self.world.me.id), []).insert(0, photo)
+        if not getattr(request, "fallback", False):
+            self.world.me.photo = types.UserProfilePhoto(photo_id=photo.id, dc_id=2)
+        return types.photos.Photo(photo=photo, users=[self.world.me])
+
+    def _raw_UpdateProfilePhotoRequest(self, request: Any) -> Any:
+        wanted = int(getattr(request.id, "id", 0) or 0)
+        photos = self.world.user_photos.setdefault(int(self.world.me.id), [])
+        for photo in photos:
+            if int(photo.id) == wanted:
+                photos.remove(photo)
+                photos.insert(0, photo)
+                self.world.me.photo = types.UserProfilePhoto(photo_id=photo.id, dc_id=2)
+                return types.photos.Photo(photo=photo, users=[self.world.me])
+        return types.photos.Photo(photo=types.PhotoEmpty(id=wanted), users=[])
+
+    def _raw_DeletePhotosRequest(self, request: Any) -> Any:
+        wanted = {int(getattr(item, "id", 0) or 0) for item in request.id}
+        photos = self.world.user_photos.setdefault(int(self.world.me.id), [])
+        self.world.user_photos[int(self.world.me.id)] = [
+            photo for photo in photos if int(photo.id) not in wanted
+        ]
+        return sorted(wanted)
+
+    def _raw_GetSavedMusicIdsRequest(self, request: Any) -> Any:
+        return types.account.SavedMusicIds(
+            ids=[int(d.id) for d in self.world.saved_music.get(int(self.world.me.id), [])]
+        )
+
+    def _raw_GetSavedMusicByIDRequest(self, request: Any) -> Any:
+        wanted = {int(getattr(d, "id", 0) or 0) for d in request.documents}
+        found = [
+            document
+            for document in self.world.saved_music.get(int(self.world.me.id), [])
+            if int(document.id) in wanted
+        ]
+        return types.users.SavedMusic(count=len(found), documents=found)
+
+    # -- privacy -----------------------------------------------------------
+
+    def _raw_GetPrivacyRequest(self, request: Any) -> Any:
+        return types.account.PrivacyRules(
+            rules=list(self.world.privacy.get(type(request.key).__name__, [])),
+            chats=list(self.world.chats.values()),
+            users=list(self.world.users.values()),
+        )
+
+    def _raw_SetPrivacyRequest(self, request: Any) -> Any:
+        stored: list[Any] = []
+        for rule in request.rules:
+            name = type(rule).__name__.replace("InputPrivacyValue", "PrivacyValue")
+            builder = getattr(types, name, None)
+            if builder is None:  # pragma: no cover - every input has an output twin
+                continue
+            users = getattr(rule, "users", None)
+            chats = getattr(rule, "chats", None)
+            if users is not None:
+                stored.append(builder(users=[self._user_id_of(u) for u in users]))
+            elif chats is not None:
+                stored.append(builder(chats=[int(c) for c in chats]))
+            else:
+                stored.append(builder())
+        self.world.privacy[type(request.key).__name__] = stored
+        return types.account.PrivacyRules(
+            rules=stored,
+            chats=list(self.world.chats.values()),
+            users=list(self.world.users.values()),
+        )
+
+    def _raw_GetPaidMessagesRevenueRequest(self, request: Any) -> Any:
+        return types.account.PaidMessagesRevenue(stars_amount=self.world.paid_message_revenue)
+
+    # -- notifications -----------------------------------------------------
+
+    #: `inputNotify*` class name -> the scope key the world stores it under.
+    SCOPE_NAMES = {
+        "InputNotifyUsers": "users",
+        "InputNotifyChats": "chats",
+        "InputNotifyBroadcasts": "broadcasts",
+    }
+
+    def _raw_GetNotifySettingsRequest(self, request: Any) -> Any:
+        scope = self.SCOPE_NAMES.get(type(request.peer).__name__)
+        if scope is not None:
+            return self.world.notify_scopes.get(scope) or types.PeerNotifySettings(silent=False)
+        peer = getattr(request.peer, "peer", None)
+        if peer is None:
+            return types.PeerNotifySettings(silent=False)
+        chat_id = self._chat_id(peer)
+        stored = self.world.notify_peers.get(chat_id)
+        return stored if stored is not None else self.world.notify_of(chat_id)
+
+    def _raw_UpdateNotifySettingsRequest(self, request: Any) -> bool:
+        settings = request.settings
+        scope = self.SCOPE_NAMES.get(type(request.peer).__name__)
+        if scope is not None:
+            self.world.notify_scopes[scope] = _merged_notify(
+                self.world.notify_scopes.get(scope), settings
+            )
+            return True
+        peer = getattr(request.peer, "peer", None)
+        if peer is None:
+            return True
+        chat_id = self._chat_id(peer)
+        row = self.world.dialog(chat_id)
+        if _is_empty_notify(settings):
+            self.world.notify_peers.pop(chat_id, None)
+            row.mute_until = None
+            row.silent = None
+            return True
+        merged = _merged_notify(self.world.notify_peers.get(chat_id), settings)
+        self.world.notify_peers[chat_id] = merged
+        row.mute_until = getattr(merged, "mute_until", None)
+        row.silent = getattr(merged, "silent", None)
+        return True
+
+    def _raw_GetNotifyExceptionsRequest(self, request: Any) -> Any:
+        return types.Updates(
+            updates=[
+                types.UpdateNotifySettings(
+                    peer=types.NotifyPeer(peer=_peer_for(chat_id)), notify_settings=settings
+                )
+                for chat_id, settings in self.world.notify_peers.items()
+            ],
+            users=list(self.world.users.values()),
+            chats=list(self.world.chats.values()),
+            date=datetime.now(timezone.utc),
+            seq=0,
+        )
+
+    def _raw_ResetNotifySettingsRequest(self, request: Any) -> bool:
+        self.world.notify_peers.clear()
+        self.world.notify_scopes.clear()
+        self.world.notify_reset_calls += 1
+        return True
+
+    def _raw_GetReactionsNotifySettingsRequest(self, request: Any) -> Any:
+        return self.world.reactions_notify or types.ReactionsNotifySettings(
+            sound=types.NotificationSoundDefault(), show_previews=True
+        )
+
+    def _raw_SetReactionsNotifySettingsRequest(self, request: Any) -> Any:
+        self.world.reactions_notify = request.settings
+        return request.settings
+
+    def _raw_GetSavedRingtonesRequest(self, request: Any) -> Any:
+        return types.account.SavedRingtones(hash=0, ringtones=list(self.world.ringtones))
+
+    def _raw_UploadRingtoneRequest(self, request: Any) -> Any:
+        self.world.next_document_id += 1
+        document = make_document(
+            self.world.next_document_id,
+            mime=request.mime_type,
+            attributes=[types.DocumentAttributeFilename(file_name=request.file_name)],
+        )
+        return self.world.add_document(document)
+
+    def _raw_SaveRingtoneRequest(self, request: Any) -> Any:
+        wanted = int(getattr(request.id, "id", 0) or 0)
+        if request.unsave:
+            self.world.ringtones = [r for r in self.world.ringtones if int(r.id) != wanted]
+            return types.account.SavedRingtone()
+        document = self.world.documents.get(wanted) or make_document(wanted)
+        self.world.ringtones.append(document)
+        return types.account.SavedRingtone()
+
+    # -- settings ----------------------------------------------------------
+
+    def _raw_GetDefaultHistoryTTLRequest(self, request: Any) -> Any:
+        return types.DefaultHistoryTTL(period=int(self.world.profile.get("default_ttl", 0) or 0))
+
+    def _raw_SetDefaultHistoryTTLRequest(self, request: Any) -> bool:
+        self.world.profile["default_ttl"] = int(request.period)
+        return True
+
+    def _raw_ToggleSponsoredMessagesRequest(self, request: Any) -> bool:
+        self._self_full()["sponsored_enabled"] = bool(request.enabled)
+        return True
+
+    def _browser(self) -> Any:
+        if self.world.web_browser is None:
+            self.world.web_browser = types.account.WebBrowserSettings(
+                external_exceptions=[], inapp_exceptions=[], hash=0
+            )
+        return self.world.web_browser
+
+    def _raw_GetWebBrowserSettingsRequest(self, request: Any) -> Any:
+        return self._browser()
+
+    def _raw_UpdateWebBrowserSettingsRequest(self, request: Any) -> bool:
+        current = self._browser()
+        current.open_external_browser = (
+            bool(getattr(request, "open_external_browser", False)) or None
+        )
+        current.display_close_button = bool(getattr(request, "display_close_button", False)) or None
+        return True
+
+    def _raw_ToggleWebBrowserSettingsExceptionRequest(self, request: Any) -> bool:
+        current = self._browser()
+        domain = str(request.url).split("//")[-1].split("/")[0]
+        for vector in ("external_exceptions", "inapp_exceptions"):
+            setattr(
+                current,
+                vector,
+                [e for e in getattr(current, vector) if getattr(e, "domain", "") != domain],
+            )
+        if not getattr(request, "delete", False):
+            vector = (
+                "external_exceptions"
+                if getattr(request, "open_external_browser", False)
+                else "inapp_exceptions"
+            )
+            getattr(current, vector).append(
+                types.WebDomainException(domain=domain, url=request.url, title=domain)
+            )
+        return True
+
+    def _raw_DeleteWebBrowserSettingsExceptionsRequest(self, request: Any) -> bool:
+        current = self._browser()
+        current.external_exceptions = []
+        current.inapp_exceptions = []
+        return True
+
+    def _raw_GetLanguagesRequest(self, request: Any) -> Any:
+        return list(self.world.languages)
+
+    def _raw_GetLanguageRequest(self, request: Any) -> Any:
+        for language in self.world.languages:
+            if getattr(language, "lang_code", None) == request.lang_code:
+                return language
+        from telethon.errors import RPCError
+
+        raise RPCError(request, "LANG_PACK_INVALID", 400)
+
+    def _raw_GetThemesRequest(self, request: Any) -> Any:
+        return types.account.Themes(hash=0, themes=list(self.world.themes.values()))
+
+    def _raw_GetThemeRequest(self, request: Any) -> Any:
+        slug = getattr(request.theme, "slug", "")
+        theme = self.world.themes.get(slug)
+        if theme is None and self.world.themes:
+            from telethon.errors import RPCError
+
+            raise RPCError(request, "THEME_INVALID", 400)
+        # An empty theme world keeps the canned answer the link-resolution
+        # suite was written against.
+        return theme or types.Theme(id=1, access_hash=1, slug=slug or "Slug", title="Midnight")
+
+    def _raw_CreateThemeRequest(self, request: Any) -> Any:
+        slug = request.slug or request.title.lower()
+        theme = types.Theme(
+            id=900 + len(self.world.themes),
+            access_hash=1,
+            slug=slug,
+            title=request.title,
+            creator=True,
+        )
+        self.world.themes[slug] = theme
+        return theme
+
+    def _raw_UpdateThemeRequest(self, request: Any) -> Any:
+        slug = request.slug or getattr(request.theme, "slug", "")
+        theme = self.world.themes.get(slug)
+        if theme is None:
+            from telethon.errors import RPCError
+
+            raise RPCError(request, "THEME_INVALID", 400)
+        if request.title:
+            theme.title = request.title
+        return theme
+
+    def _raw_UploadThemeRequest(self, request: Any) -> Any:
+        self.world.next_document_id += 1
+        return self.world.add_document(
+            make_document(self.world.next_document_id, mime=request.mime_type)
+        )
+
+    def _raw_SaveThemeRequest(self, request: Any) -> bool:
+        slug = getattr(request.theme, "slug", "")
+        if request.unsave:
+            self.world.saved_themes = [s for s in self.world.saved_themes if s != slug]
+        elif slug not in self.world.saved_themes:
+            self.world.saved_themes.append(slug)
+        return True
+
+    def _raw_InstallThemeRequest(self, request: Any) -> bool:
+        self.world.installed_theme = getattr(request.theme, "slug", None)
+        return True
+
+    def _raw_GetUniqueGiftChatThemesRequest(self, request: Any) -> Any:
+        return types.account.Themes(hash=0, themes=list(self.world.themes.values()))
+
+    # -- business ----------------------------------------------------------
+
+    def _raw_UpdateBusinessWorkHoursRequest(self, request: Any) -> bool:
+        self.world.business["work_hours"] = request.business_work_hours
+        self._self_full()["business_work_hours"] = request.business_work_hours
+        return True
+
+    def _raw_UpdateBusinessLocationRequest(self, request: Any) -> bool:
+        address = getattr(request, "address", None)
+        self.world.business["location"] = (
+            types.BusinessLocation(address=address, geo_point=getattr(request, "geo_point", None))
+            if address
+            else None
+        )
+        self._self_full()["business_location"] = self.world.business["location"]
+        return True
+
+    def _raw_UpdateBusinessIntroRequest(self, request: Any) -> bool:
+        intro = getattr(request, "intro", None)
+        self.world.business["intro"] = (
+            types.BusinessIntro(title=intro.title, description=intro.description)
+            if intro is not None
+            else None
+        )
+        self._self_full()["business_intro"] = self.world.business["intro"]
+        return True
+
+    def _raw_UpdateBusinessGreetingMessageRequest(self, request: Any) -> bool:
+        message = getattr(request, "message", None)
+        self.world.business["greeting"] = (
+            types.BusinessGreetingMessage(
+                shortcut_id=message.shortcut_id,
+                recipients=_recipients_out(message.recipients),
+                no_activity_days=message.no_activity_days,
+            )
+            if message is not None
+            else None
+        )
+        self._self_full()["business_greeting_message"] = self.world.business["greeting"]
+        return True
+
+    def _raw_UpdateBusinessAwayMessageRequest(self, request: Any) -> bool:
+        message = getattr(request, "message", None)
+        self.world.business["away"] = (
+            types.BusinessAwayMessage(
+                shortcut_id=message.shortcut_id,
+                schedule=message.schedule,
+                recipients=_recipients_out(message.recipients),
+                offline_only=message.offline_only,
+            )
+            if message is not None
+            else None
+        )
+        self._self_full()["business_away_message"] = self.world.business["away"]
+        return True
+
+    def _raw_GetConnectedBotsRequest(self, request: Any) -> Any:
+        return types.account.ConnectedBots(
+            connected_bots=list(self.world.connected_bots),
+            users=list(self.world.users.values()),
+        )
+
+    def _raw_UpdateConnectedBotRequest(self, request: Any) -> Any:
+        bot_id = self._user_id_of(request.bot)
+        self.world.connected_bots = [
+            row for row in self.world.connected_bots if int(row.bot_id) != bot_id
+        ]
+        if not getattr(request, "deleted", False):
+            self.world.connected_bots.append(
+                types.ConnectedBot(
+                    bot_id=bot_id,
+                    recipients=_recipients_out(request.recipients, bot=True),
+                    rights=request.rights or types.BusinessBotRights(),
+                )
+            )
+        return self._updates()
+
+    def _raw_ConfirmBotConnectionRequest(self, request: Any) -> Any:
+        self.world.confirmed_bots.append(self._user_id_of(request.bot_id))
+        return self._updates()
+
+    def _raw_ToggleConnectedBotPausedRequest(self, request: Any) -> bool:
+        self.world.bot_chat_state[self._chat_id(request.peer)] = (
+            "paused" if request.paused else "resumed"
+        )
+        return True
+
+    def _raw_DisablePeerConnectedBotRequest(self, request: Any) -> bool:
+        self.world.bot_chat_state[self._chat_id(request.peer)] = "removed"
+        return True
+
+    def _raw_GetBusinessChatLinksRequest(self, request: Any) -> Any:
+        return types.account.BusinessChatLinks(
+            links=list(self.world.chat_links.values()), chats=[], users=[]
+        )
+
+    def _raw_CreateBusinessChatLinkRequest(self, request: Any) -> Any:
+        slug = f"link{len(self.world.chat_links) + 1}"
+        link = types.BusinessChatLink(
+            link=f"https://t.me/m/{slug}",
+            message=request.link.message,
+            views=0,
+            entities=list(request.link.entities or []),
+            title=request.link.title,
+        )
+        self.world.chat_links[slug] = link
+        return link
+
+    def _raw_EditBusinessChatLinkRequest(self, request: Any) -> Any:
+        link = self.world.chat_links.get(request.slug)
+        if link is None:
+            from telethon.errors import RPCError
+
+            raise RPCError(request, "BUSINESS_LINK_INVALID", 400)
+        link.message = request.link.message
+        link.title = request.link.title
+        return link
+
+    def _raw_DeleteBusinessChatLinkRequest(self, request: Any) -> bool:
+        self.world.chat_links.pop(request.slug, None)
+        return True
+
+    def _raw_ResolveBusinessChatLinkRequest(self, request: Any) -> Any:
+        link = self.world.chat_links.get(request.slug)
+        return types.account.ResolvedBusinessChatLinks(
+            peer=types.PeerUser(user_id=self.world.me.id),
+            message=getattr(link, "message", "") if link is not None else "",
+            chats=[],
+            users=[self.world.me],
+            entities=[],
+        )
+
+    # -- quick replies -----------------------------------------------------
+
+    def _raw_GetQuickRepliesRequest(self, request: Any) -> Any:
+        order = self.world.quick_reply_order or sorted(self.world.quick_replies)
+        rows = []
+        for shortcut_id in order:
+            entry = self.world.quick_replies.get(shortcut_id)
+            if entry is None:
+                continue
+            messages = entry.get("messages", [])
+            rows.append(
+                types.QuickReply(
+                    shortcut_id=shortcut_id,
+                    shortcut=entry["shortcut"],
+                    top_message=int(getattr(messages[-1], "id", 0) or 0) if messages else 0,
+                    count=len(messages),
+                )
+            )
+        return types.messages.QuickReplies(
+            quick_replies=rows,
+            messages=[m for e in self.world.quick_replies.values() for m in e.get("messages", [])],
+            chats=[],
+            users=[],
+        )
+
+    def _raw_GetQuickReplyMessagesRequest(self, request: Any) -> Any:
+        entry = self.world.quick_replies.get(int(request.shortcut_id), {})
+        return types.messages.Messages(
+            messages=list(entry.get("messages", [])), topics=[], chats=[], users=[]
+        )
+
+    def _raw_CheckQuickReplyShortcutRequest(self, request: Any) -> bool:
+        return True
+
+    def _raw_EditQuickReplyShortcutRequest(self, request: Any) -> bool:
+        entry = self.world.quick_replies.get(int(request.shortcut_id))
+        if entry is not None:
+            entry["shortcut"] = request.shortcut
+        return True
+
+    def _raw_DeleteQuickReplyShortcutRequest(self, request: Any) -> bool:
+        self.world.quick_replies.pop(int(request.shortcut_id), None)
+        self.world.quick_reply_order = [
+            i for i in self.world.quick_reply_order if i != int(request.shortcut_id)
+        ]
+        return True
+
+    def _raw_DeleteQuickReplyMessagesRequest(self, request: Any) -> Any:
+        entry = self.world.quick_replies.get(int(request.shortcut_id))
+        if entry is not None:
+            wanted = {int(i) for i in request.id}
+            entry["messages"] = [m for m in entry["messages"] if int(m.id) not in wanted]
+        return self._updates()
+
+    def _raw_ReorderQuickRepliesRequest(self, request: Any) -> bool:
+        self.world.quick_reply_order = [int(i) for i in request.order]
+        return True
+
+    def _raw_SendQuickReplyMessagesRequest(self, request: Any) -> Any:
+        entry = self.world.quick_replies.get(int(request.shortcut_id), {})
+        chat_id = self._chat_id(request.peer)
+        wanted = {int(i) for i in request.id}
+        sent = [
+            self.world.add_message(chat_id, getattr(m, "message", ""), out=True)
+            for m in entry.get("messages", [])
+            if int(m.id) in wanted
+        ]
+        return self._updates(*sent)
+
+    # -- premium and giveaways ---------------------------------------------
+
+    def _raw_GetPremiumPromoRequest(self, request: Any) -> Any:
+        return self.world.premium_promo or types.help.PremiumPromo(
+            status_text="Telegram Premium",
+            status_entities=[],
+            video_sections=["stories"],
+            videos=[],
+            period_options=[
+                types.PremiumSubscriptionOption(
+                    months=3,
+                    currency="XTR",
+                    amount=1000,
+                    bot_url="https://t.me/PremiumBot?start=promo",
+                )
+            ],
+            users=[],
+        )
+
+    def _raw_GetPremiumGiftCodeOptionsRequest(self, request: Any) -> Any:
+        return list(self.world.premium_gift_options)
+
+    def _raw_CheckGiftCodeRequest(self, request: Any) -> Any:
+        found = self.world.gift_codes.get(request.slug)
+        if found is None and self.world.gift_codes:
+            from telethon.errors import RPCError
+
+            raise RPCError(request, "GIFT_SLUG_INVALID", 400)
+        return found or types.payments.CheckedGiftCode(
+            date=datetime.now(timezone.utc),
+            days=90,
+            chats=[],
+            users=[],
+            used_date=datetime.now(timezone.utc),
+        )
+
+    def _raw_ApplyGiftCodeRequest(self, request: Any) -> Any:
+        self.world.applied_codes.append(request.slug)
+        found = self.world.gift_codes.get(request.slug)
+        if found is not None:
+            found.used_date = datetime.now(timezone.utc)
+        return self._updates()
+
+    def _raw_GetGiveawayInfoRequest(self, request: Any) -> Any:
+        if self.world.giveaway_info is None:
+            return types.payments.GiveawayInfo(
+                start_date=datetime.now(timezone.utc), participating=True
+            )
+        return self.world.giveaway_info
+
+    def _raw_LaunchPrepaidGiveawayRequest(self, request: Any) -> Any:
+        self.world.launched_giveaways.append(int(request.giveaway_id))
+        message = self.world.add_message(self._chat_id(request.peer), "giveaway", out=True)
+        return self._updates(message)
+
+    # -- Stars -------------------------------------------------------------
+
+    def _raw_GetStarsStatusRequest(self, request: Any) -> Any:
+        ton = bool(getattr(request, "ton", False))
+        amount = self.world.ton_balance if ton else self.world.star_balance
+        return types.payments.StarsStatus(
+            balance=types.StarsAmount(amount=amount, nanos=self.world.star_nanos),
+            chats=[],
+            users=[],
+            subscriptions=list(self.world.subscriptions),
+        )
+
+    def _raw_GetStarsTransactionsRequest(self, request: Any) -> Any:
+        rows = list(self.world.star_transactions) or [
+            types.StarsTransaction(
+                id="tx1",
+                amount=types.StarsAmount(amount=50, nanos=0),
+                date=datetime.now(timezone.utc),
+                peer=types.StarsTransactionPeerFragment(),
+                title="Subscription",
+            )
+        ]
+        if getattr(request, "inbound", False):
+            rows = [r for r in rows if int(getattr(r.amount, "amount", 0)) > 0]
+        if getattr(request, "outbound", False):
+            rows = [r for r in rows if int(getattr(r.amount, "amount", 0)) < 0]
+        return types.payments.StarsStatus(
+            balance=types.StarsAmount(amount=self.world.star_balance, nanos=0),
+            chats=[],
+            users=list(self.world.users.values()),
+            history=rows,
+        )
+
+    def _raw_GetStarsTransactionsByIDRequest(self, request: Any) -> Any:
+        wanted = {getattr(item, "id", "") for item in request.id}
+        return types.payments.StarsStatus(
+            balance=types.StarsAmount(amount=self.world.star_balance, nanos=0),
+            chats=[],
+            users=list(self.world.users.values()),
+            history=[r for r in self.world.star_transactions if r.id in wanted],
+        )
+
+    def _raw_GetStarsRevenueWithdrawalUrlRequest(self, request: Any) -> Any:
+        return types.payments.StarsRevenueWithdrawalUrl(url=self.world.stars_url)
+
+    def _raw_GetStarsRevenueAdsAccountUrlRequest(self, request: Any) -> Any:
+        return types.payments.StarsRevenueAdsAccountUrl(
+            url="https://ads.telegram.org/account?token=fake"
+        )
+
+    # -- gifts -------------------------------------------------------------
+
+    def _raw_GetStarGiftsRequest(self, request: Any) -> Any:
+        return types.payments.StarGifts(
+            hash=0, gifts=list(self.world.gift_catalog), chats=[], users=[]
+        )
+
+    def _raw_GetSavedStarGiftsRequest(self, request: Any) -> Any:
+        rows = list(self.world.saved_gifts.get(self._chat_id(request.peer), []))
+        if getattr(request, "exclude_unsaved", False):
+            rows = [r for r in rows if not getattr(r, "unsaved", False)]
+        if getattr(request, "exclude_unique", False):
+            rows = [r for r in rows if type(r.gift).__name__ != "StarGiftUnique"]
+        if getattr(request, "collection_id", None):
+            wanted = int(request.collection_id)
+            rows = [r for r in rows if wanted in (getattr(r, "collection_id", None) or [])]
+        return types.payments.SavedStarGifts(
+            count=len(rows),
+            gifts=rows,
+            chats=list(self.world.chats.values()),
+            users=list(self.world.users.values()),
+        )
+
+    def _raw_GetSavedStarGiftRequest(self, request: Any) -> Any:
+        wanted = [self._gift_key(item) for item in request.stargift]
+        found = [
+            row
+            for rows in self.world.saved_gifts.values()
+            for row in rows
+            if self._saved_key(row) in wanted
+        ]
+        return types.payments.SavedStarGifts(
+            count=len(found),
+            gifts=found,
+            chats=list(self.world.chats.values()),
+            users=list(self.world.users.values()),
+        )
+
+    def _gift_key(self, ref: Any) -> Any:
+        for name in ("msg_id", "saved_id", "slug"):
+            value = getattr(ref, name, None)
+            if value is not None:
+                return (name, value)
+        return ("", None)
+
+    def _saved_key(self, row: Any) -> Any:
+        if getattr(row, "msg_id", None):
+            return ("msg_id", row.msg_id)
+        if getattr(row, "saved_id", None):
+            return ("saved_id", row.saved_id)
+        return ("slug", getattr(getattr(row, "gift", None), "slug", None))
+
+    def _find_saved(self, ref: Any) -> Any:
+        wanted = self._gift_key(ref)
+        for chat_id, rows in self.world.saved_gifts.items():
+            for row in rows:
+                if self._saved_key(row) == wanted:
+                    return chat_id, row
+        return None
+
+    def _raw_GetUniqueStarGiftRequest(self, request: Any) -> Any:
+        gift = self.world.unique_gifts.get(request.slug)
+        if gift is None:
+            from telethon.errors import RPCError
+
+            raise RPCError(request, "SLUG_INVALID", 400)
+        return types.payments.UniqueStarGift(
+            gift=gift, chats=[], users=list(self.world.users.values())
+        )
+
+    def _raw_SaveStarGiftRequest(self, request: Any) -> bool:
+        found = self._find_saved(request.stargift)
+        if found is not None:
+            found[1].unsaved = bool(getattr(request, "unsave", False)) or None
+        return True
+
+    def _raw_ToggleStarGiftsPinnedToTopRequest(self, request: Any) -> bool:
+        chat_id = self._chat_id(request.peer)
+        wanted = [self._gift_key(item) for item in request.stargift]
+        for row in self.world.saved_gifts.get(chat_id, []):
+            row.pinned_to_top = (self._saved_key(row) in wanted) or None
+        return True
+
+    def _raw_ConvertStarGiftRequest(self, request: Any) -> bool:
+        found = self._find_saved(request.stargift)
+        if found is not None:
+            chat_id, row = found
+            self.world.star_balance += int(getattr(row, "convert_stars", 0) or 0)
+            self.world.saved_gifts[chat_id] = [
+                r for r in self.world.saved_gifts[chat_id] if r is not row
+            ]
+        return True
+
+    def _raw_UpgradeStarGiftRequest(self, request: Any) -> Any:
+        found = self._find_saved(request.stargift)
+        if found is None:
+            return self._updates()
+        chat_id, row = found
+        gift = make_unique_gift(
+            slug=f"Upgraded-{len(self.world.unique_gifts) + 1}",
+            gift_id=int(getattr(row.gift, "id", 0) or 0),
+            num=len(self.world.unique_gifts) + 1,
+        )
+        self.world.unique_gifts[gift.slug] = gift
+        row.gift = gift
+        message = self.world.add_message(chat_id, "")
+        message.action = types.MessageActionStarGiftUnique(gift=gift, upgrade=True)
+        return self._updates(message)
+
+    def _raw_TransferStarGiftRequest(self, request: Any) -> Any:
+        found = self._find_saved(request.stargift)
+        if found is not None:
+            chat_id, row = found
+            self.world.saved_gifts[chat_id] = [
+                r for r in self.world.saved_gifts[chat_id] if r is not row
+            ]
+            self.world.saved_gifts.setdefault(self._chat_id(request.to_id), []).append(row)
+        return self._updates()
+
+    def _raw_CraftStarGiftRequest(self, request: Any) -> Any:
+        for ref in request.stargift:
+            found = self._find_saved(ref)
+            if found is not None:
+                chat_id, row = found
+                self.world.saved_gifts[chat_id] = [
+                    r for r in self.world.saved_gifts[chat_id] if r is not row
+                ]
+        gift = make_unique_gift(
+            slug=f"Crafted-{len(self.world.unique_gifts) + 1}",
+            gift_id=1,
+            num=len(self.world.unique_gifts) + 1,
+        )
+        self.world.unique_gifts[gift.slug] = gift
+        message = self.world.add_message(int(self.world.me.id), "")
+        message.action = types.MessageActionStarGiftUnique(gift=gift, craft=True)
+        return self._updates(message)
+
+    def _raw_UpdateStarGiftPriceRequest(self, request: Any) -> Any:
+        found = self._find_saved(request.stargift)
+        if found is not None:
+            gift = getattr(found[1], "gift", None)
+            if gift is not None and hasattr(gift, "resell_amount"):
+                amount = int(getattr(request.resell_amount, "amount", 0) or 0)
+                gift.resell_amount = [request.resell_amount] if amount else None
+        return self._updates()
+
+    def _raw_GetResaleStarGiftsRequest(self, request: Any) -> Any:
+        rows = list(self.world.resale_gifts.get(int(request.gift_id), []))
+        return types.payments.ResaleStarGifts(
+            count=len(rows), gifts=rows, chats=[], users=list(self.world.users.values())
+        )
+
+    def _raw_ResolveStarGiftOfferRequest(self, request: Any) -> Any:
+        self.world.gift_offers.append(int(request.offer_msg_id))
+        return self._updates()
+
+    def _raw_GetStarGiftUpgradePreviewRequest(self, request: Any) -> Any:
+        return types.payments.StarGiftUpgradePreview(
+            sample_attributes=list(self.world.upgrade_preview.get(int(request.gift_id), [])),
+            prices=[],
+            next_prices=[],
+        )
+
+    def _raw_GetStarGiftCollectionsRequest(self, request: Any) -> Any:
+        return types.payments.StarGiftCollections(
+            collections=list(self.world.gift_collections.get(self._chat_id(request.peer), []))
+        )
+
+    def _raw_CreateStarGiftCollectionRequest(self, request: Any) -> Any:
+        collection = types.StarGiftCollection(
+            collection_id=self.world.next_collection_id,
+            title=request.title,
+            gifts_count=len(request.stargift),
+            hash=0,
+        )
+        self.world.next_collection_id += 1
+        self.world.gift_collections.setdefault(self._chat_id(request.peer), []).append(collection)
+        return collection
+
+    def _raw_UpdateStarGiftCollectionRequest(self, request: Any) -> Any:
+        for collection in self.world.gift_collections.get(self._chat_id(request.peer), []):
+            if int(collection.collection_id) == int(request.collection_id):
+                if request.title:
+                    collection.title = request.title
+                collection.gifts_count += len(getattr(request, "add_stargift", None) or [])
+                collection.gifts_count -= len(getattr(request, "delete_stargift", None) or [])
+                return collection
+        from telethon.errors import RPCError
+
+        raise RPCError(request, "COLLECTION_ID_INVALID", 400)
+
+    def _raw_DeleteStarGiftCollectionRequest(self, request: Any) -> bool:
+        chat_id = self._chat_id(request.peer)
+        self.world.gift_collections[chat_id] = [
+            c
+            for c in self.world.gift_collections.get(chat_id, [])
+            if int(c.collection_id) != int(request.collection_id)
+        ]
+        return True
+
+    def _raw_ReorderStarGiftCollectionsRequest(self, request: Any) -> bool:
+        chat_id = self._chat_id(request.peer)
+        order = [int(i) for i in request.order]
+        self.world.gift_collections[chat_id] = sorted(
+            self.world.gift_collections.get(chat_id, []),
+            key=lambda c: (
+                order.index(int(c.collection_id)) if int(c.collection_id) in order else len(order)
+            ),
+        )
+        return True
+
+    def _raw_GetBoostsStatusRequest(self, request: Any) -> Any:
+        chat_id = self._chat_id(request.peer)
+        rows = self.world.boosts.get(chat_id) or []
+        return types.premium.BoostsStatus(
+            level=max(len(rows) // 2, 3 if not rows else 0),
+            current_level_boosts=len(rows) or 10,
+            boosts=len(rows) or 12,
+            boost_url=f"https://t.me/boost?c={abs(chat_id)}",
+            my_boost=any(getattr(r, "user_id", None) == self.world.me.id for r in rows) or None,
+            prepaid_giveaways=list(self.world.prepaid_giveaways.get(chat_id, [])) or None,
+        )
+
+    def _raw_GetStarGiftActiveAuctionsRequest(self, request: Any) -> Any:
+        return types.payments.StarGiftActiveAuctions(
+            auctions=list(self.world.auctions), users=[], chats=[]
+        )
+
+    def _raw_GetStarGiftAuctionAcquiredGiftsRequest(self, request: Any) -> Any:
+        return types.payments.StarGiftAuctionAcquiredGifts(
+            gifts=list(self.world.auction_acquired.get(int(request.gift_id), [])),
+            users=[],
+            chats=[],
+        )
+
+    def _raw_GetStarGiftAuctionStateRequest(self, request: Any) -> Any:
+        states = self.world.auction_states
+        if not states:
+            from telethon.errors import RPCError
+
+            raise RPCError(request, "AUCTION_INVALID", 400)
+        # A `--watch` run steps through the queued states one at a time; the
+        # last one stays, so a caller that keeps asking keeps getting the end.
+        return states.pop(0) if len(states) > 1 else states[0]
+
 
 class _AsyncFailure:
     """An async iterator that raises on the first step.
@@ -6619,3 +7658,160 @@ def fake_client_factory(world: World | None = None) -> Any:
 
     factory.world = shared  # type: ignore[attr-defined]
     return factory
+
+
+# ---------------------------------------------------------------------------
+# The settings world's own helpers (PR-12)
+# ---------------------------------------------------------------------------
+
+
+def _is_empty_notify(settings: Any) -> bool:
+    """True when `inputPeerNotifySettings` carries nothing at all.
+
+    That is how the API deletes an exception — every field is optional, and
+    an unset field means "inherit" — so the fake has to treat it as a delete
+    rather than as a write of all-false.
+    """
+    return all(
+        getattr(settings, name, None) is None
+        for name in (
+            "show_previews",
+            "silent",
+            "mute_until",
+            "sound",
+            "stories_muted",
+            "stories_hide_sender",
+            "stories_sound",
+        )
+    )
+
+
+def _merged_notify(current: Any, incoming: Any) -> Any:
+    """Apply an `inputPeerNotifySettings` over a stored `peerNotifySettings`.
+
+    Field by field, because the input constructor only carries what the
+    caller set: merging is what makes "mute this chat" leave its sound alone,
+    which is the behaviour the ops promise.
+    """
+    kept = {
+        "show_previews": getattr(current, "show_previews", None),
+        "silent": getattr(current, "silent", None),
+        "mute_until": getattr(current, "mute_until", None),
+        "other_sound": getattr(current, "other_sound", None),
+        "stories_muted": getattr(current, "stories_muted", None),
+        "stories_hide_sender": getattr(current, "stories_hide_sender", None),
+        "stories_other_sound": getattr(current, "stories_other_sound", None),
+    }
+    for name, target in (
+        ("show_previews", "show_previews"),
+        ("silent", "silent"),
+        ("mute_until", "mute_until"),
+        ("sound", "other_sound"),
+        ("stories_muted", "stories_muted"),
+        ("stories_hide_sender", "stories_hide_sender"),
+        ("stories_sound", "stories_other_sound"),
+    ):
+        value = getattr(incoming, name, None)
+        if value is not None:
+            kept[target] = value
+    mute = kept["mute_until"]
+    if isinstance(mute, int):
+        kept["mute_until"] = datetime.fromtimestamp(mute, timezone.utc) if mute else None
+    return types.PeerNotifySettings(**kept)
+
+
+def _recipients_out(raw: Any, *, bot: bool = False) -> Any:
+    """An `inputBusinessRecipients` as the output constructor the server returns."""
+    builder = types.BusinessBotRecipients if bot else types.BusinessRecipients
+    kwargs: dict[str, Any] = {
+        "existing_chats": getattr(raw, "existing_chats", None),
+        "new_chats": getattr(raw, "new_chats", None),
+        "contacts": getattr(raw, "contacts", None),
+        "non_contacts": getattr(raw, "non_contacts", None),
+        "exclude_selected": getattr(raw, "exclude_selected", None),
+        "users": [int(getattr(u, "user_id", 0) or 0) for u in getattr(raw, "users", None) or []]
+        or None,
+    }
+    if bot:
+        kwargs["exclude_users"] = [
+            int(getattr(u, "user_id", 0) or 0) for u in getattr(raw, "exclude_users", None) or []
+        ] or None
+    return builder(**kwargs)
+
+
+def make_star_gift(
+    gift_id: int = 5100,
+    *,
+    title: str = "Plush Pepe",
+    stars: int = 500,
+    convert_stars: int = 250,
+    limited: bool = False,
+    sold_out: bool = False,
+) -> Any:
+    """A catalogue `starGift`."""
+    return types.StarGift(
+        id=gift_id,
+        sticker=make_sticker_document(gift_id, emoji="🎁"),
+        stars=stars,
+        convert_stars=convert_stars,
+        limited=limited or None,
+        sold_out=sold_out or None,
+        title=title,
+        availability_remains=7 if limited else None,
+        availability_total=100 if limited else None,
+        upgrade_stars=25,
+    )
+
+
+def make_unique_gift(
+    *,
+    slug: str = "PlushPepe-42",
+    gift_id: int = 5100,
+    num: int = 42,
+    owner_id: int | None = None,
+    resell_stars: int | None = None,
+) -> Any:
+    """A collectible `starGiftUnique`, with one attribute of each kind."""
+    return types.StarGiftUnique(
+        id=gift_id * 1000 + num,
+        gift_id=gift_id,
+        title="Plush Pepe",
+        slug=slug,
+        num=num,
+        attributes=[
+            types.StarGiftAttributeModel(
+                name="Golden",
+                document=make_sticker_document(gift_id + 1, emoji="🎁"),
+                rarity=types.StarGiftAttributeRarity(permille=5),
+            )
+        ],
+        availability_issued=num,
+        availability_total=1000,
+        owner_id=types.PeerUser(user_id=owner_id) if owner_id else None,
+        resell_amount=([types.StarsAmount(amount=resell_stars, nanos=0)] if resell_stars else None),
+        value_amount=15000,
+        value_currency="XTR",
+    )
+
+
+def make_saved_gift(
+    gift: Any,
+    *,
+    msg_id: int | None = None,
+    saved_id: int | None = None,
+    from_id: int | None = None,
+    convert_stars: int = 250,
+    unsaved: bool = False,
+) -> Any:
+    """A `savedStarGift` row on somebody's profile."""
+    return types.SavedStarGift(
+        date=datetime.now(timezone.utc),
+        gift=gift,
+        msg_id=msg_id,
+        saved_id=saved_id,
+        from_id=types.PeerUser(user_id=from_id) if from_id else None,
+        convert_stars=convert_stars,
+        upgrade_stars=25,
+        can_upgrade=True,
+        unsaved=unsaved or None,
+    )

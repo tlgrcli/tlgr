@@ -1400,7 +1400,7 @@ async def link(ctx: OpContext, req: LinkReq) -> ProfileLink:
 
     handle = client(ctx)
     target = (req.target or "").strip()
-    result = ProfileLink()
+    result = ProfileLink(resolvable_by_strangers=True)
 
     if not target or target.lower() in ("me", "self"):
         me = await handle.get_me()
@@ -1468,7 +1468,11 @@ SPEC_LINK = OperationSpec(
     idempotent=True,
     columns=("link", "username", "resolvable_by_strangers"),
     headers=("Link", "Username", "Public"),
-    example={"link": "https://t.me/ada", "username": "ada"},
+    example={
+        "link": "https://t.me/ada",
+        "username": "ada",
+        "resolvable_by_strangers": True,
+    },
     example_args="profile link --qr",
     covers=("profile.collectible-info", "profile.qr-code"),
     tags=frozenset({"agent-safe"}),

@@ -98,7 +98,7 @@ def _rules_model(key: str, rules: Any) -> PrivacySettings:
     lists are the user/chat rules beside it. `raw_rules` keeps the server's
     own ordering so a later write can reproduce it exactly.
     """
-    model = PrivacySettings(key=key)
+    model = PrivacySettings(key=key, base="nobody")
     for rule in rules or []:
         name = type(rule).__name__.removeprefix("PrivacyValue")
         action = "allow" if name.startswith("Allow") else "disallow"

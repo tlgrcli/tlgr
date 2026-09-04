@@ -62,8 +62,8 @@ class PremiumFeatures(Model):
 
 
 class PremiumGiftOption(Model):
+    users: int
     months: int = 0
-    users: int = 1
     currency: str = ""
     amount: int = 0
     store_product: str | None = None
@@ -73,10 +73,12 @@ class PremiumGiftQuote(Model):
     """The price of gifting Premium, and the refusal to pay it."""
 
     user_id: int
+    #: No default: a refusal that can be mistaken for an absent field is a
+    #: refusal a caller may act on as a success.
+    ok: bool
     months: int = 0
     stars: int = 0
     currency: str = "XTR"
-    ok: bool = False
     reason: str = ""
     form_id: int | None = None
 
@@ -100,7 +102,7 @@ class GiftCode(Model):
 
 class GiftCodeApplied(Model):
     slug: str
-    applied: bool = False
+    applied: bool
     months: int | None = None
     until_date: str | None = None
     already: bool = False
@@ -115,10 +117,10 @@ class GiveawayWinner(Model):
 class GiveawayInfo(Model):
     """`payments.getGiveawayInfo` — the personal "did I win?" answer."""
 
+    #: ongoing | finished
+    state: str
     chat_id: int = 0
     msg_id: int = 0
-    #: ongoing | finished
-    state: str = "ongoing"
     start_date: str | None = None
     until_date: str | None = None
     winners_count: int | None = None

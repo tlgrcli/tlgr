@@ -230,9 +230,6 @@ def cli(
 # ---------------------------------------------------------------------------
 
 from tlgr.cli.gen import build_click_tree  # noqa: E402
-from tlgr.cli.legacy.profile import profile_group  # noqa: E402
-
-cli.add_command(profile_group, "profile")
 
 
 # ---------------------------------------------------------------------------

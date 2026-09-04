@@ -209,6 +209,10 @@ VERBS: frozenset[str] = frozenset(
         # §12.4 promises stays invocable.
         "switch",
         "completion",
+        # PR-12. `profile update` is a path v1 documented, and §12.4 makes a
+        # documented path permanent; `profile set` is its STYLE-shaped alias,
+        # so both spellings reach the one operation.
+        "update",
     ]
 )
 

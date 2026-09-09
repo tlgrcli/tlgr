@@ -277,6 +277,14 @@ class ClientWrapper:
         # chat with nothing new in it, so it never shows in unread_count
         if raw is not None and getattr(raw, "unread_mark", False):
             extras["unread_mark"] = True
+        # Whether this dialog sits in Telegram's archive (folder_id 1). Emitted
+        # always, including False: a bulk archiver needs to tell "already
+        # archived" from "not archived" from "we never looked", and an absent
+        # key reads as the middle one. Enumeration is unaffected by it —
+        # iter_dialogs() with no folder argument returns archived and
+        # unarchived alike — so this is the only way a caller can see the
+        # difference.
+        extras["archived"] = bool(getattr(dialog, "archived", False))
         msg = getattr(dialog, "message", None)
         if msg is not None:
             text = (getattr(msg, "text", None) or "").replace("\n", " ")

@@ -166,3 +166,18 @@ async def test_unknown_folder_id_is_not_found():
     w = _wrapper_with(_folder(fid=2))
     with pytest.raises(ChatNotFoundError):
         await w.folder_edit(99, include_add=[1])
+
+
+def test_dialog_extras_always_reports_archived():
+    """False must be emitted, not omitted: a bulk archiver has to tell
+    'already archived' from 'not archived' from 'we never looked'."""
+    class D:
+        unread_count = 0
+        dialog = None
+        message = None
+        archived = False
+
+    d = D()
+    assert ClientWrapper._dialog_extras(d)["archived"] is False
+    d.archived = True
+    assert ClientWrapper._dialog_extras(d)["archived"] is True

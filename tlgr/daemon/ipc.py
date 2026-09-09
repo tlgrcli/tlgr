@@ -112,6 +112,8 @@ class IPCServer:
         app.router.add_get("/chat/get", self._chat_get)
         app.router.add_post("/chat/create", self._chat_create)
         app.router.add_post("/chat/archive", self._chat_archive)
+        app.router.add_post("/chat/folders", self._chat_folders)
+        app.router.add_post("/chat/folder-edit", self._chat_folder_edit)
         app.router.add_post("/chat/mute", self._chat_mute)
         app.router.add_post("/chat/leave", self._chat_leave)
         app.router.add_post("/chat/typing", self._chat_typing)
@@ -458,6 +460,36 @@ class IPCServer:
             return _error_response("No client for account", 404)
         try:
             result = await client.archive_chat(_ref(body["chat"]))
+            return _json_response(result)
+        except Exception as e:
+            return _handle_exception(e)
+
+    async def _chat_folders(self, request: web.Request) -> web.Response:
+        body = await _get_body(request)
+        account = body.get("account", "")
+        client = await self.daemon.ensure_client(account)
+        if not client:
+            return _error_response("No client for account", 404)
+        try:
+            return _json_response(await client.list_folders())
+        except Exception as e:
+            return _handle_exception(e)
+
+    async def _chat_folder_edit(self, request: web.Request) -> web.Response:
+        body = await _get_body(request)
+        account = body.get("account", "")
+        client = await self.daemon.ensure_client(account)
+        if not client:
+            return _error_response("No client for account", 404)
+        try:
+            result = await client.folder_edit(
+                int(body["folder_id"]),
+                include_add=[_ref(v) for v in (body.get("include_add") or [])],
+                include_remove=[_ref(v) for v in (body.get("include_remove") or [])],
+                exclude_add=[_ref(v) for v in (body.get("exclude_add") or [])],
+                exclude_remove=[_ref(v) for v in (body.get("exclude_remove") or [])],
+                dry_run=bool(body.get("dry_run")),
+            )
             return _json_response(result)
         except Exception as e:
             return _handle_exception(e)

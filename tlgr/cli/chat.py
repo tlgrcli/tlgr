@@ -227,6 +227,55 @@ def chat_archive(ctx: click.Context, chat: str, account: str | None) -> None:
     emit(ctx.obj, result)
 
 
+@chat_group.command("folders")
+@click.option("--account", "-a", default=None)
+@click.pass_context
+def chat_folders(ctx: click.Context, account: str | None) -> None:
+    """List this account's chat folders, with their peer lists and limits."""
+    acct = resolve_account(ctx, account)
+    result = ipc_request("POST", "/chat/folders", body={"account": acct})
+    emit(ctx.obj, result)
+
+
+@chat_group.command("folder-edit")
+@click.argument("folder_id", type=int)
+@click.option("--add", multiple=True, help="Chat to add to the folder (repeatable).")
+@click.option("--remove", multiple=True, help="Chat to remove from the folder (repeatable).")
+@click.option("--exclude", multiple=True, help="Chat to add to the folder's EXCLUDE list.")
+@click.option("--unexclude", multiple=True, help="Chat to drop from the EXCLUDE list.")
+@click.option("--dry-run", "dry", is_flag=True, help="Report the change without applying it.")
+@click.option("--account", "-a", default=None)
+@click.pass_context
+def chat_folder_edit(
+    ctx: click.Context,
+    folder_id: int,
+    add: tuple[str, ...],
+    remove: tuple[str, ...],
+    exclude: tuple[str, ...],
+    unexclude: tuple[str, ...],
+    dry: bool,
+    account: str | None,
+) -> None:
+    """Add or remove peers on one chat folder's include/exclude lists.
+
+    A folder's include list is capped by Telegram (100 chats, 200 with
+    Premium) and the edit is REFUSED rather than truncated when it would go
+    over — check `cap` in the output. Shareable folders have no exclude list
+    at all and reject --exclude.
+    """
+    acct = resolve_account(ctx, account)
+    result = ipc_request("POST", "/chat/folder-edit", body={
+        "folder_id": folder_id,
+        "include_add": list(add),
+        "include_remove": list(remove),
+        "exclude_add": list(exclude),
+        "exclude_remove": list(unexclude),
+        "dry_run": dry or bool(ctx.obj.get("dry_run")),
+        "account": acct,
+    })
+    emit(ctx.obj, result)
+
+
 @chat_group.command("mute")
 @click.argument("chat")
 @click.argument("duration", type=int, required=False, default=None)

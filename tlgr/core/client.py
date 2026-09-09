@@ -740,6 +740,261 @@ class ClientWrapper:
         ]))
         return {"archived": True, "chat_id": chat_id}
 
+    # ---- chat folders (Telegram "dialog filters") -----------------------
+    #
+    # A folder is NOT the archive and the two are independent: archiving sets
+    # a peer's folder_id to 1 (see archive_chat above), while a folder here is
+    # a client-side saved view with its own include/exclude peer lists. A chat
+    # can be archived and in a folder, either, or neither.
+    #
+    # Two limits are Telegram's, not ours, and both bite at campaign scale:
+    # a folder holds a bounded number of include_peers (100 free / 200
+    # premium, read live from the app config below rather than assumed), and
+    # a *shareable* folder (DialogFilterChatlist) has no exclude_peers field
+    # at all. Both are reported rather than worked around — silently dropping
+    # peers past a cap is the failure mode worth avoiding here.
+
+    @staticmethod
+    def _json_value(node: Any) -> Any:
+        """Decode a Telegram JSONValue tree into plain Python."""
+        from telethon.tl import types as t
+
+        if isinstance(node, t.JsonObject):
+            return {v.key: ClientWrapper._json_value(v.value) for v in node.value}
+        if isinstance(node, t.JsonArray):
+            return [ClientWrapper._json_value(v) for v in node.value]
+        if isinstance(node, (t.JsonString, t.JsonNumber, t.JsonBool)):
+            return node.value
+        if isinstance(node, t.JsonNull):
+            return None
+        return getattr(node, "value", None)
+
+    @staticmethod
+    def _filter_title(f: Any) -> str:
+        """Folder titles are TextWithEntities on current layers, str on older."""
+        title = getattr(f, "title", None)
+        if title is None:
+            return ""
+        return getattr(title, "text", title) if not isinstance(title, str) else title
+
+    async def _folder_limits(self) -> dict[str, Any]:
+        """The live include-peer cap, from the server's own app config."""
+        from telethon.tl.functions.help import GetAppConfigRequest
+
+        try:
+            res = await self.client(GetAppConfigRequest(hash=0))
+            cfg = self._json_value(getattr(res, "config", None)) or {}
+        except Exception as e:  # a missing limit must not break a listing
+            return {"error": f"{type(e).__name__}: {e}"}
+        out = {}
+        for k in ("dialog_filters_chats_limit_default",
+                  "dialog_filters_chats_limit_premium",
+                  "dialog_filters_limit_default",
+                  "dialog_filters_limit_premium"):
+            if k in cfg:
+                out[k] = int(cfg[k]) if isinstance(cfg[k], (int, float)) else cfg[k]
+        return out
+
+    async def _get_filters(self) -> list[Any]:
+        """GetDialogFilters returns a bare list on older layers, a wrapper now."""
+        from telethon.tl.functions.messages import GetDialogFiltersRequest
+
+        res = await self.client(GetDialogFiltersRequest())
+        return list(getattr(res, "filters", res) or [])
+
+    async def list_folders(self) -> dict[str, Any]:
+        """Every chat folder on this account, with its peer lists and limits.
+
+        Read-only. `kind` separates a normal folder (has exclude_peers) from a
+        shareable one (`chatlist` — no exclude_peers, so a peer can only be
+        kept out of it by not being in it) and from Telegram's built-in "All
+        chats" pseudo-entry, which has no id and cannot be edited.
+        """
+        me = await self.client.get_me()
+        folders = []
+        for f in await self._get_filters():
+            kind = type(f).__name__
+            if kind == "DialogFilterDefault":
+                folders.append({"id": None, "title": "All chats", "kind": "default",
+                                "editable": False})
+                continue
+            folders.append({
+                "id": getattr(f, "id", None),
+                "title": self._filter_title(f),
+                "kind": "chatlist" if kind == "DialogFilterChatlist" else "filter",
+                "editable": True,
+                "supports_exclude": kind != "DialogFilterChatlist",
+                "pinned_peers": [utils.get_peer_id(p) for p in (f.pinned_peers or [])],
+                "include_peers": [utils.get_peer_id(p) for p in (f.include_peers or [])],
+                "exclude_peers": [utils.get_peer_id(p) for p in (getattr(f, "exclude_peers", None) or [])],
+                "flags": {k: bool(getattr(f, k, False)) for k in (
+                    "contacts", "non_contacts", "groups", "broadcasts", "bots",
+                    "exclude_muted", "exclude_read", "exclude_archived")},
+            })
+        return {
+            "folders": folders,
+            "premium": bool(getattr(me, "premium", False)),
+            "limits": await self._folder_limits(),
+        }
+
+    async def _input_peers(self, refs: list[int | str]) -> tuple[dict[int, Any], list[dict]]:
+        """Resolve refs to InputPeers, warming the cache from the dialog list.
+
+        `get_input_entity` on a bare numeric id consults only the local cache
+        (see dialog_status below for why the network fallback is useless for a
+        non-bot account), so a cold cache would silently drop real peers from
+        a bulk folder edit. The dialog list is the authoritative server-side
+        source that also populates that cache, so it is walked ONCE and only
+        for the ids that did not resolve cheaply.
+        """
+        resolved: dict[int, Any] = {}
+        pending: list[int | str] = []
+        for r in refs:
+            try:
+                peer = await self.client.get_input_entity(r)
+                resolved[utils.get_peer_id(peer)] = peer
+            except Exception:
+                pending.append(r)
+        if pending:
+            want = {int(p) for p in pending if str(p).lstrip("-").isdigit()}
+            async for dialog in self.client.iter_dialogs():
+                pid = utils.get_peer_id(dialog.entity)
+                if pid in want:
+                    resolved[pid] = await self.client.get_input_entity(dialog.entity)
+                    want.discard(pid)
+                    if not want:
+                        break
+            pending = [p for p in pending
+                       if not (str(p).lstrip("-").isdigit() and int(p) not in want)]
+        unresolved = [{"ref": p, "reason": "could not resolve to an input peer"}
+                      for p in pending]
+        return resolved, unresolved
+
+    async def folder_edit(
+        self,
+        folder_id: int,
+        include_add: list[int | str] | None = None,
+        include_remove: list[int | str] | None = None,
+        exclude_add: list[int | str] | None = None,
+        exclude_remove: list[int | str] | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Add/remove peers on one folder's include and exclude lists.
+
+        UpdateDialogFilter REPLACES the whole filter, so the live object is
+        fetched and mutated in place — that is what preserves the title,
+        colour, emoticon, pinned peers and category flags nobody asked to
+        change. Peers already present are no-ops, and a peer already pinned is
+        left alone rather than duplicated into include_peers.
+
+        Refuses rather than truncates when the result would exceed the
+        account's include cap: dropping the overflow silently would leave the
+        caller believing every peer landed.
+        """
+        target = None
+        for f in await self._get_filters():
+            if getattr(f, "id", None) == folder_id:
+                target = f
+                break
+        if target is None:
+            raise ChatNotFoundError(f"no chat folder with id {folder_id}")
+
+        kind = type(target).__name__
+        if kind == "DialogFilterChatlist" and (exclude_add or exclude_remove):
+            raise TlgrError(
+                f"folder {folder_id} ({self._filter_title(target)}) is a shareable "
+                "folder, which has no exclude list; a peer is kept out of it only "
+                "by not being included"
+            )
+
+        refs = list(include_add or []) + list(include_remove or []) + \
+            list(exclude_add or []) + list(exclude_remove or [])
+        peers, unresolved = await self._input_peers(refs) if refs else ({}, [])
+
+        def ids(refs_in):
+            """Refs -> peer ids we actually resolved, order preserved, deduped."""
+            out, seen = [], set()
+            for r in (refs_in or []):
+                pid = None
+                try:
+                    pid = int(r)
+                except (TypeError, ValueError):
+                    name = str(r).lstrip("@").lower()
+                    for cand, peer in peers.items():
+                        if str(getattr(peer, "username", "") or "").lower() == name:
+                            pid = cand
+                            break
+                if pid is not None and pid in peers and pid not in seen:
+                    seen.add(pid)
+                    out.append(pid)
+            return out
+
+        pinned = {utils.get_peer_id(p) for p in (target.pinned_peers or [])}
+        inc = {utils.get_peer_id(p): p for p in (target.include_peers or [])}
+        exc = {utils.get_peer_id(p): p for p in (getattr(target, "exclude_peers", None) or [])}
+        before = {"include": len(inc), "exclude": len(exc)}
+
+        added, already, skipped_pinned = [], [], []
+        for pid in ids(include_add):
+            if pid in pinned:
+                skipped_pinned.append(pid)
+            elif pid in inc:
+                already.append(pid)
+            else:
+                inc[pid] = peers[pid]
+                added.append(pid)
+        removed = [pid for pid in ids(include_remove) if inc.pop(pid, None) is not None]
+        exc_added, exc_already = [], []
+        for pid in ids(exclude_add):
+            if pid in exc:
+                exc_already.append(pid)
+            else:
+                exc[pid] = peers[pid]
+                exc_added.append(pid)
+        exc_removed = [pid for pid in ids(exclude_remove) if exc.pop(pid, None) is not None]
+
+        limits = await self._folder_limits()
+        me = await self.client.get_me()
+        cap = limits.get("dialog_filters_chats_limit_premium"
+                         if getattr(me, "premium", False)
+                         else "dialog_filters_chats_limit_default")
+        total = len(inc) + len(pinned)
+        if isinstance(cap, int) and total > cap:
+            raise TlgrError(
+                f"folder {folder_id} ({self._filter_title(target)}) would hold {total} "
+                f"chats, over this account's cap of {cap} "
+                f"({'premium' if getattr(me, 'premium', False) else 'non-premium'}). "
+                f"Nothing was changed."
+            )
+
+        result = {
+            "folder_id": folder_id,
+            "title": self._filter_title(target),
+            "before": before,
+            "after": {"include": len(inc), "exclude": len(exc)},
+            "include_added": added,
+            "include_already": already,
+            "include_removed": removed,
+            "exclude_added": exc_added,
+            "exclude_already": exc_already,
+            "exclude_removed": exc_removed,
+            "skipped_pinned": skipped_pinned,
+            "unresolved": unresolved,
+            "cap": cap,
+            "dry_run": dry_run,
+        }
+        if dry_run:
+            return result
+
+        from telethon.tl.functions.messages import UpdateDialogFilterRequest
+
+        target.include_peers = list(inc.values())
+        if kind != "DialogFilterChatlist":
+            target.exclude_peers = list(exc.values())
+        await self.client(UpdateDialogFilterRequest(id=folder_id, filter=target))
+        result["updated"] = True
+        return result
+
     async def mark_chat_unread(self, chat_id: int | str, unread: bool = True) -> dict[str, Any]:
         """Set (or clear) the dialog's manual unread mark.
 

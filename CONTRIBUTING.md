@@ -115,10 +115,15 @@ workflow's OIDC token instead of an API token, so there is no publishing
 secret in this repository and nothing to leak or rotate. It has to be
 configured once, on pypi.org, before the first release that uses it:
 
-- owner `tlgrcli`, repository `tlgr`, workflow `release.yml`, environment
-  `pypi`;
+- PyPI project `tlgr-cli`, owner `tlgrcli`, repository `tlgr`, workflow
+  `release.yml`, environment `pypi`;
 - for the first release, add it as a *pending* publisher, since the project
   does not exist on PyPI until something is published to it.
+
+The distribution is `tlgr-cli` rather than `tlgr` because PyPI rejects the
+shorter name as too similar to an unrelated `tlgrm`. It is only the name on
+the index: the import package and the console script are both `tlgr`, and
+nothing in the source refers to the distribution name.
 
 Until that publisher exists the `publish` job fails and the GitHub release
 still succeeds, which is the intended order: the release is the artefact of

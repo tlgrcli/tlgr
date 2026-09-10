@@ -5,6 +5,26 @@ All notable changes to tlgr are recorded here. The format follows
 semantic versioning at the CLI surface, which means the JSON shapes and exit
 codes documented in `AGENT.md` are the public API.
 
+## [2.0.1] — 2026-09-10
+
+### Changed
+
+- **The distribution is published as `tlgr-cli`.** PyPI refuses the name
+  `tlgr` as too similar to an existing `tlgrm`, so the name on the index is
+  `tlgr-cli`. Nothing else moves: the import package is still `tlgr`, the
+  command is still `tlgr`, and every module path is unchanged. Only the
+  install line differs.
+
+  ```bash
+  pipx install tlgr-cli      # was: pipx install git+https://github.com/tlgrcli/tlgr.git
+  ```
+
+  If you already run tlgr from a git or editable install, you do not need to
+  do anything. Do not `pipx install tlgr-cli` alongside an existing `tlgr`
+  pipx install: both provide the same `tlgr` command and the second one will
+  collide with the first. `pipx uninstall tlgr` first, or keep the install
+  you have.
+
 ## [2.0.0] — 2026-09-10
 
 **Every command tlgr has is generated from the operation registry.** There is

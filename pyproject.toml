@@ -3,7 +3,10 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tlgr"
+# The distribution name, which is not the import name and not the command.
+# PyPI refuses "tlgr" as too similar to an existing "tlgrm"; the module stays
+# `tlgr`, the console script stays `tlgr`, and only `pip install` differs.
+name = "tlgr-cli"
 dynamic = ["version"]
 description = "Full Telegram account control CLI — agent-friendly, daemon-based, with webhook event push"
 readme = "README.md"

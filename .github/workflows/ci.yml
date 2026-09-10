@@ -9,12 +9,48 @@ on:
     branches: ["main", "feat/**", "fix/**", "chore/**", "docs/**", "design/**"]
   pull_request:
 
+# `gh pr list` in the guard job needs to read pull requests; nothing here
+# writes anything.
+permissions:
+  contents: read
+  pull-requests: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # A branch with an open pull request is built by the `pull_request` event.
+  # Building it again on push is the same commit through the same matrix for
+  # a second time, and at ten jobs a run — half of them macOS, which is the
+  # scarcest runner there is — the duplicate is what puts a queue in front of
+  # the run that actually gates the merge. So: push builds a branch only
+  # while nothing else is building it.
+  guard:
+    name: should this push build
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" != "push" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"   # the pull_request run itself
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"   # main is never skipped
+          elif [ "$(gh pr list --repo "$GITHUB_REPOSITORY" \
+                     --head "$GITHUB_REF_NAME" --state open \
+                     --json number --jq 'length')" != "0" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"  # its pull request covers it
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"   # no pull request yet
+          fi
+
   test:
+    needs: guard
+    if: needs.guard.outputs.run == 'true'
     name: ${{ matrix.os }} · py${{ matrix.python }}
     runs-on: ${{ matrix.os }}
     # 3.14 is allowed to fail: it is a forward-looking signal, not a gate.

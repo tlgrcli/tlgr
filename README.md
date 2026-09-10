@@ -6,8 +6,15 @@
 Full Telegram account control from the terminal. Agent-friendly, daemon-based, with webhook event push.
 
 ```
-pip install tlgr
+pipx install git+https://github.com/tlgrcli/tlgr.git
 ```
+
+tlgr is not published on PyPI, so `pip install tlgr` does not reach this
+project. Install from the repository, or from the wheel attached to a
+[release](https://github.com/tlgrcli/tlgr/releases). `pipx` is the
+recommendation because tlgr runs a long-lived daemon and wants its own
+environment; `pip install git+https://github.com/tlgrcli/tlgr.git` into a
+virtualenv works the same way.
 
 > **For agents:** logging in is a sequence of ordinary commands — `tlgr auth send-code` then `tlgr auth verify-code` — so only *reading the code* needs a person. Secrets come from `--x-env`/`--x-stdin`/`--x-file`, never argv. See [AGENT.md](AGENT.md) for the full agent reference.
 

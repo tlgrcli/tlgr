@@ -78,11 +78,18 @@ removed on the next start — but an *open file handle* is not.
 ## 2. Upgrade the install
 
 ```bash
-pipx upgrade tlgr        # or: pipx install --force tlgr
+pipx install --force git+https://github.com/tlgrcli/tlgr.git
 tlgr --version           # expect 2.0.0
 ```
 
-`pip install -U tlgr` works the same way if that is how it was installed.
+tlgr is not on PyPI, so `pipx upgrade tlgr` and `pip install -U tlgr` have
+nothing to upgrade from: the install came from this repository and so does
+the upgrade. `--force` because pipx will not reinstall over an existing
+install otherwise. Into a virtualenv it is
+`pip install -U 'tlgr @ git+https://github.com/tlgrcli/tlgr.git'`, and the
+wheel attached to the [2.0.0
+release](https://github.com/tlgrcli/tlgr/releases/tag/v2.0.0) installs the
+same build without git.
 
 ### A pipx editable install — the checkout *is* the install
 

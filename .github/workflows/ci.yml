@@ -2,15 +2,55 @@ name: ci
 
 on:
   push:
-    branches: ["main", "feat/**", "design/**"]
+    # Every branch this project actually uses. A branch left off this list is
+    # not "untested until the PR opens", it is untested until somebody
+    # notices: `fix/dialog-cursor-access-hash` sat on the remote for a day
+    # with no run against it at all.
+    branches: ["main", "feat/**", "fix/**", "chore/**", "docs/**", "design/**"]
   pull_request:
+
+# `gh pr list` in the guard job needs to read pull requests; nothing here
+# writes anything.
+permissions:
+  contents: read
+  pull-requests: read
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # A branch with an open pull request is built by the `pull_request` event.
+  # Building it again on push is the same commit through the same matrix for
+  # a second time, and at ten jobs a run — half of them macOS, which is the
+  # scarcest runner there is — the duplicate is what puts a queue in front of
+  # the run that actually gates the merge. So: push builds a branch only
+  # while nothing else is building it.
+  guard:
+    name: should this push build
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" != "push" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"   # the pull_request run itself
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"   # main is never skipped
+          elif [ "$(gh pr list --repo "$GITHUB_REPOSITORY" \
+                     --head "$GITHUB_REF_NAME" --state open \
+                     --json number --jq 'length')" != "0" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"  # its pull request covers it
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"   # no pull request yet
+          fi
+
   test:
+    needs: guard
+    if: needs.guard.outputs.run == 'true'
     name: ${{ matrix.os }} · py${{ matrix.python }}
     runs-on: ${{ matrix.os }}
     # 3.14 is allowed to fail: it is a forward-looking signal, not a gate.
@@ -36,16 +76,14 @@ jobs:
           uv venv --python ${{ matrix.python }}
           uv pip install -e ".[dev]"
 
-      - name: ruff check
-        run: uv run ruff check .
-
-      - name: ruff format --check
-        run: uv run ruff format --check .
+      # `make` rather than the commands spelled out again: the Makefile owns
+      # the strict set, and CI was checking seven of its thirty-two entries
+      # because the two lists drifted apart. One definition, both places.
+      - name: ruff check and ruff format --check
+        run: make lint PY="uv run python"
 
       - name: mypy (strict set)
-        run: |
-          uv run mypy tlgr/models tlgr/ops tlgr/registry.py tlgr/schema.py \
-            tlgr/core/errors.py tlgr/core/timefmt.py tlgr/core/pagination.py
+        run: make typecheck PY="uv run python"
 
       - name: pytest
-        run: uv run pytest -q --cov=tlgr --cov-report=term-missing
+        run: make test PY="uv run python"

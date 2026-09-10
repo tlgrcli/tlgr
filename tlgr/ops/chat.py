@@ -309,12 +309,14 @@ async def fetch_dialogs(
     offset_date: Any = None,
     offset_id: int = 0,
     offset_peer: Any = None,
-) -> tuple[list[Dialog], list[Any]]:
-    """One page of `messages.getDialogs`, as models and as raw rows.
+) -> tuple[list[Dialog], list[Any], dict[int, Any]]:
+    """One page of `messages.getDialogs`, as models, raw rows and entities.
 
     Raw rows come back too because the cursor is built from the *last row's*
     peer, and rebuilding an `InputPeer` from a marked id would be a second
-    resolution of something the server just sent.
+    resolution of something the server just sent. The entity map comes with
+    them because a dialog row's `peer` carries only ids, and the cursor needs
+    the peer's ACCESS HASH — see `_offset_peer`.
     """
     from telethon.tl import types
     from telethon.tl.functions import messages as fn
@@ -335,7 +337,10 @@ async def fetch_dialogs(
         for message in (getattr(result, "messages", None) or [])
     }
     rows = [row for row in (getattr(result, "dialogs", None) or []) if hasattr(row, "peer")]
-    return [_dialog_model(row, entities, messages) for row in rows], rows
+    # The cursor needs the last row's peer WITH its access hash, and the only
+    # place that hash exists is the entity list this same reply carried — so
+    # hand it back with the rows rather than letting the caller invent one.
+    return [_dialog_model(row, entities, messages) for row in rows], rows, entities
 
 
 async def _all_dialogs(ctx: OpContext, *, folder_id: int | None, cap: int = 2000) -> list[Dialog]:
@@ -351,7 +356,7 @@ async def _all_dialogs(ctx: OpContext, *, folder_id: int | None, cap: int = 2000
     offset_peer: Any = None
     seen: set[int] = set()
     while len(out) < cap:
-        page, rows = await fetch_dialogs(
+        page, rows, entities = await fetch_dialogs(
             ctx,
             folder_id=folder_id,
             limit=100,
@@ -367,15 +372,44 @@ async def _all_dialogs(ctx: OpContext, *, folder_id: int | None, cap: int = 2000
         last = page[-1]
         offset_id = last.top_message_id or 0
         offset_date = parse_dt(last.last_message.date) if last.last_message else None
-        offset_peer = _offset_peer(rows[-1]) if rows else None
+        offset_peer = _offset_peer(rows[-1], entities) if rows else None
     return out
 
 
-def _offset_peer(row: Any) -> Any:
-    """The `InputPeer` for a dialog row's peer, without a round trip."""
+def _offset_peer(row: Any, entities: dict[int, Any] | None = None) -> Any:
+    """The `InputPeer` for a dialog row's peer, without a round trip.
+
+    The access hash is NOT optional here. `messages.getDialogs` resolves the
+    cursor against `offset_peer`, and a peer carrying `access_hash=0` does not
+    resolve: the server answers from the top instead of from the cursor, so
+    the next page repeats the first and the walk sees nothing new.
+
+    Measured on a live account (`chat.list`, 100 rows per page, following
+    `next_cursor`): 34 rows in one page before, 600+ across six pages after.
+    That is the paged path. The `fetch_all` walk in `_all_dialogs` has a
+    SEPARATE stall that this does not fix — it still stops at ~101 on a
+    ~936-dialog account — so do not read this as the whole enumeration bug.
+
+    The hash is already in hand: the same `getDialogs` reply carries the
+    entity for every peer it mentions, so `fetch_dialogs` passes that map in
+    beside the row rather than having anyone re-resolve it.
+    """
+    from telethon import utils
     from telethon.tl import types
 
     peer = getattr(row, "peer", None)
+    if peer is not None and entities:
+        try:
+            entity = entities.get(int(utils.get_peer_id(peer)))
+        except (TypeError, ValueError):
+            entity = None
+        if entity is not None:
+            try:
+                return utils.get_input_peer(entity)
+            except (TypeError, ValueError):
+                pass
+    # Fall back to the hashless form rather than failing the page outright: a
+    # stalled cursor loses dialogs, an exception loses the whole call.
     user_id = getattr(peer, "user_id", None)
     if user_id is not None:
         return types.InputPeerUser(user_id=int(user_id), access_hash=0)
@@ -616,7 +650,7 @@ async def list_chats(ctx: OpContext, req: ListReq) -> Page[Dialog]:
             for dialog in items:
                 dialog.folders = [member_of]
     else:
-        items, rows = await fetch_dialogs(
+        items, rows, entities = await fetch_dialogs(
             ctx,
             folder_id=folder_id,
             limit=limit,
@@ -637,7 +671,7 @@ async def list_chats(ctx: OpContext, req: ListReq) -> Page[Dialog]:
     if rows and items:
         next_state = {
             "offset_id": int(getattr(rows[-1], "top_message", 0) or 0),
-            "peer": _peer_state(rows[-1]),
+            "peer": _peer_state(rows[-1], entities),
         }
     return build_page(
         items,
@@ -650,12 +684,26 @@ async def list_chats(ctx: OpContext, req: ListReq) -> Page[Dialog]:
     )
 
 
-def _peer_state(row: Any) -> dict[str, Any]:
+def _peer_state(row: Any, entities: dict[int, Any] | None = None) -> dict[str, Any]:
+    """The cursor's peer, WITH its access hash.
+
+    Same reason as `_offset_peer`: `getDialogs` resolves its cursor against
+    this peer, and a hashless one silently restarts the walk from the top.
+    """
+    from telethon import utils
+
     peer = getattr(row, "peer", None)
+    access_hash = 0
+    if peer is not None and entities:
+        try:
+            entity = entities.get(int(utils.get_peer_id(peer)))
+        except (TypeError, ValueError):
+            entity = None
+        access_hash = int(getattr(entity, "access_hash", 0) or 0)
     for attribute in ("user_id", "chat_id", "channel_id"):
         value = getattr(peer, attribute, None)
         if value is not None:
-            return {"kind": attribute, "id": int(value)}
+            return {"kind": attribute, "id": int(value), "access_hash": access_hash}
     return {}
 
 
@@ -665,12 +713,13 @@ def _state_peer(state: dict[str, Any]) -> Any:
     saved = state.get("peer") or {}
     kind = saved.get("kind")
     value = int(saved.get("id") or 0)
+    access_hash = int(saved.get("access_hash") or 0)
     if kind == "user_id":
-        return types.InputPeerUser(user_id=value, access_hash=0)
+        return types.InputPeerUser(user_id=value, access_hash=access_hash)
     if kind == "chat_id":
         return types.InputPeerChat(chat_id=value)
     if kind == "channel_id":
-        return types.InputPeerChannel(channel_id=value, access_hash=0)
+        return types.InputPeerChannel(channel_id=value, access_hash=access_hash)
     return None
 
 

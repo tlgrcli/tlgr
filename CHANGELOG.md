@@ -5,7 +5,7 @@ All notable changes to tlgr are recorded here. The format follows
 semantic versioning at the CLI surface, which means the JSON shapes and exit
 codes documented in `AGENT.md` are the public API.
 
-## [2.0.0] — 2026-09-04
+## [2.0.0] — 2026-09-10
 
 **Every command tlgr has is generated from the operation registry.** There is
 no hand-written command left, no v1 route left and no `ClientWrapper` left;
@@ -554,6 +554,25 @@ Two more, outside the documented output shapes:
 
 ### Fixed
 
+- **`daemon status` could not say the daemon was down.** `DaemonStatus`
+  inherited `omit_defaults=True`, and for a stopped daemon every field equals
+  its default, so the result encoded to `{}`: human mode printed nothing,
+  `--json` printed an empty object, and `status["running"]` raised a KeyError
+  for the one caller the flag exists for. The offline result now fills in the
+  socket it asked and the Telethon layer, so "not running" also says where it
+  looked. `HealthSummary` behind `tlgr status` had the same shape and the same
+  fix.
+- **`chat.list` repeated its first page instead of paging.**
+  `messages.getDialogs` resolves its cursor against `offset_peer`, and both
+  places that built one used `access_hash=0`. A hashless peer does not
+  resolve, so the server answered from the top of the list rather than from
+  the cursor. `fetch_dialogs` now returns the entity map that every reply
+  already carries, and both cursor builders use it. Measured on a live
+  936-dialog account at 100 rows per page: 34 rows in one page before, 600+
+  across six pages after. Two related enumeration limits remain and are noted
+  in the code: the `fetch_all` walk in `_all_dialogs` has a separate stall,
+  and `has_more` is computed after the type filter, so a filtered page can
+  read as the last one.
 - **A paginated operation with no rows answers `[]`, not `{}`.** `Page.items`
   defaults to an empty list and models omit defaults, so an empty page encoded
   to `{}` and the envelope left `result` as an empty *object* — `for row in

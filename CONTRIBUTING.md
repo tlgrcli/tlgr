@@ -101,8 +101,28 @@ the changelog section as its notes and both artefacts attached. Any step
 failing means no release is created, so a bad tag costs a `git push --delete`
 and nothing else.
 
-tlgr is not on PyPI. Installation is from the repository (see `README.md`),
-and the attached wheel is the artefact to install from a release.
+A second job publishes those same two files to PyPI. It downloads the
+artefacts the first job built rather than rebuilding them, because the wheel
+that was smoke-tested and the wheel that reaches PyPI have to be the same
+bytes. It runs after the GitHub release exists, so a PyPI failure leaves the
+release standing and is re-runnable on its own.
+
+### The PyPI publisher
+
+Publishing uses [trusted
+publishing](https://docs.pypi.org/trusted-publishers/): PyPI verifies the
+workflow's OIDC token instead of an API token, so there is no publishing
+secret in this repository and nothing to leak or rotate. It has to be
+configured once, on pypi.org, before the first release that uses it:
+
+- owner `tlgrcli`, repository `tlgr`, workflow `release.yml`, environment
+  `pypi`;
+- for the first release, add it as a *pending* publisher, since the project
+  does not exist on PyPI until something is published to it.
+
+Until that publisher exists the `publish` job fails and the GitHub release
+still succeeds, which is the intended order: the release is the artefact of
+record, PyPI is a distribution channel on top of it.
 
 ## Reporting Issues
 

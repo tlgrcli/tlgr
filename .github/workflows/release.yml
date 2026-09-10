@@ -7,8 +7,10 @@ on:
   push:
     tags: ["v*"]
 
+# Read by default. Each job asks for what it needs: `release` writes the
+# Releases page, `publish` mints an OIDC token and writes nothing here.
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -16,8 +18,10 @@ concurrency:
 
 jobs:
   release:
-    name: build and publish ${{ github.ref_name }}
+    name: build and release ${{ github.ref_name }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -76,3 +80,33 @@ jobs:
             --notes-file notes.md \
             --verify-tag \
             dist/*
+
+      # The same two files the release now carries, handed to the publish job
+      # rather than rebuilt there: a wheel that was smoke-tested and a wheel
+      # that reaches PyPI have to be the same bytes.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: publish ${{ github.ref_name }} to PyPI
+    needs: release
+    runs-on: ubuntu-latest
+    # Trusted publishing: PyPI verifies this workflow's OIDC token against a
+    # publisher configured for tlgrcli/tlgr, so there is no API token in the
+    # repository to leak. The environment is the second gate — it is where a
+    # required reviewer goes if this should ever stop being automatic.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/tlgr
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1

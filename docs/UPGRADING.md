@@ -78,18 +78,24 @@ removed on the next start — but an *open file handle* is not.
 ## 2. Upgrade the install
 
 ```bash
-pipx install --force git+https://github.com/tlgrcli/tlgr.git
-tlgr --version           # expect 2.0.0
+pipx install tlgr-cli
+tlgr --version           # expect 2.0.1 or later
 ```
 
-tlgr is not on PyPI, so `pipx upgrade tlgr` and `pip install -U tlgr` have
-nothing to upgrade from: the install came from this repository and so does
-the upgrade. `--force` because pipx will not reinstall over an existing
-install otherwise. Into a virtualenv it is
-`pip install -U 'tlgr @ git+https://github.com/tlgrcli/tlgr.git'`, and the
-wheel attached to the [2.0.0
-release](https://github.com/tlgrcli/tlgr/releases/tag/v2.0.0) installs the
-same build without git.
+The distribution is named `tlgr-cli` on PyPI; the command it installs is
+`tlgr`. **`pipx upgrade tlgr` does not work**, and neither does
+`pip install -U tlgr`: a v1 install came from this repository, not from an
+index, so there is no `tlgr` distribution for pipx to upgrade. Install the
+new name, then remove the old install once you have checked it works:
+
+```bash
+pipx uninstall tlgr      # only after `tlgr --version` reports the new build
+```
+
+Both provide the same `tlgr` command, so do not leave the two installed
+side by side. Into a virtualenv it is `pip install -U tlgr-cli`, and the
+wheel attached to any [release](https://github.com/tlgrcli/tlgr/releases)
+installs the same build without an index.
 
 ### A pipx editable install — the checkout *is* the install
 
@@ -108,7 +114,7 @@ With the daemon stopped, move the checkout:
 git -C <checkout> fetch
 git -C <checkout> checkout main            # or, on the deployed branch:
 git -C <checkout> merge --ff-only origin/main
-tlgr --version                             # expect 2.0.0
+tlgr --version                             # expect 2.0.1 or later
 ```
 
 `--ff-only` on purpose: a merge commit in a deployment checkout is a local
@@ -132,7 +138,7 @@ extra set rather than adding to it. Then check the imports resolve before
 starting anything:
 
 ```bash
-tlgr --version           # expect 2.0.0
+tlgr --version           # expect 2.0.1 or later
 tlgr agent whoami --json # imports msgspec and Telethon; fails loudly if either is missing
 ```
 

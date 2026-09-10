@@ -1,0 +1,78 @@
+name: release
+
+# A tag is the whole trigger. `git tag -a vX.Y.Z && git push origin vX.Y.Z`
+# is the release procedure; everything below is what that tag is checked
+# against before anything reaches the Releases page.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: build and publish ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The changelog check reads history no deeper than the working
+          # tree, but `gh release create` wants the tag object itself.
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install project
+        run: |
+          uv venv --python 3.12
+          uv pip install -e ".[dev]"
+
+      # Before the build, not after it: the three places a version is written
+      # down have to agree, and the changelog entry has to exist.
+      - name: Tag, package version and changelog agree
+        run: uv run python tools/release_notes.py "${{ github.ref_name }}" --output notes.md
+
+      # The full matrix already ran on the branch this tag points into. This
+      # is the §12.3 acceptance subset, re-run against the tagged tree so a
+      # tag placed on the wrong commit fails here rather than on someone's
+      # machine.
+      - name: Acceptance suite
+        run: make acceptance PY="uv run python"
+
+      - name: Build sdist and wheel
+        run: uv build
+
+      # An install from the artefact, not from the checkout: this is the only
+      # step that proves the wheel a user gets is importable and reports the
+      # version its tag claims.
+      - name: Smoke-test the wheel
+        run: |
+          uv venv --python 3.12 /tmp/smoke
+          VIRTUAL_ENV=/tmp/smoke uv pip install dist/*.whl
+          reported="$(/tmp/smoke/bin/tlgr --version)"
+          echo "$reported"
+          case "$reported" in
+            *"${GITHUB_REF_NAME#v}") ;;
+            *) echo "wheel reports '$reported', tag is ${GITHUB_REF_NAME}" >&2; exit 1 ;;
+          esac
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --notes-file notes.md \
+            --verify-tag \
+            dist/*

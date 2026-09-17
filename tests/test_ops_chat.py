@@ -446,6 +446,103 @@ class TestTypingPostersMentions:
         assert out["partial"] is True
         assert out["flood_wait"] == 42
 
+    async def test_posters_resume_below_next_before_id_without_gap_or_overlap(
+        self, live_daemon, client, in_thread, peers
+    ):
+        # 201 is the fixture's own post.
+        senders = [ALICE, BOB, ALICE, ALICE, BOB, ALICE, BOB]
+        for index, sender in enumerate(senders):
+            peers.add_message(GROUP_ID, f"m{index}", sender_id=sender, message_id=202 + index)
+        whole = await result(
+            client, in_thread, "chat.poster.list", {"chat": str(GROUP_ID), "max_messages": 100}
+        )
+
+        merged: dict[int, int] = {}
+        seen = 0
+        request: dict[str, Any] = {"chat": str(GROUP_ID), "max_messages": 3}
+        for _ in range(10):
+            out = await result(client, in_thread, "chat.poster.list", request)
+            seen += out["scanned_messages"]
+            for poster in out["posters"]:
+                merged[poster["user_id"]] = merged.get(poster["user_id"], 0) + poster["count"]
+            if "next_before_id" not in out:
+                break
+            assert out["next_before_id"] == out["oldest_msg_id"]
+            request["before_id"] = out["next_before_id"]
+        else:
+            pytest.fail("the chained walk never ended")
+
+        assert seen == whole["scanned_messages"] == 8
+        assert merged == {p["user_id"]: p["count"] for p in whole["posters"]}
+        assert out.get("exhausted") is True
+        assert out["oldest_msg_id"] == 201
+
+    async def test_posters_report_the_window_edges_and_the_history_size(
+        self, live_daemon, client, in_thread, peers
+    ):
+        for index in range(4):
+            peers.add_message(GROUP_ID, f"m{index}", sender_id=ALICE, message_id=202 + index)
+        out = await result(
+            client, in_thread, "chat.poster.list", {"chat": str(GROUP_ID), "max_messages": 2}
+        )
+        assert out["newest_msg_id"] == 205
+        assert out["oldest_msg_id"] == 204
+        assert out["next_before_id"] == 204
+        assert not out.get("exhausted")
+        assert out["total_messages"] == 5
+        assert out["oldest_date_unix"] <= out["newest_date_unix"]
+
+    async def test_posters_stop_offering_a_cursor_at_the_since_bound(
+        self, live_daemon, client, in_thread, peers
+    ):
+        from datetime import datetime, timezone
+
+        old = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        new = datetime(2026, 6, 1, tzinfo=timezone.utc)
+        peers.add_message(GROUP_ID, "old", sender_id=BOB, date=old, message_id=202)
+        peers.add_message(GROUP_ID, "new", sender_id=ALICE, date=new, message_id=203)
+        peers.add_message(GROUP_ID, "newer", sender_id=BOB, date=new, message_id=204)
+        out = await result(
+            client,
+            in_thread,
+            "chat.poster.list",
+            {"chat": str(GROUP_ID), "since": "2026-03-01T00:00:00Z", "before_id": 204},
+        )
+        assert [p["user_id"] for p in out["posters"]] == [ALICE]
+        assert out["scanned_messages"] == 1
+        assert "next_before_id" not in out
+        assert not out.get("exhausted"), "the window ended, not the history"
+
+    async def test_posters_pace_a_resumed_walk_like_a_long_one(
+        self, live_daemon, client, in_thread, peers
+    ):
+        peers.add_message(GROUP_ID, "one", sender_id=ALICE, message_id=202)
+        await result(client, in_thread, "chat.poster.list", {"chat": str(GROUP_ID)})
+        await result(
+            client, in_thread, "chat.poster.list", {"chat": str(GROUP_ID), "before_id": 202}
+        )
+        await result(
+            client, in_thread, "chat.poster.list", {"chat": str(GROUP_ID), "max_messages": 5000}
+        )
+        walks = peers.called("iter_messages")
+        assert [w["wait_time"] for w in walks[-3:]] == [0, 1, 1]
+        assert walks[-2]["offset_id"] == 202
+
+    async def test_posters_keep_the_cursor_when_a_flood_cuts_the_walk(
+        self, live_daemon, client, in_thread, peers
+    ):
+        from telethon.errors import FloodWaitError
+        from telethon.tl import types
+
+        peers.add_message(GROUP_ID, "one", sender_id=ALICE)
+        peers.fail_next("iter_messages", FloodWaitError(types.InputPeerSelf, capture=42))
+        out = await result(
+            client, in_thread, "chat.poster.list", {"chat": str(GROUP_ID), "before_id": 150}
+        )
+        assert out["partial"] is True
+        assert not out.get("exhausted")
+        assert out["next_before_id"] == 150, "resume where this walk was asked to start"
+
     async def test_posters_exits_empty_when_nobody_posted(
         self, live_daemon, client, in_thread, peers
     ):

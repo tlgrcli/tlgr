@@ -5,6 +5,30 @@ All notable changes to tlgr are recorded here. The format follows
 semantic versioning at the CLI surface, which means the JSON shapes and exit
 codes documented in `AGENT.md` are the public API.
 
+## [Unreleased]
+
+### Added
+
+- **`chat poster list` can walk deeper than one call.** A single call stops
+  at `--max-messages 20000` and at the operation deadline, so a longer
+  history could not be harvested at all: a bigger number was refused and
+  there was no way to continue a walk. The report now carries
+  `next_before_id`; pass it back as `--before-id` and the next call resumes
+  exactly below the last message counted, with no gap and no overlap. Keep
+  going until `next_before_id` is absent. A flood-cut walk keeps its
+  cursor, so the caller can wait out `flood_wait` and resume.
+
+  The report also gains the window's edges (`newest_msg_id`,
+  `oldest_msg_id` and their dates), `exhausted` (the walk reached the
+  oldest message the account can see) and `total_messages` (Telegram's
+  count for the whole chat). `oldest_date` is the true tail of the window,
+  where the per-poster dates could only bound it.
+
+  A resumed call is paced at one `GetHistory` a second whatever its own
+  size, because it is part of a long walk. Before, only calls above 3000
+  messages were paced, so a chain of small calls would have read history
+  unthrottled.
+
 ## [2.0.1] — 2026-09-10
 
 ### Changed

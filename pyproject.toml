@@ -66,6 +66,10 @@ qr = ["segno>=1.6"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# A test still running after this many seconds has every thread's traceback
+# written to stderr, so a hang names itself in the log while the job is still
+# alive to upload it. The slowest test takes about three seconds.
+faulthandler_timeout = 60
 
 [tool.ruff]
 line-length = 100

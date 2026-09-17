@@ -2104,7 +2104,7 @@ Full: `dialogs.pin`, `dialogs.pin-in-folder`, `dialogs.pin-reorder`, `dialogs.un
 
 Harvest the senders that posted in a chat over a message window.
 
-Pagination is internal — do not hand-roll the walk. Senders are not always users: an anonymous admin and a linked channel post under a negative channel id, so filter to positive ids when harvesting people.
+Pagination is internal — do not hand-roll the walk. Senders are not always users: an anonymous admin and a linked channel post under a negative channel id, so filter to positive ids when harvesting people. One call walks at most 20000 messages; to go deeper, pass the report's `next_before_id` back as --before-id and merge the reports, until `next_before_id` is absent.
 
 ```
 tlgr chat poster list <CHAT> [OPTIONS]
@@ -2118,6 +2118,7 @@ tlgr chat poster list <CHAT> [OPTIONS]
 
 | Flag | Type | Default | Meaning |
 |---|---|---|---|
+| `--before-id` | msg-id |  | Start the walk below this message id (resume from next_before_id). |
 | `--max-messages` | int | `2000` | How much history to walk. |
 | `--min-messages` | int | `1` | Drop senders below this count. |
 | `--since` | datetime |  | Scan window start. |

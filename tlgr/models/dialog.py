@@ -591,6 +591,22 @@ class PosterReport(Model):
     #: the truth, and reporting it as complete is the bug this flag prevents.
     partial: bool = False
     flood_wait: int | None = None
+    #: The newest and oldest message the walk counted. `oldest_date` is the
+    #: true tail of the window, which the per-poster dates can only bound.
+    newest_msg_id: int | None = None
+    newest_date: str | None = None
+    newest_date_unix: int | None = None
+    oldest_msg_id: int | None = None
+    oldest_date: str | None = None
+    oldest_date_unix: int | None = None
+    #: Pass back as `before_id` to continue the walk below this one. Absent
+    #: when there is nothing left to walk: the history ran out or `since` was
+    #: reached. A flood-cut walk keeps it.
+    next_before_id: int | None = None
+    #: The walk reached the oldest message this account can see.
+    exhausted: bool = False
+    #: How many messages Telegram says the chat holds, from the first page.
+    total_messages: int | None = None
 
 
 class Promo(Model):

@@ -2475,6 +2475,21 @@ class PosterListReq(Request):
         int,
         opt("--max-messages", metavar="N", help="How much history to walk.", ge=1, le=20000),
     ] = 2000
+    before_id: Annotated[
+        int | None,
+        opt(
+            "--before-id",
+            metavar="ID",
+            kind="msg_id",
+            help="Start the walk below this message id (resume from next_before_id).",
+        ),
+    ] = None
+
+
+#: Above this many messages Telethon paces `GetHistory` at one call a second on
+#: its own; at or below it, it does not pace at all. A resumed walk is part of a
+#: long walk whatever its own size, so it is paced like one.
+_PACED_WALK = 3000
 
 
 async def poster_list(ctx: OpContext, req: PosterListReq) -> PosterReport:
@@ -2484,6 +2499,16 @@ async def poster_list(ctx: OpContext, req: PosterListReq) -> PosterReport:
     offsets or the flood backoff wrong. A flood wait mid-scan returns the
     partial harvest with `partial: true` rather than an error, because half
     the senders is a useful answer and an exception is not.
+
+    One call is bounded twice, by `--max-messages` (20000) and by the
+    operation deadline, and a paced walk covers roughly 6000 messages a
+    minute. So a history deeper than one call can walk is walked in several:
+    each report carries `next_before_id`, the caller passes it back as
+    `--before-id`, and the walk resumes exactly below the last message it
+    counted. `next_before_id` is absent once the walk has reached the start
+    of the visible history or the `--since` bound, which is how a caller
+    knows to stop. A flood-cut walk keeps it, so the caller can wait out
+    `flood_wait` and resume instead of starting over.
     """
     peer = await _send.resolve(ctx, req.chat)
     chat_id = _send.peer_id_of(peer)
@@ -2496,15 +2521,30 @@ async def poster_list(ctx: OpContext, req: PosterListReq) -> PosterReport:
     counts: dict[int, Poster] = {}
     scanned = 0
     partial = False
+    reached_since = False
     flood_wait: int | None = None
+    newest: Any = None
+    oldest: Any = None
+    paced = req.max_messages > _PACED_WALK or req.before_id is not None
+    walk = client.iter_messages(
+        peer,
+        limit=req.max_messages,
+        offset_date=until,
+        offset_id=req.before_id or 0,
+        wait_time=1 if paced else 0,
+    )
     try:
-        async for message in client.iter_messages(peer, limit=req.max_messages, offset_date=until):
+        async for message in walk:
             if message is None:
                 continue
-            scanned += 1
             date = getattr(message, "date", None)
             if since is not None and date is not None and date < since:
+                reached_since = True
                 break
+            scanned += 1
+            if newest is None:
+                newest = message
+            oldest = message
             sender_id = peer_id_of(getattr(message, "from_id", None))
             if sender_id is None:
                 sender_id = peer_id_of(getattr(message, "peer_id", None))
@@ -2535,13 +2575,32 @@ async def poster_list(ctx: OpContext, req: PosterListReq) -> PosterReport:
     if limit:
         posters = posters[:limit]
     ctx.emit("chat_posters", {"chat_id": chat_id, "scanned": scanned})
-    return PosterReport(
+    # Fewer messages than asked for, with nothing else to explain it, means
+    # Telegram ran out of history: the walk reached the oldest visible message.
+    exhausted = not partial and not reached_since and scanned < req.max_messages
+    total = getattr(walk, "total", None)
+    report = PosterReport(
         posters=posters,
         scanned_messages=scanned,
         distinct_posters=len(counts),
         partial=partial,
         flood_wait=flood_wait,
+        exhausted=exhausted,
+        total_messages=int(total) if isinstance(total, int) else None,
     )
+    if newest is not None:
+        report.newest_msg_id = int(getattr(newest, "id", 0) or 0)
+        report.newest_date = fmt_dt(getattr(newest, "date", None))
+        report.newest_date_unix = to_unix(getattr(newest, "date", None))
+    if oldest is not None:
+        report.oldest_msg_id = int(getattr(oldest, "id", 0) or 0)
+        report.oldest_date = fmt_dt(getattr(oldest, "date", None))
+        report.oldest_date_unix = to_unix(getattr(oldest, "date", None))
+    if not exhausted and not reached_since:
+        # Where the next call starts. A walk that counted nothing (a flood on
+        # the very first page) resumes where this one was asked to start.
+        report.next_before_id = report.oldest_msg_id or req.before_id
+    return report
 
 
 async def _name_posters(ctx: OpContext, counts: dict[int, Poster]) -> None:
@@ -2568,7 +2627,10 @@ SPEC_POSTER_LIST = OperationSpec(
     description=(
         "Pagination is internal — do not hand-roll the walk. Senders are not "
         "always users: an anonymous admin and a linked channel post under a "
-        "negative channel id, so filter to positive ids when harvesting people."
+        "negative channel id, so filter to positive ids when harvesting people. "
+        "One call walks at most 20000 messages; to go deeper, pass the report's "
+        "`next_before_id` back as --before-id and merge the reports, until "
+        "`next_before_id` is absent."
     ),
     aliases=("chat.posters",),
     legacy_paths=("chat posters",),
@@ -2580,6 +2642,8 @@ SPEC_POSTER_LIST = OperationSpec(
         "posters": [{"user_id": 4242, "id": 4242, "name": "Alice", "count": 44}],
         "scanned_messages": 2400,
         "distinct_posters": 137,
+        "oldest_msg_id": 51201,
+        "next_before_id": 51201,
     },
     example_args="chat poster list @somegroup",
     covers=(),

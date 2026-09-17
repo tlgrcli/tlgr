@@ -4728,7 +4728,15 @@ class FakeTelegramClient:
         """
         chat_id = self._chat_id(entity)
         self.world.calls.append(
-            ("iter_messages", {"chat_id": chat_id, "limit": limit, "offset_id": offset_id})
+            (
+                "iter_messages",
+                {
+                    "chat_id": chat_id,
+                    "limit": limit,
+                    "offset_id": offset_id,
+                    "wait_time": _.get("wait_time"),
+                },
+            )
         )
         failure = self.world._fail_next.pop("iter_messages", None)
         if failure is not None:
@@ -4786,7 +4794,11 @@ class FakeTelegramClient:
             ordered = source[start:]
         if limit is not None:
             ordered = ordered[: int(limit)]
-        return _AsyncList(list(ordered))
+        page = _AsyncList(list(ordered))
+        # Telethon's iterator carries the `count` of the first response: the
+        # size of the whole history, whatever window was asked for.
+        page.total = len(history)
+        return page
 
     async def get_messages(self, entity: Any, ids: Any = None, **kwargs: Any) -> Any:
         found = [m async for m in self.iter_messages(entity, ids=ids, **kwargs)]

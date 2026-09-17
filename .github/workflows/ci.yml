@@ -53,6 +53,9 @@ jobs:
     if: needs.guard.outputs.run == 'true'
     name: ${{ matrix.os }} · py${{ matrix.python }}
     runs-on: ${{ matrix.os }}
+    # A green run takes a few minutes. Without a limit, a stuck one holds its
+    # runner for GitHub's six-hour default before anybody hears about it.
+    timeout-minutes: 15
     # 3.14 is allowed to fail: it is a forward-looking signal, not a gate.
     continue-on-error: ${{ matrix.python == '3.14' }}
     strategy:
@@ -85,5 +88,13 @@ jobs:
       - name: mypy (strict set)
         run: make typecheck PY="uv run python"
 
+      # The address-space cap is the backstop for a single test that
+      # allocates without bound, which the per-test budget in
+      # tests/conftest.py only sees once that test ends. With it, such a test
+      # gets a MemoryError; without it, it takes the runner down, and the log
+      # goes with the runner. The suite peaks near 2.5 GB of address space.
+      # macOS does not enforce RLIMIT_AS, hence Linux only.
       - name: pytest
-        run: make test PY="uv run python"
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then ulimit -v $((8 * 1024 * 1024)); fi
+          make test PY="uv run python"

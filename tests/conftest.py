@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import resource
 import shutil
 import sys
 import tempfile
@@ -167,3 +168,32 @@ def _restore_umask():
     os.umask(previous)
     yield
     os.umask(previous)
+
+
+# A leak does not fail a test, it starves the machine. The Ubuntu 3.14 job
+# grew by about 20 MB a second (coverage keeping every `eval`ed annotation
+# alive, see `test_registry_contract.py`) until its runner stopped answering,
+# and every such run lost its log along with the runner. A whole run peaks
+# under 1 GB resident.
+PEAK_RSS_BUDGET_MB = 4096
+
+
+def _peak_rss_mb() -> float:
+    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return peak / (1024 * 1024) if sys.platform == "darwin" else peak / 1024  # bytes vs KiB
+
+
+def pytest_runtest_teardown(item: pytest.Item, nextitem: pytest.Item | None) -> None:
+    """Stop the session at the first test that takes it over the memory budget.
+
+    Checked after every test rather than enforced by the OS, so the run ends
+    with a report that names where the memory went, not with a killed
+    process that names nothing.
+    """
+    peak = _peak_rss_mb()
+    if peak > PEAK_RSS_BUDGET_MB:
+        item.session.shouldfail = (
+            f"peak RSS reached {peak:.0f} MB after {item.nodeid}, "
+            f"over the {PEAK_RSS_BUDGET_MB} MB budget in tests/conftest.py; "
+            "something in or before this test is holding on to memory"
+        )

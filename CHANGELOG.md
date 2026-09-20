@@ -29,6 +29,21 @@ codes documented in `AGENT.md` are the public API.
   messages were paced, so a chain of small calls would have read history
   unthrottled.
 
+### Fixed
+
+- **`chat list` no longer loses a block of dialogs at a page boundary.** The
+  dialog walk paired each row with its top message by message id alone, but
+  only private chats share one id space: every channel and supergroup numbers
+  its own messages, so two dialogs in one reply could have the same top
+  message id and one overwrote the other. The row then previewed the wrong
+  message and, on the last row of a page, the wrong message supplied the
+  cursor's date, so the next page started from a different point in time and
+  a contiguous run of dialogs was never returned, with `has_more: false`.
+  Whether a reply collided depended on which chats had just been active, so
+  the walk came back short on some calls and complete on the next. Messages
+  are now matched by (channel, id), as Telethon does, and the cursor is built
+  from one row's own date, id and peer.
+
 ## [2.0.1] — 2026-09-10
 
 ### Changed

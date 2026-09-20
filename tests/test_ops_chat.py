@@ -60,6 +60,117 @@ async def result(client, in_thread, op: str, request: Any = None, **kwargs: Any)
 # ---------------------------------------------------------------------------
 
 
+class TestDialogWalkCursor:
+    """The walk reads its cursor off the row it stopped on, and nothing else."""
+
+    async def test_a_channel_message_id_cannot_stand_in_for_a_private_one(
+        self, live_daemon, client, in_thread, world
+    ):
+        """Message ids are per channel, so two dialogs can share a top message id.
+
+        Keyed by id alone, the later one overwrote the earlier in the reply's
+        message map and a dialog previewed somebody else's message. On the
+        walk that same wrong message supplied the cursor's date, so the next
+        page started from a different point in time and a contiguous block of
+        dialogs was never returned, while the answer still said `has_more:
+        false`. Only some replies collide, which is why it came and went.
+        """
+        from datetime import datetime, timedelta, timezone
+
+        from fake_telethon import make_channel, make_user
+
+        now = datetime.now(timezone.utc)
+        world.add_user(make_user(ALICE, username="alice", first="Alice"))
+        world.add_channel(make_channel(GROUP, title="News", megagroup=True))
+        world.add_message(ALICE, "private one", message_id=555, date=now - timedelta(days=40))
+        world.add_message(GROUP_ID, "channel one", message_id=555, date=now)
+        world.add_dialog(ALICE, top_message=555)
+        world.add_dialog(GROUP_ID, top_message=555)
+
+        items = await result(client, in_thread, "chat.list")
+        rows = {row["chat"]["id"]: row for row in items}
+        assert rows[ALICE]["last_message"]["text"] == "private one"
+        assert rows[GROUP_ID]["last_message"]["text"] == "channel one"
+
+    async def test_the_next_page_starts_where_the_last_row_really_is(self, monkeypatch):
+        """`_all_dialogs` hands the server the last row's own date, id and peer."""
+        from datetime import datetime, timedelta, timezone
+        from types import SimpleNamespace
+
+        from fake_telethon import make_channel, make_user
+        from telethon.tl import types
+
+        from tlgr.ops import chat as chat_ops
+
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        clash = 900
+        users = [make_user(1000 + n, first=f"U{n}") for n in range(99)]
+        channel = make_channel(GROUP, title="News", megagroup=True)
+        # A channel dialog and 99 private ones; the last private dialog's top
+        # message id equals the channel's, and the channel's date is newer.
+        users_top = [5000 + n for n in range(98)] + [clash]
+        dates = [now - timedelta(hours=n) for n in range(99)]
+
+        def row(peer: Any, top: int) -> Any:
+            return types.Dialog(
+                peer=peer,
+                top_message=top,
+                read_inbox_max_id=0,
+                read_outbox_max_id=0,
+                unread_count=0,
+                unread_mentions_count=0,
+                unread_reactions_count=0,
+                unread_poll_votes_count=0,
+                notify_settings=types.PeerNotifySettings(),
+            )
+
+        dialogs = [row(types.PeerChannel(channel_id=GROUP), clash)]
+        dialogs += [
+            row(types.PeerUser(user_id=user.id), top)
+            for user, top in zip(users, users_top, strict=True)
+        ]
+        messages = [
+            types.Message(id=top, peer_id=types.PeerUser(user_id=user.id), date=date, message="p")
+            for user, top, date in zip(users, users_top, dates, strict=True)
+        ]
+        # Last in the reply, so an id-only map would keep this one for `clash`.
+        messages.append(
+            types.Message(
+                id=clash,
+                peer_id=types.PeerChannel(channel_id=GROUP),
+                date=now + timedelta(days=30),
+                message="c",
+            )
+        )
+
+        seen: list[Any] = []
+
+        class Stub:
+            async def __call__(self, request: Any) -> Any:
+                seen.append(request)
+                if len(seen) == 1:
+                    return types.messages.DialogsSlice(
+                        dialogs=dialogs,
+                        messages=messages,
+                        chats=[channel],
+                        users=users,
+                        count=500,
+                    )
+                return types.messages.Dialogs(dialogs=[], messages=[], chats=[], users=[])
+
+        ctx = SimpleNamespace(client=Stub())
+        out = await chat_ops._all_dialogs(ctx, folder_id=None)
+
+        assert len(out) == 100
+        assert len(seen) == 2
+        second = seen[1]
+        last_user = users[-1]
+        assert second.offset_id == clash
+        assert second.offset_date == dates[-1]
+        assert isinstance(second.offset_peer, types.InputPeerUser)
+        assert second.offset_peer.user_id == last_user.id
+
+
 class TestList:
     async def test_the_dialog_list_comes_back_with_its_peers(
         self, live_daemon, client, in_thread, peers

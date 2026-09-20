@@ -255,7 +255,31 @@ def _entity_map(result: Any) -> dict[int, Any]:
     return out
 
 
-def _dialog_model(raw: Any, entities: dict[int, Any], messages: dict[int, Any]) -> Dialog:
+def _message_key(peer: Any, message_id: int) -> tuple[int | None, int]:
+    """What identifies a message inside ONE `getDialogs` reply.
+
+    A message id is unique per account only in private chats and basic groups.
+    A channel or supergroup numbers its own messages from 1, so message 4211 of
+    a supergroup and message 4211 of a private chat are different messages that
+    can sit in the same reply as two dialogs' top messages. Keying by id alone
+    lets one overwrite the other, and the dialog then shows (and, worse, walks
+    from) somebody else's message. Telethon keys the same way for this reason.
+    """
+    channel_id = getattr(peer, "channel_id", None)
+    return (int(channel_id) if channel_id is not None else None, int(message_id or 0))
+
+
+def _top_messages(result: Any) -> dict[tuple[int | None, int], Any]:
+    """The top messages a `getDialogs`-shaped reply carried, by `_message_key`."""
+    return {
+        _message_key(getattr(message, "peer_id", None), getattr(message, "id", 0)): message
+        for message in (getattr(result, "messages", None) or [])
+    }
+
+
+def _dialog_model(
+    raw: Any, entities: dict[int, Any], messages: dict[tuple[int | None, int], Any]
+) -> Dialog:
     """One `dialog` row plus the entity and top message that came with it."""
     from tlgr.ops.draft import draft_model
 
@@ -267,7 +291,7 @@ def _dialog_model(raw: Any, entities: dict[int, Any], messages: dict[int, Any]) 
         else Peer(id=chat_id, raw_id=abs(chat_id), kind="unknown")
     )
     top_id = int(getattr(raw, "top_message", 0) or 0)
-    top = messages.get(top_id) if top_id else None
+    top = messages.get(_message_key(getattr(raw, "peer", None), top_id)) if top_id else None
     draft_raw = getattr(raw, "draft", None)
     draft = None
     if draft_raw is not None and type(draft_raw).__name__ != "DraftMessageEmpty":
@@ -332,10 +356,7 @@ async def fetch_dialogs(
         )
     )
     entities = _entity_map(result)
-    messages = {
-        int(getattr(message, "id", 0) or 0): message
-        for message in (getattr(result, "messages", None) or [])
-    }
+    messages = _top_messages(result)
     rows = [row for row in (getattr(result, "dialogs", None) or []) if hasattr(row, "peer")]
     # The cursor needs the last row's peer WITH its access hash, and the only
     # place that hash exists is the entity list this same reply carried — so
@@ -369,10 +390,19 @@ async def _all_dialogs(ctx: OpContext, *, folder_id: int | None, cap: int = 2000
         seen.update(d.chat.id for d in page)
         if len(page) < 100 or not fresh:
             break
-        last = page[-1]
+        # The cursor is (date, id, peer) of ONE row and the three must describe
+        # the same dialog. Anchor on the last row whose top message came with
+        # the reply: a row without a date would restart the walk from the top
+        # (offset_date=0), which is a repeat page, not progress. The rows after
+        # the anchor come back once more and `seen` drops them.
+        anchor = next((i for i in range(len(page) - 1, -1, -1) if page[i].last_message), None)
+        if anchor is None or anchor >= len(rows):
+            break
+        last = page[anchor]
+        assert last.last_message is not None
         offset_id = last.top_message_id or 0
-        offset_date = parse_dt(last.last_message.date) if last.last_message else None
-        offset_peer = _offset_peer(rows[-1], entities) if rows else None
+        offset_date = parse_dt(last.last_message.date)
+        offset_peer = _offset_peer(rows[anchor], entities)
     return out
 
 
@@ -777,7 +807,7 @@ async def _pinned_dialogs(ctx: OpContext, req: ListReq) -> Page[Dialog]:
     folder_id = _peer_folder(req.folder) or FOLDER_MAIN
     result = await _client(ctx)(fn.GetPinnedDialogsRequest(folder_id=folder_id))
     entities = _entity_map(result)
-    messages = {int(getattr(m, "id", 0) or 0): m for m in (getattr(result, "messages", None) or [])}
+    messages = _top_messages(result)
     items = [
         _dialog_model(row, entities, messages)
         for row in (getattr(result, "dialogs", None) or [])

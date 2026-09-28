@@ -23,7 +23,7 @@ pipx install git+https://github.com/tlgrcli/tlgr.git
 ```
 
 > **For agents:** logging in is a sequence of ordinary commands — `tlgr auth send-code` then `tlgr auth verify-code` — so only *reading the code* needs a person. Secrets come from `--x-env`/`--x-stdin`/`--x-file`, never argv. See [AGENT.md](AGENT.md) for the full agent reference.
-> [`skills/tlgr/SKILL.md`](skills/tlgr/SKILL.md) is the same guidance as an [Agent Skill](https://agentskills.io) for Claude Code, Codex, Cursor, OpenClaw and others: `npx skills add tlgrcli/tlgr`.
+> [`plugin/skills/tlgr/SKILL.md`](plugin/skills/tlgr/SKILL.md) is the same guidance as an [Agent Skill](https://agentskills.io) for Claude Code, Codex, Cursor, OpenClaw and others: `npx skills add tlgrcli/tlgr`.
 > In Claude Code it also installs as a plugin: `claude plugin marketplace add tlgrcli/tlgr`, then `claude plugin install tlgr@tlgr`.
 
 > **Coming from tlgr 1.x with a running daemon?** Stop it before you upgrade — two processes on one session file is how an authorization gets revoked. [docs/UPGRADING.md](docs/UPGRADING.md) is the ten-minute cutover, including the six output shapes an agent has to adapt to.

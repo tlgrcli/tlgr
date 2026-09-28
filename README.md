@@ -6,6 +6,8 @@
 
 Full Telegram account control from the terminal. Agent-friendly, daemon-based, with webhook event push.
 
+<p align="center"><img src="assets/demo/tlgr-demo.gif" width="720" alt="tlgr in a terminal: listing message event types, parsing Markdown into Telegram entities as JSON, the read-receipt policy, and the stable exit codes"></p>
+
 ```
 pipx install tlgr-cli
 ```

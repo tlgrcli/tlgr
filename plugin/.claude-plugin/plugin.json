@@ -9,6 +9,8 @@
   },
   "homepage": "https://github.com/tlgrcli/tlgr",
   "repository": "https://github.com/tlgrcli/tlgr",
+  "documentationUrl": "https://github.com/tlgrcli/tlgr/blob/main/AGENT.md",
+  "supportUrl": "https://github.com/tlgrcli/tlgr/issues",
   "license": "MIT",
   "keywords": [
     "telegram",

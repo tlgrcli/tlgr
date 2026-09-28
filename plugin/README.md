@@ -20,6 +20,8 @@ When the skill is used, Claude runs `tlgr` commands in your terminal, with the s
 
 The skill tells Claude to look without leaving a trace by default (no read receipts), to ask before deleting, leaving, blocking or messaging someone new, and never to put a password or other secret on the command line.
 
+The full [privacy policy](https://github.com/tlgrcli/tlgr/blob/main/PRIVACY.md) covers what tlgr stores on your computer and everything it can send.
+
 ## License
 
 MIT, the same as tlgr.

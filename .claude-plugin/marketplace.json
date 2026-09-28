@@ -1,0 +1,15 @@
+{
+  "name": "tlgr",
+  "description": "The tlgr plugin for Claude Code: Telegram from the terminal, through the tlgr CLI.",
+  "owner": {
+    "name": "tlgrcli",
+    "url": "https://github.com/tlgrcli"
+  },
+  "plugins": [
+    {
+      "name": "tlgr",
+      "source": "./",
+      "description": "Read and act on a personal Telegram account through the tlgr CLI."
+    }
+  ]
+}

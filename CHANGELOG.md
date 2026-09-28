@@ -5,7 +5,11 @@ All notable changes to tlgr are recorded here. The format follows
 semantic versioning at the CLI surface, which means the JSON shapes and exit
 codes documented in `AGENT.md` are the public API.
 
-## [Unreleased]
+## [2.1.0] - 2026-09-28
+
+Log in without registering your app's credentials again for every account:
+`tlgr auth api set` saves them once. Also: `chat poster list` resumes long
+walks, and `chat list` no longer drops dialogs at a page boundary.
 
 ### Added
 

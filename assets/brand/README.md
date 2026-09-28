@@ -27,3 +27,11 @@ cd assets/brand
 python3 -m http.server 8765 &
 for n in 1 2 3 4 5; do src/render.sh "src/gallery.html?p=$n" "$PWD/gallery/0$n.png" 1270 760 2; done
 ```
+
+## GitHub social preview
+
+`social-preview.png` is the 1280x640 image set under the repository's Settings → Social preview. It comes from the same page:
+
+```bash
+src/render.sh "src/gallery.html?p=social" "$PWD/social-preview.png" 1280 640 1
+```

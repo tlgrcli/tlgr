@@ -11,6 +11,7 @@ from tlgr.core.errors import (
     ERROR_MAP,
     EXIT_AUTH,
     EXIT_CODE_MAP,
+    EXIT_CONFIG,
     EXIT_GENERIC,
     EXIT_NOT_FOUND,
     EXIT_PERMISSION,
@@ -146,6 +147,13 @@ class TestParameters:
     def test_frozen_rpc_message_wins_over_the_class(self):
         exc = type("RPCError", (Exception,), {})("FROZEN_METHOD_INVALID")
         assert classify(exc).code == "ACCOUNT_FROZEN"
+
+    @pytest.mark.parametrize("rpc", ["API_ID_INVALID", "API_ID_PUBLISHED_FLOOD"])
+    def test_a_bad_app_is_a_config_error_that_names_the_fix(self, rpc):
+        """The account is fine; the api_id is what needs changing, and exit 1 said nothing."""
+        body = classify(type("RPCError", (Exception,), {})(f"RPCError 400: {rpc}"))
+        assert (body.code, body.exit_code) == ("CONFIG_ERROR", EXIT_CONFIG)
+        assert "tlgr auth api" in (body.hint or "")
 
     def test_msgspec_validation_error_is_usage_with_a_field(self):
         with pytest.raises(msgspec.ValidationError) as excinfo:

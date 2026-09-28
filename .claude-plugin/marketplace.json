@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "tlgr",
-      "source": "./",
+      "source": "./plugin",
       "description": "Read and act on a personal Telegram account through the tlgr CLI."
     }
   ]

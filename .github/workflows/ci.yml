@@ -26,6 +26,17 @@ jobs:
   # scarcest runner there is — the duplicate is what puts a queue in front of
   # the run that actually gates the merge. So: push builds a branch only
   # while nothing else is building it.
+  #
+  # The usual sequence is `git push` and then `gh pr create` a few seconds
+  # later, so a push that looks for its pull request straight away finds
+  # none and builds the full matrix beside the pull_request run (PR #25: the
+  # push at 09:49:00, its pull request's run at 09:49:18). Waiting a minute
+  # before looking closes that race for the price of one idle ubuntu minute.
+  #
+  # Sharing one concurrency group between the two events would not do it:
+  # every later push to an open pull request fires both events, and if the
+  # push run lands second it cancels the pull_request run and then skips
+  # itself, leaving the commit untested.
   guard:
     name: should this push build
     runs-on: ubuntu-latest
@@ -40,12 +51,15 @@ jobs:
             echo "run=true" >> "$GITHUB_OUTPUT"   # the pull_request run itself
           elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"   # main is never skipped
-          elif [ "$(gh pr list --repo "$GITHUB_REPOSITORY" \
-                     --head "$GITHUB_REF_NAME" --state open \
-                     --json number --jq 'length')" != "0" ]; then
-            echo "run=false" >> "$GITHUB_OUTPUT"  # its pull request covers it
           else
-            echo "run=true" >> "$GITHUB_OUTPUT"   # no pull request yet
+            sleep 60                              # let a `gh pr create` land
+            if [ "$(gh pr list --repo "$GITHUB_REPOSITORY" \
+                       --head "$GITHUB_REF_NAME" --state open \
+                       --json number --jq 'length')" != "0" ]; then
+              echo "run=false" >> "$GITHUB_OUTPUT"  # its pull request covers it
+            else
+              echo "run=true" >> "$GITHUB_OUTPUT"   # no pull request yet
+            fi
           fi
 
   test:

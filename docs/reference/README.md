@@ -2,13 +2,13 @@
 
 # Command reference
 
-678 operations across 47 groups, generated from the operation registry. Groups still served by v1's hand-written commands are not listed here; they arrive with their own PR.
+681 operations across 47 groups, generated from the operation registry. Groups still served by v1's hand-written commands are not listed here; they arrive with their own PR.
 
 | Group | Operations | Reference |
 |---|---:|---|
 | `account` | 35 | [account.md](account.md) |
 | `agent` | 7 | [agent.md](agent.md) |
-| `auth` | 11 | [auth.md](auth.md) |
+| `auth` | 14 | [auth.md](auth.md) |
 | `boost` | 3 | [boost.md](boost.md) |
 | `bot` | 57 | [bot.md](bot.md) |
 | `business` | 14 | [business.md](business.md) |

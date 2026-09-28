@@ -62,7 +62,7 @@ tlgr account add [PHONE] [OPTIONS]
 |---|---|---|---|
 | `--alias` | text |  | Local name for the account. |
 | `--api-hash` | text |  | api_hash for this account. |
-| `--api-id` | int |  | api_id for this account. |
+| `--api-id` | int |  | api_id; default: `auth api set`'s. |
 | `--bot` | flag |  | Log in as a bot with a token instead. |
 | `--test-dc` | flag |  | Use the Telegram test DCs. |
 | `--token` | text |  | The bot token. |

@@ -2,10 +2,13 @@
 
 # `tlgr auth`
 
-11 operations. Every one takes the global flags (`--json`, `--plain`, `-a/--account`, `--results-only`, `--select`, `--dry-run`, `--yes`, `--no-input`, `--flood-wait-max`, `-v`) anywhere on the line.
+14 operations. Every one takes the global flags (`--json`, `--plain`, `-a/--account`, `--results-only`, `--select`, `--dry-run`, `--yes`, `--no-input`, `--flood-wait-max`, `-v`) anywhere on the line.
 
 | Command | Summary |
 |---|---|
+| [`auth api get`](#tlgr-auth-api-get) | Show the default api_id a login uses |
+| [`auth api set`](#tlgr-auth-api-set) | Save the api_id/api_hash every login uses by default |
+| [`auth api unset`](#tlgr-auth-api-unset) | Forget the default api_id/api_hash |
 | [`auth autologin-url get`](#tlgr-auth-autologin-url-get) | Append the autologin token to a telegram.org URL |
 | [`auth code list`](#tlgr-auth-code-list) | Read login codes Telegram delivered to this session, and burn leaked ones |
 | [`auth login-email set`](#tlgr-auth-login-email-set) | Set, verify or reset the login email the server demands during login |
@@ -17,6 +20,86 @@
 | [`auth sign-up`](#tlgr-auth-sign-up) | Register a new account for a phone whose code was already verified |
 | [`auth tos`](#tlgr-auth-tos) | Show, accept or decline the Terms of Service |
 | [`auth verify-code`](#tlgr-auth-verify-code) | Finish a pending login: submit the code and, if asked, the password |
+
+### `auth api get`
+
+Show the default api_id a login uses.
+
+Reads the default saved by `auth api set`. The hash is masked to its last four characters. `configured: false` means a login with no `--api-id` has nothing to use, and `register_url` is where to get one.
+
+```
+tlgr auth api get [OPTIONS]
+```
+
+**idempotent (reports `already`) · runs without an account · returns `ApiCredentials`**
+
+```console
+$ tlgr auth api get --json
+```
+
+<details><summary>Catalog coverage (0 full, 1 partial)</summary>
+
+Partial: `auth.api-credentials`
+
+Registration itself happens at my.telegram.org; tlgr stores the result.
+
+</details>
+
+### `auth api set`
+
+Save the api_id/api_hash every login uses by default.
+
+Register an app once at my.telegram.org/apps and save it here; `auth send-code`, `auth qr`, `account add --bot` and `account import` then need no `--api-id`. Each login still copies the pair into the account, so changing the default later never moves an existing account to a different app. Written to `api.json` at 0600. At a terminal with no arguments it prompts (the hash without echo). Refuses a malformed hash and the api_ids of Telegram's own apps.
+
+```
+tlgr auth api set [API_ID] [OPTIONS]
+```
+
+**mutating · idempotent (reports `already`) · runs without an account · returns `ApiCredentials`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `API_ID` | int | no | The App api_id from my.telegram.org/apps; prompted for at a terminal. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--api-hash` | text |  | The App api_hash; never on argv. |
+
+```console
+$ tlgr auth api set 1234567 --json
+```
+
+<details><summary>Catalog coverage (0 full, 1 partial)</summary>
+
+Partial: `auth.api-credentials`
+
+Registration itself happens at my.telegram.org; tlgr stores the result.
+
+</details>
+
+### `auth api unset`
+
+Forget the default api_id/api_hash.
+
+Deletes `api.json`. Accounts that already logged in keep working: each holds its own copy of the pair it was made with. Later logins need `--api-id` again, or a new `auth api set`.
+
+```
+tlgr auth api unset [OPTIONS]
+```
+
+**mutating · idempotent (reports `already`) · runs without an account · returns `ApiCredentials`**
+
+```console
+$ tlgr auth api unset --json
+```
+
+<details><summary>Catalog coverage (0 full, 1 partial)</summary>
+
+Partial: `auth.api-credentials`
+
+Registration itself happens at my.telegram.org; tlgr stores the result.
+
+</details>
 
 ### `auth autologin-url get`
 
@@ -117,7 +200,7 @@ tlgr auth qr [OPTIONS]
 |---|---|---|---|
 | `--alias` | text |  | Account alias to create. |
 | `--api-hash` | text |  | api_hash for this account. |
-| `--api-id` | int |  | api_id for this account. |
+| `--api-id` | int |  | api_id; default: `auth api set`'s. |
 | `--password` | text |  | The 2FA cloud password. |
 | `--test-dc` | flag |  | Use the Telegram test DCs. |
 | `--url-only` | flag |  | Print only the tg://login URL (pipe it into qrencode). |
@@ -240,7 +323,7 @@ tlgr auth send-code <PHONE> [OPTIONS]
 | `--allow-flashcall` | flag |  | Permit a flash-call code; you type the number. |
 | `--allow-missed-call` | flag |  | Permit a missed-call code (read the caller id). |
 | `--api-hash` | text |  | api_hash — never on the command line. |
-| `--api-id` | int |  | api_id; else TLGR_API_ID, then the config. |
+| `--api-id` | int |  | api_id; else TLGR_API_ID, then `auth api set`'s. |
 | `--current-number` | flag |  | codeSettings.current_number: this device owns it. |
 | `--no-future-tokens` | flag |  | Do not offer stored tokens; force a real code. |
 | `--recaptcha-token` | text |  | A reCAPTCHA token you solved. |

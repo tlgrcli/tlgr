@@ -268,7 +268,7 @@ class AddReq(Request):
     ] = None
     use_qr: Annotated[bool, opt("--qr", help="Use QR login instead of a phone code.")] = False
     api_id: Annotated[
-        int | None, opt("--api-id", metavar="ID", help="api_id for this account.")
+        int | None, opt("--api-id", metavar="ID", help="api_id; default: `auth api set`'s.")
     ] = None
     api_hash: Annotated[
         str | None, opt(secret=True, envvar="TLGR_API_HASH", help="api_hash for this account.")

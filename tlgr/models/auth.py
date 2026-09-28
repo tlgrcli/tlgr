@@ -29,6 +29,7 @@ __all__ = [
     "AccountRecord",
     "AccountState",
     "AccountTtl",
+    "ApiCredentials",
     "AutologinUrl",
     "DeviceLock",
     "LoginCodes",
@@ -62,6 +63,26 @@ __all__ = [
 # ---------------------------------------------------------------------------
 # Logging in
 # ---------------------------------------------------------------------------
+
+
+class ApiCredentials(Model):
+    """The default app a login uses when it is given no credentials of its own.
+
+    Saved once by `auth api set`, used by every `auth send-code`, `auth qr`
+    and `account import` after it. `api_hash` is masked to its last four
+    characters: enough to tell two registrations apart, not enough to use one.
+    """
+
+    #: No default, so it is always in the output: `false` is the answer.
+    configured: bool
+    api_id: int | None = None
+    api_hash: str | None = None
+    path: str = ""
+    #: A person without credentials needs to know where they come from.
+    register_url: str = ""
+    updated: bool = False
+    removed: bool = False
+    already: bool = False
 
 
 class SentCode(Model):

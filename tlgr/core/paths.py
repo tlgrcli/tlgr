@@ -209,6 +209,11 @@ class TlgrPaths:
         return self.base / "identity.json"
 
     @property
+    def api_credentials(self) -> Path:
+        """The default `api_id`/`api_hash`, for accounts that have none of their own (0600)."""
+        return self.base / "api.json"
+
+    @property
     def proxies(self) -> Path:
         """Saved proxies, including their passwords and MTProxy secrets (0600)."""
         return self.base / "proxies.json"
@@ -294,6 +299,7 @@ class TlgrPaths:
 _SECRET_GLOBS = (
     "accounts/*/session*",
     "accounts/*/config.json",
+    "api.json",
     "ipc.token",
     "cursor.key",
     "webhook.toml",

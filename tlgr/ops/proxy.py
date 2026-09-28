@@ -682,7 +682,7 @@ async def _probe(ctx: OpContext, entry: dict[str, Any], timeout: int) -> ProxyPr
     row = ProxyProbe(id=str(entry.get("id", "")), name=str(entry.get("name", "") or ""))
     api_id, api_hash = _credentials(ctx)
     if not api_id or not api_hash:
-        row.error = "no API credentials are registered; run `tlgr account add` first"
+        row.error = "no API credentials are registered; run `tlgr auth api set` first"
         return row
 
     proxy, connection = _telethon_proxy(entry)
@@ -715,10 +715,8 @@ def _credentials(ctx: OpContext) -> tuple[int | None, str | None]:
 
     manager = AccountManager(default_base())
     alias = ctx.account or manager.get_active() or ""
-    if not alias:
-        return None, None
     with contextlib.suppress(Exception):
-        return manager.load_credentials(alias)
+        return manager.load_credentials(alias) if alias else manager.load_default_credentials()
     return None, None
 
 

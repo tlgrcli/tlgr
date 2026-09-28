@@ -32,6 +32,7 @@ pipx install git+https://github.com/tlgrcli/tlgr.git
 
 ```bash
 tlgr config init                              # create config files
+tlgr auth api set                             # once: your app from my.telegram.org/apps
 tlgr login +15551234567                       # authenticate (shortcut for account add)
 tlgr daemon start                             # start background daemon
 tlgr send @username "Hello from tlgr"         # send a message
@@ -472,8 +473,22 @@ alive unless you passed `--logout`.
 
 ### Logging in
 
+Register an app once at <https://my.telegram.org/apps> (two minutes: any
+title, any short name) and save its `api_id` and `api_hash`. Every account
+you log in after that uses it:
+
 ```bash
-tlgr auth send-code <phone> --alias work --api-id 12345 --api-hash-env TLGR_API_HASH
+tlgr auth api set                     # prompts; the hash is not echoed
+tlgr auth api set 12345 --api-hash-env TLGR_API_HASH   # the scripted form
+tlgr auth api get                     # what is saved (hash masked)
+```
+
+tlgr refuses the api_ids of Telegram's own apps, such as the Telegram Desktop
+credentials in its public build files. Logging in with them breaks Telegram's
+API terms and gets accounts banned.
+
+```bash
+tlgr auth send-code <phone> --alias work
 tlgr auth verify-code <code> --alias work --password-env TLGR_2FA_PASSWORD
 tlgr auth qr --alias work             # streams tg://login tokens until one is approved
 tlgr auth recover                     # forgot the cloud password (recovery email)

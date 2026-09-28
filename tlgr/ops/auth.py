@@ -27,6 +27,7 @@ import time
 from datetime import timedelta
 from typing import Annotated, Any
 
+from tlgr.core.accounts import API_REGISTRATION_URL, check_api_credentials
 from tlgr.core.errors import (
     AuthenticationError,
     AuthPasswordRequiredError,
@@ -38,6 +39,7 @@ from tlgr.core.paths import validate_alias
 from tlgr.core.timefmt import parse_duration
 from tlgr.models.auth import (
     AccountDeletion,
+    ApiCredentials,
     AutologinUrl,
     LoginCodes,
     LoginEmail,
@@ -50,9 +52,12 @@ from tlgr.models.base import Request
 from tlgr.models.page import Page
 from tlgr.ops import _auth
 from tlgr.ops._params import arg, opt
-from tlgr.ops._spec import OpContext, OperationSpec
+from tlgr.ops._spec import OpContext, OperationSpec, Surface
 
 __all__ = [
+    "SPEC_API_GET",
+    "SPEC_API_SET",
+    "SPEC_API_UNSET",
     "SPEC_AUTOLOGIN_URL_GET",
     "SPEC_CODE_LIST",
     "SPEC_LOGIN_EMAIL_SET",
@@ -133,7 +138,14 @@ async def _caller(ctx: OpContext, service: Any, alias: str) -> Any:
 def _credentials(
     ctx: OpContext, alias: str, api_id: int | None, api_hash: str | None
 ) -> tuple[int, str]:
-    """`(api_id, api_hash)` from the flags, the account, the env or the config."""
+    """`(api_id, api_hash)` for a login.
+
+    The flags, then the account's own file, then the environment, then the
+    default `auth api set` saved. The default only ever fills in as a pair,
+    and only when it is the same app as an `api_id` already given: its hash
+    next to somebody else's id would fail as `API_ID_INVALID`, which reads
+    like the id is wrong.
+    """
     import os
 
     manager = _auth.accounts(ctx)
@@ -148,10 +160,18 @@ def _credentials(
     if not resolved_hash:
         resolved_hash = os.environ.get("TELEGRAM_API_HASH") or None
     if not resolved_id or not resolved_hash:
-        raise ConfigurationError(
-            "this account has no API credentials. Get them from my.telegram.org and pass "
-            "--api-id with --api-hash-env (never on the command line)."
+        default_id, default_hash = manager.load_default_credentials()
+        if default_id and default_hash and resolved_id in (None, default_id):
+            resolved_id, resolved_hash = default_id, default_hash
+    if not resolved_id or not resolved_hash:
+        error = ConfigurationError(
+            "no API credentials to log in with. Register an app once at "
+            f"{API_REGISTRATION_URL}, save it with `tlgr auth api set`, and every "
+            "login after that uses it."
         )
+        error.hint = "Run: tlgr auth api set"
+        raise error
+    check_api_credentials(int(resolved_id), str(resolved_hash))
     return int(resolved_id), str(resolved_hash)
 
 
@@ -188,6 +208,239 @@ async def _authorized(ctx: OpContext, service: Any, alias: str, result: Any) -> 
 
 
 # ---------------------------------------------------------------------------
+# auth api get / set / unset: the app every login uses
+# ---------------------------------------------------------------------------
+
+#: What a person who has never registered an app needs to read, once.
+_REGISTER_STEPS = f"""\
+tlgr logs in as an app you register with Telegram. It takes two minutes, once:
+
+  1. Open {API_REGISTRATION_URL} and log in with your phone number.
+  2. Fill in "App title" and "Short name" (anything, e.g. "tlgr" and
+     "tlgrcli"), pick any platform, and create the app.
+  3. Copy "App api_id" and "App api_hash" from the page.
+"""
+
+
+def _api_state(ctx: OpContext, **flags: bool) -> ApiCredentials:
+    manager = _auth.accounts(ctx)
+    api_id, api_hash = manager.load_default_credentials()
+    configured = bool(api_id and api_hash)
+    return ApiCredentials(
+        configured=configured,
+        api_id=api_id if configured else None,
+        api_hash=f"…{api_hash[-4:]}" if configured and api_hash else None,
+        path=str(manager.paths.api_credentials),
+        register_url="" if configured else API_REGISTRATION_URL,
+        **flags,
+    )
+
+
+class ApiGetReq(Request):
+    pass
+
+
+async def api_get(ctx: OpContext, req: ApiGetReq) -> ApiCredentials:
+    """Which app a login uses when it is handed no credentials of its own."""
+    return _api_state(ctx)
+
+
+SPEC_API_GET = OperationSpec(
+    id="auth.api.get",
+    request=ApiGetReq,
+    response=ApiCredentials,
+    impl=api_get,
+    summary="Show the default api_id a login uses",
+    description=(
+        "Reads the default saved by `auth api set`. The hash is masked to its "
+        "last four characters. `configured: false` means a login with no "
+        "`--api-id` has nothing to use, and `register_url` is where to get one."
+    ),
+    idempotent=True,
+    needs_account=False,
+    needs_auth=False,
+    needs_client=False,
+    surface=Surface.LOCAL,
+    rate_class="local",
+    timeout_s=30,
+    columns=("configured", "api_id", "api_hash", "path"),
+    headers=("Configured", "api_id", "api_hash", "File"),
+    example={
+        "configured": True,
+        "api_id": 1234567,
+        "api_hash": "…9f0c",
+        "path": "~/.tlgr/api.json",
+    },
+    example_args="auth api get",
+    covers_partial=("auth.api-credentials",),
+    coverage_note="Registration itself happens at my.telegram.org; tlgr stores the result.",
+    tags=frozenset({"agent-safe"}),
+)
+
+
+class ApiSetReq(Request):
+    api_id: Annotated[
+        int | None,
+        arg(
+            0,
+            metavar="API_ID",
+            required=False,
+            help="The App api_id from my.telegram.org/apps; prompted for at a terminal.",
+        ),
+    ] = None
+    api_hash: Annotated[
+        str | None,
+        opt(secret=True, envvar="TLGR_API_HASH", help="The App api_hash; never on argv."),
+    ] = None
+
+
+def _interactive() -> bool:
+    import sys
+
+    return bool(sys.stdin is not None and sys.stdin.isatty() and sys.stderr and sys.stderr.isatty())
+
+
+def _prompt_api(api_id: int | None, api_hash: str | None) -> tuple[int, str]:
+    """Ask a person at a terminal for whichever half is missing.
+
+    The hash is read with `getpass`, so it never lands in the scrollback; the
+    id is not a secret and is echoed so a typo is visible.
+    """
+    import getpass
+    import sys
+
+    print(_REGISTER_STEPS, file=sys.stderr)
+    while True:
+        while api_id is None:
+            typed = input("api_id: ").strip()
+            if typed.isdigit():
+                api_id = int(typed)
+            else:
+                print("  api_id is a number; copy it from the page.", file=sys.stderr)
+        while not api_hash:
+            api_hash = getpass.getpass("api_hash (hidden): ").strip() or None
+        try:
+            check_api_credentials(api_id, api_hash)
+        except UsageError as exc:
+            # A person at a terminal gets to retype the half that was wrong.
+            print(f"  {exc}", file=sys.stderr)
+            if exc.field == "api_id":
+                api_id = None
+            else:
+                api_hash = None
+            continue
+        return api_id, api_hash
+
+
+async def api_set(ctx: OpContext, req: ApiSetReq) -> ApiCredentials:
+    """Save the app every later login uses, so nobody types it twice.
+
+    Given nothing at a terminal it walks the person through my.telegram.org
+    and prompts; anywhere else it needs `API_ID` and `--api-hash-env` (or
+    `-stdin`/`-file`) and says so. An official client's `api_id` is refused
+    outright: logging in with one is how accounts get banned.
+    """
+    api_id, api_hash = req.api_id, (req.api_hash or "").strip() or None
+    if api_id is None or api_hash is None:
+        if not _interactive():
+            missing = "API_ID" if api_id is None else "--api-hash-env (or -stdin/-file)"
+            raise UsageError(
+                f"{_REGISTER_STEPS}\nThen: tlgr auth api set API_ID --api-hash-env TLGR_API_HASH "
+                f"({missing} is missing)",
+                field="api_id" if api_id is None else "api_hash",
+            )
+        api_id, api_hash = _prompt_api(api_id, api_hash)
+    check_api_credentials(api_id, api_hash)
+
+    manager = _auth.accounts(ctx)
+    if manager.load_default_credentials() == (api_id, api_hash):
+        ctx.mark_already()
+        return _api_state(ctx, already=True)
+    manager.save_default_credentials(api_id, api_hash)
+    return _api_state(ctx, updated=True)
+
+
+SPEC_API_SET = OperationSpec(
+    id="auth.api.set",
+    request=ApiSetReq,
+    response=ApiCredentials,
+    impl=api_set,
+    summary="Save the api_id/api_hash every login uses by default",
+    description=(
+        "Register an app once at my.telegram.org/apps and save it here; "
+        "`auth send-code`, `auth qr`, `account add --bot` and `account import` "
+        "then need no `--api-id`. Each login still copies the pair into the "
+        "account, so changing the default later never moves an existing "
+        "account to a different app. Written to `api.json` at 0600. At a "
+        "terminal with no arguments it prompts (the hash without echo). "
+        "Refuses a malformed hash and the api_ids of Telegram's own apps."
+    ),
+    mutating=True,
+    idempotent=True,
+    needs_account=False,
+    needs_auth=False,
+    needs_client=False,
+    surface=Surface.LOCAL,
+    rate_class="local",
+    timeout_s=30,
+    columns=("configured", "api_id", "api_hash", "path"),
+    headers=("Configured", "api_id", "api_hash", "File"),
+    example={
+        "configured": True,
+        "api_id": 1234567,
+        "api_hash": "…9f0c",
+        "path": "~/.tlgr/api.json",
+        "updated": True,
+    },
+    example_args="auth api set 1234567",
+    covers_partial=("auth.api-credentials",),
+    coverage_note="Registration itself happens at my.telegram.org; tlgr stores the result.",
+    tags=frozenset({"agent-safe"}),
+)
+
+
+class ApiUnsetReq(Request):
+    pass
+
+
+async def api_unset(ctx: OpContext, req: ApiUnsetReq) -> ApiCredentials:
+    """Forget the default. Accounts keep the credentials they logged in with."""
+    if not _auth.accounts(ctx).clear_default_credentials():
+        ctx.mark_already()
+        return _api_state(ctx, already=True)
+    return _api_state(ctx, removed=True)
+
+
+SPEC_API_UNSET = OperationSpec(
+    id="auth.api.unset",
+    request=ApiUnsetReq,
+    response=ApiCredentials,
+    impl=api_unset,
+    summary="Forget the default api_id/api_hash",
+    description=(
+        "Deletes `api.json`. Accounts that already logged in keep working: "
+        "each holds its own copy of the pair it was made with. Later logins "
+        "need `--api-id` again, or a new `auth api set`."
+    ),
+    mutating=True,
+    idempotent=True,
+    needs_account=False,
+    needs_auth=False,
+    needs_client=False,
+    surface=Surface.LOCAL,
+    rate_class="local",
+    timeout_s=30,
+    columns=("configured", "removed", "path"),
+    headers=("Configured", "Removed", "File"),
+    example={"configured": False, "removed": True, "path": "~/.tlgr/api.json"},
+    example_args="auth api unset",
+    covers_partial=("auth.api-credentials",),
+    coverage_note="Registration itself happens at my.telegram.org; tlgr stores the result.",
+    tags=frozenset({"agent-safe"}),
+)
+
+
+# ---------------------------------------------------------------------------
 # auth send-code
 # ---------------------------------------------------------------------------
 
@@ -199,7 +452,8 @@ class SendCodeReq(Request):
         opt("--alias", help="Account alias to create or resume (default: the last 6 digits)."),
     ] = None
     api_id: Annotated[
-        int | None, opt("--api-id", metavar="ID", help="api_id; else TLGR_API_ID, then the config.")
+        int | None,
+        opt("--api-id", metavar="ID", help="api_id; else TLGR_API_ID, then `auth api set`'s."),
     ] = None
     api_hash: Annotated[
         str | None,
@@ -590,7 +844,7 @@ class QrReq(Request):
         str | None, opt(secret=True, envvar="TLGR_2FA_PASSWORD", help="The 2FA cloud password.")
     ] = None
     api_id: Annotated[
-        int | None, opt("--api-id", metavar="ID", help="api_id for this account.")
+        int | None, opt("--api-id", metavar="ID", help="api_id; default: `auth api set`'s.")
     ] = None
     api_hash: Annotated[
         str | None, opt(secret=True, envvar="TLGR_API_HASH", help="api_hash for this account.")

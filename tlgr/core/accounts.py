@@ -22,13 +22,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from tlgr.core.errors import AccountNotFoundError, TlgrError
+from tlgr.core.errors import AccountNotFoundError, TlgrError, UsageError
 from tlgr.core.paths import TlgrPaths, validate_alias, write_private
 
 ACCOUNTS_FILE = "accounts.json"
@@ -44,6 +45,50 @@ ACCOUNT_STATES = (
     "frozen",
     "stopped",
 )
+
+
+#: Where a person registers the app whose `api_id`/`api_hash` tlgr logs in with.
+API_REGISTRATION_URL = "https://my.telegram.org/apps"
+
+#: `api_id`s that belong to Telegram's own apps. They are published (in build
+#: scripts, in forum posts), so they get copied; a third-party client logging
+#: in with one is a ToS violation Telegram answers by banning the account
+#: (see `core/identity.py`). Refusing them here is cheaper than an appeal.
+OFFICIAL_API_IDS: dict[int, str] = {
+    4: "Telegram for Android (legacy)",
+    6: "Telegram for Android",
+    8: "Telegram for iOS (legacy)",
+    2040: "Telegram Desktop",
+    2496: "Telegram Web",
+    2834: "Telegram for macOS",
+    10840: "Telegram for iOS",
+    17349: "Telegram Desktop's published test credentials",
+    21724: "Telegram X",
+    611335: "Telegram Desktop (snap)",
+}
+
+#: What my.telegram.org issues: 32 lowercase hex digits.
+_API_HASH_RE = re.compile(r"^[0-9a-f]{32}$")
+
+
+def check_api_credentials(api_id: int, api_hash: str) -> None:
+    """Refuse credentials that cannot work, or that would get the account banned."""
+    if api_id <= 0:
+        raise UsageError(f"api_id must be a positive number, not {api_id}", field="api_id")
+    official = OFFICIAL_API_IDS.get(api_id)
+    if official is not None:
+        raise UsageError(
+            f"api_id {api_id} belongs to {official}. Logging in with an official app's "
+            "credentials breaks Telegram's API terms and gets accounts banned. Register "
+            f"your own app at {API_REGISTRATION_URL}",
+            field="api_id",
+        )
+    if not _API_HASH_RE.match(api_hash):
+        raise UsageError(
+            "api_hash must be the 32 hex characters my.telegram.org shows "
+            f"(got {len(api_hash)} characters)",
+            field="api_hash",
+        )
 
 
 def _now() -> str:
@@ -373,6 +418,12 @@ class AccountManager:
         if env_hash:
             api_hash = env_hash
 
+        if not (api_id and api_hash):
+            # The default is a pair: half of one app's credentials next to
+            # half of another's would fail at login with a misleading error.
+            default_id, default_hash = self.load_default_credentials()
+            if default_id and default_hash and api_id in (None, default_id):
+                return default_id, default_hash
         return api_id, api_hash
 
     def save_credentials(self, api_id: int, api_hash: str, alias: str | None = None) -> None:
@@ -382,3 +433,40 @@ class AccountManager:
             self.paths.credentials(resolved),
             json.dumps({"api_id": api_id, "api_hash": api_hash}, indent=2),
         )
+
+    # -- the default credentials -------------------------------------------
+    #
+    # One app registration at my.telegram.org serves every account a person
+    # logs in, so asking for it again per alias was friction with no benefit.
+    # A login still copies what it used into the account's own file: changing
+    # the default later must not silently move existing accounts to another
+    # app.
+
+    def load_default_credentials(self) -> tuple[int | None, str | None]:
+        path = self.paths.api_credentials
+        if not path.exists():
+            return None, None
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            return None, None
+        api_id = data.get("api_id") if isinstance(data, dict) else None
+        api_hash = data.get("api_hash") if isinstance(data, dict) else None
+        if not isinstance(api_id, int) or not isinstance(api_hash, str):
+            return None, None
+        return api_id, api_hash
+
+    def save_default_credentials(self, api_id: int, api_hash: str) -> None:
+        self.paths.ensure_base()
+        write_private(
+            self.paths.api_credentials,
+            json.dumps({"api_id": api_id, "api_hash": api_hash}, indent=2),
+        )
+
+    def clear_default_credentials(self) -> bool:
+        """Forget the default. True when there was one to forget."""
+        try:
+            self.paths.api_credentials.unlink()
+        except FileNotFoundError:
+            return False
+        return True

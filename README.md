@@ -909,6 +909,10 @@ jobs:
     # ...
 ```
 
+## Privacy
+
+tlgr runs on your machine and has no telemetry; it only talks to Telegram, and to a webhook or proxy if you configure one. See [PRIVACY.md](PRIVACY.md).
+
 ## License
 
 See [LICENSE](LICENSE) for license details.

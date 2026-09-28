@@ -31,6 +31,23 @@ def runner():
     return CliRunner()
 
 
+# `lint()` and `build_schema()` each walk the whole registry and evaluate
+# every request's string annotations on the way. Called once per parametrized
+# case, they made this file quadratic: most of the suite's wall time, and on
+# 3.14, whose default coverage core (sys.monitoring) keeps every code object
+# it has seen alive, including each `eval` of an annotation, roughly 20 GB of
+# memory. That is what took the Ubuntu 3.14 runner down. The per-op tests
+# only read the results, so they are computed once per module.
+@pytest.fixture(scope="module")
+def lint_problems():
+    return lint()
+
+
+@pytest.fixture(scope="module")
+def schema_document():
+    return build_schema()
+
+
 def _walk(root, path):
     node = root
     for token in path:
@@ -143,8 +160,8 @@ class TestOperationContract:
         assert policy_allows(spec.group, spec.id)
 
     @pytest.mark.parametrize("spec", SPECS, ids=IDS)
-    def test_schema_generates(self, spec):
-        document = build_schema()
+    def test_schema_generates(self, spec, schema_document):
+        document = schema_document
         entry = document["ops"][spec.id]
         assert entry["summary"] == spec.summary
         assert entry["request_schema"]
@@ -155,9 +172,9 @@ class TestOperationContract:
                 assert ref.removeprefix("#/$defs/") in document["$defs"]
 
     @pytest.mark.parametrize("spec", SPECS, ids=IDS)
-    def test_columns_resolve(self, spec):
+    def test_columns_resolve(self, spec, lint_problems):
         """Covered by the lint, asserted here so the failure names the op."""
-        assert [p for p in lint() if p.startswith(f"{spec.id}: column")] == []
+        assert [p for p in lint_problems if p.startswith(f"{spec.id}: column")] == []
 
     @pytest.mark.parametrize("spec", SPECS, ids=IDS)
     def test_timeout_sane(self, spec):

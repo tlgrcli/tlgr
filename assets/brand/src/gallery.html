@@ -1,0 +1,128 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<!-- Product Hunt gallery slides, 1270x760. Render one with ?p=N (1-5). -->
+<style>
+  :root { --tg: #2AABEE; --tg2: #229ED9; --ink: #06243a; --text: #eaf6fd; --muted: #a9d3ec; }
+  html, body { margin: 0; background: #0b3a5c; }
+  #w { position: relative; width: 1270px; height: 760px; overflow: hidden; font-family: -apple-system, "SF Pro Display", "Helvetica Neue", sans-serif; color: var(--text); }
+  canvas { position: absolute; inset: -40px; width: 1350px; height: 840px; filter: blur(14px) saturate(1.1); }
+  .shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(4,28,46,.30), rgba(4,28,46,.62)); }
+  .slide { position: absolute; inset: 0; padding: 72px 84px; box-sizing: border-box; display: flex; flex-direction: column; }
+  .mono { font-family: "SF Mono", ui-monospace, Menlo, monospace; }
+  .eyebrow { font-size: 18px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  h1 { font-size: 64px; line-height: 1.04; letter-spacing: -.025em; margin: 14px 0 0; font-weight: 750; }
+  h1 em { font-style: normal; color: #8fd6fb; }
+  .sub { font-size: 24px; line-height: 1.45; color: var(--muted); margin-top: 18px; max-width: 900px; }
+  .term { background: rgba(5,22,36,.86); border: 1px solid rgba(143,214,251,.18); border-radius: 18px; box-shadow: 0 30px 80px rgba(0,10,20,.45); overflow: hidden; }
+  .term .bar { height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 16px; background: rgba(255,255,255,.04); border-bottom: 1px solid rgba(255,255,255,.06); }
+  .term .bar i { width: 12px; height: 12px; border-radius: 50%; background: #3a5568; display: block; }
+  .term .bar span { margin-left: 10px; font-size: 14px; color: #7fa6bf; }
+  .term pre { margin: 0; padding: 22px 26px; font-size: 18px; line-height: 1.6; color: #d7ecf8; white-space: pre; }
+  .p { color: var(--tg); } .c { color: #6f93aa; } .s { color: #b9e6a8; } .k { color: #8fd6fb; } .n { color: #f5c98a; } .ok { color: #7ee0a1; }
+  .chip { display: inline-flex; align-items: center; padding: 10px 18px; border-radius: 999px; background: rgba(42,171,238,.16); border: 1px solid rgba(143,214,251,.28); font-size: 19px; }
+  .card { background: rgba(5,22,36,.62); border: 1px solid rgba(143,214,251,.16); border-radius: 18px; padding: 24px 26px; }
+  .card b { display: block; font-size: 23px; margin-bottom: 8px; letter-spacing: -.01em; }
+  .card span { font-size: 18px; line-height: 1.45; color: var(--muted); }
+  .stat b { display: block; font-size: 46px; font-weight: 750; letter-spacing: -.02em; }
+  .stat span { font-size: 18px; color: var(--muted); }
+  .logo { width: 220px; height: 220px; border-radius: 50px; overflow: hidden; box-shadow: 0 30px 70px rgba(0,10,20,.5); flex: none; }
+  .logo img { width: 100%; height: 100%; display: block; }
+  .box { background: rgba(5,22,36,.72); border: 1px solid rgba(143,214,251,.22); border-radius: 18px; padding: 20px 24px; text-align: center; }
+  .box b { display: block; font-size: 24px; } .box span { font-size: 16px; color: var(--muted); }
+  .arrow { color: var(--tg); font-size: 34px; }
+</style>
+</head>
+<body>
+<div id="w"><canvas id="c" width="2700" height="1680"></canvas><div class="shade"></div><div id="s"></div></div>
+<script src="bg.js"></script>
+<script>
+drawWaves(document.getElementById('c'), { seed: 11, n: 2600, bands: 3.0, phase: 0.9, slope: 0.45, alpha: 0.4, shade0: 0.78, vignette: 0.35 });
+
+const P = {};
+
+P[1] = `
+<div class="slide" style="justify-content:center">
+  <div style="display:flex;align-items:center;gap:56px">
+    <div class="logo"><img src="../logo-1024.png"></div>
+    <div>
+      <div style="font-size:112px;font-weight:800;letter-spacing:-.045em;line-height:1">tlgr</div>
+      <div style="font-size:36px;font-weight:600;letter-spacing:-.015em;margin-top:14px">Your whole Telegram account,<br>scriptable from the terminal.</div>
+      <div class="chip mono" style="margin-top:28px;font-size:22px;padding:14px 22px"><span class="p">$</span>&nbsp;pipx install tlgr-cli</div>
+    </div>
+  </div>
+  <div style="display:flex;gap:64px;margin-top:64px">
+    <div class="stat"><b>678</b><span>operations</span></div>
+    <div class="stat"><b>47</b><span>command groups</span></div>
+    <div class="stat"><b>114</b><span>live event types</span></div>
+    <div class="stat"><b>MIT</b><span>open source</span></div>
+  </div>
+</div>`;
+
+P[2] = `
+<div class="slide">
+  <div class="eyebrow">Built for agents</div>
+  <h1>Agents read and draft.<br><em>You press send.</em></h1>
+  <div class="term" style="margin-top:34px">
+    <div class="bar"><i></i><i></i><i></i><span class="mono">agent session</span></div>
+    <pre class="mono"><span class="p">$</span> tlgr catchup --json --results-only
+<span class="c">[{"chat": {"title": "Design crit"}, "unread": 3,</span>
+<span class="c">  "messages": [{"from": "Maya", "text": "Can you review the mockups today?"}]}]</span>
+
+<span class="p">$</span> tlgr draft set @maya <span class="s">"Yes, I'll have notes on the mockups by 5pm."</span>
+<span class="ok">saved</span>  draft in <span class="k">@maya</span>, waiting in every Telegram client for you to send</pre>
+  </div>
+  <div class="sub" style="font-size:21px">JSON on every command, <span class="mono">--no-input</span> for CI, <span class="mono">--enable-commands</span> allowlists, and secrets read from env or stdin, never argv.</div>
+</div>`;
+
+P[3] = `
+<div class="slide">
+  <div class="eyebrow">Daemon + webhooks</div>
+  <h1>Push, not poll.</h1>
+  <div class="sub">One daemon holds the update socket and pushes every event to your agent the moment it happens.</div>
+  <div style="display:flex;align-items:center;gap:22px;margin-top:52px">
+    <div class="box" style="flex:1"><b>Telegram</b><span>your account</span></div><div class="arrow">&rarr;</div>
+    <div class="box" style="flex:1.1"><b>tlgr daemon</b><span>114 event types</span></div><div class="arrow">&rarr;</div>
+    <div class="box" style="flex:1.2"><b class="mono" style="font-size:20px">POST /hooks/agent</b><span>HMAC-signed</span></div><div class="arrow">&rarr;</div>
+    <div class="box" style="flex:1"><b>Your agent</b><span>calls tlgr back</span></div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:40px">
+    <div class="card"><b>Signed</b><span><span class="mono">X-Tlgr-Signature</span> over the exact body, plus an idempotency key per delivery.</span></div>
+    <div class="card"><b>Never dropped</b><span>Deliveries that fail every retry are dead-lettered and can be re-driven.</span></div>
+    <div class="card"><b>Or just watch</b><span><span class="mono">tlgr watch</span> streams the same events as NDJSON in your terminal.</span></div>
+  </div>
+</div>`;
+
+const groups = ['message','chat','folder','contact','user','story','poll','reaction','todo','media','sticker','gif','call','vc','conference','bot','inline','webapp','payment','business','profile','privacy','notify','settings','account','auth','daemon','watch','webhook','sync','proxy','net','search','draft','gift','stars','premium','boost'];
+P[4] = `
+<div class="slide">
+  <div class="eyebrow">Coverage</div>
+  <h1>Everything your Telegram app does.<br><em>One command each.</em></h1>
+  <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:40px">${groups.map(g => `<span class="chip mono">${g}</span>`).join('')}</div>
+  <div style="display:flex;gap:64px;margin-top:auto">
+    <div class="stat"><b>678</b><span>operations</span></div>
+    <div class="stat"><b>99.5%</b><span>of Telegram's feature catalog</span></div>
+    <div class="stat"><b>3</b><span>outputs: tables, JSON, TSV</span></div>
+  </div>
+</div>`;
+
+P[5] = `
+<div class="slide">
+  <div class="eyebrow">Careful by default</div>
+  <h1>It's your real account.<br><em>tlgr treats it that way.</em></h1>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:44px">
+    <div class="card"><b>Never spends money</b><span>Anything that needs a signed payment reports the price and stops.</span></div>
+    <div class="card"><b>No secrets in argv</b><span>Codes and passwords come from env, stdin or a file.</span></div>
+    <div class="card"><b>Dry runs</b><span><span class="mono">--dry-run</span> previews every destructive operation first.</span></div>
+    <div class="card"><b>Locked down locally</b><span>Sessions stored 0600, and the daemon socket checks the caller's uid.</span></div>
+    <div class="card"><b>One owner per session</b><span>The daemon owns the session file, so two processes never trip a revoked key.</span></div>
+    <div class="card"><b>Nothing disclosed by accident</b><span>Sharing a phone, location or chat needs its own explicit flag.</span></div>
+  </div>
+</div>`;
+
+const n = new URLSearchParams(location.search).get('p') || '1';
+document.getElementById('s').innerHTML = P[n];
+</script>
+</body>
+</html>

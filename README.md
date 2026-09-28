@@ -1,7 +1,6 @@
 # tlgr
 
-![GitHub Repo Banner](https://ghrb.waren.build/banner?header=tlgr%F0%9F%A7%AD&subheader=Telegram+in+your+terminal&bg=f3f4f6&color=1f2937&support=true)
-<!-- Created with GitHub Repo Banner by Waren Gonzaga: https://ghrb.waren.build -->
+<p align="center"><img src="assets/brand/logo-512.png" width="160" alt="tlgr logo"></p>
 
 Full Telegram account control from the terminal. Agent-friendly, daemon-based, with webhook event push.
 

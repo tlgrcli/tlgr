@@ -2,7 +2,8 @@
 <html>
 <head>
 <meta charset="utf-8">
-<!-- Product Hunt gallery slides, 1270x760. Render one with ?p=N (1-5). -->
+<!-- Product Hunt gallery slides, 1270x760. Render one with ?p=N (1-5).
+     ?p=social is the 1280x640 GitHub social preview. -->
 <style>
   :root { --tg: #2AABEE; --tg2: #229ED9; --ink: #06243a; --text: #eaf6fd; --muted: #a9d3ec; }
   html, body { margin: 0; background: #0b3a5c; }
@@ -121,7 +122,20 @@ P[5] = `
   </div>
 </div>`;
 
+P.social = `
+<div class="slide" style="justify-content:center;align-items:center">
+  <div style="display:flex;align-items:center;gap:56px">
+    <div class="logo"><img src="../logo-1024.png"></div>
+    <div>
+      <div style="font-size:112px;font-weight:800;letter-spacing:-.045em;line-height:1">tlgr</div>
+      <div style="font-size:36px;font-weight:600;letter-spacing:-.015em;margin-top:14px">Your whole Telegram account,<br>scriptable from the terminal.</div>
+      <div class="chip mono" style="margin-top:28px;font-size:22px;padding:14px 22px"><span class="p">$</span>&nbsp;pipx install tlgr-cli</div>
+    </div>
+  </div>
+</div>`;
+
 const n = new URLSearchParams(location.search).get('p') || '1';
+if (n === 'social') { const w = document.getElementById('w'); w.style.width = '1280px'; w.style.height = '640px'; }
 document.getElementById('s').innerHTML = P[n];
 </script>
 </body>

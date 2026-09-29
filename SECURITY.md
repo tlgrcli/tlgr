@@ -82,6 +82,10 @@ different machine.
 - Use your own `api_id`/`api_hash` from <https://my.telegram.org>. Never
   borrow an official client's credentials, and never spoof `device_model` to
   obtain official-app behaviour: it violates the ToS and gets accounts banned.
+  `tlgr auth api set` and every login refuse the known official api_ids.
+- `~/.tlgr/api.json` (written by `tlgr auth api set`, 0600) holds the default
+  `api_hash`. It is not account access on its own, but it is your app's
+  identity: a leaked hash lets someone else's traffic count against it.
 - Use `https://` for webhooks, and verify `X-Tlgr-Signature` over the raw body
   before trusting a delivery.
 - `account export --string` prints full account access. It requires `--yes`

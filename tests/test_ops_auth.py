@@ -80,6 +80,153 @@ def run(runner: CliRunner, *args: str):
 
 
 # ---------------------------------------------------------------------------
+# auth api get / set / unset: one app registration for every login
+# ---------------------------------------------------------------------------
+
+OTHER_HASH = "fedcba9876543210fedcba9876543210"
+
+
+class TestApiDefault:
+    def test_set_saves_the_pair_privately_and_get_masks_it(self, cli_runner, tlgr_home):
+        out = run_env(cli_runner, "--json", "auth", "api", "set", str(API_ID), H=API_HASH)
+        assert out.exit_code == 0, out.output
+        saved = tlgr_home / "api.json"
+        assert stat.S_IMODE(saved.stat().st_mode) == 0o600
+        assert API_HASH in saved.read_text()
+
+        shown = run(cli_runner, "--json", "auth", "api", "get")
+        assert f'"api_id": {API_ID}' in shown.output
+        assert '"api_hash": "…cdef"' in shown.output
+        assert API_HASH not in shown.output
+
+    def test_setting_the_same_pair_again_is_already(self, cli_runner):
+        run_env(cli_runner, "auth", "api", "set", str(API_ID), H=API_HASH)
+        again = run_env(cli_runner, "--json", "auth", "api", "set", str(API_ID), H=API_HASH)
+        assert '"already": true' in again.output
+
+    def test_get_says_where_to_register_when_nothing_is_saved(self, cli_runner):
+        out = run(cli_runner, "--json", "auth", "api", "get")
+        assert out.exit_code == 0, out.output
+        assert '"configured": false' in out.output
+        assert "my.telegram.org/apps" in out.output
+
+    def test_unset_forgets_it_and_is_idempotent(self, cli_runner, tlgr_home):
+        run_env(cli_runner, "auth", "api", "set", str(API_ID), H=API_HASH)
+        gone = run(cli_runner, "--json", "auth", "api", "unset")
+        assert '"removed": true' in gone.output
+        assert not (tlgr_home / "api.json").exists()
+        again = run(cli_runner, "--json", "auth", "api", "unset")
+        assert '"already": true' in again.output
+
+    @pytest.mark.parametrize("official", [2040, 611335, 17349, 6])
+    def test_an_official_clients_api_id_is_refused(self, cli_runner, tlgr_home, official):
+        """Copying Telegram Desktop's snap credentials is how accounts get banned."""
+        out = run_env(cli_runner, "auth", "api", "set", str(official), H=API_HASH)
+        assert out.exit_code == EXIT_USAGE, out.output
+        assert "banned" in out.output
+        assert not (tlgr_home / "api.json").exists()
+
+    @pytest.mark.parametrize("bad", ["abc", API_HASH.upper(), API_HASH + "0"])
+    def test_a_malformed_hash_is_refused(self, cli_runner, bad):
+        out = run_env(cli_runner, "auth", "api", "set", str(API_ID), H=bad)
+        assert out.exit_code == EXIT_USAGE, out.output
+        assert "32 hex" in out.output
+
+    def test_without_a_terminal_it_explains_instead_of_prompting(self, cli_runner):
+        out = run(cli_runner, "auth", "api", "set")
+        assert out.exit_code == EXIT_USAGE, out.output
+        assert "my.telegram.org/apps" in out.output
+        assert "--api-hash-env" in out.output
+
+    def test_a_missing_hash_variable_names_the_flag_as_typed(self, cli_runner):
+        out = run(cli_runner, "auth", "api", "set", str(API_ID), "--api-hash-env", "NOPE")
+        assert "--api-hash-env names NOPE" in out.output
+
+    def test_at_a_terminal_it_prompts_and_retries_a_typo(self, cli_runner, tlgr_home, monkeypatch):
+        """The hash goes through getpass; a bad one is asked for again, not fatal."""
+        from tlgr.ops import auth as auth_ops
+
+        monkeypatch.setattr(auth_ops, "_interactive", lambda: True)
+        typed = iter(["not a number", str(API_ID)])
+        monkeypatch.setattr("builtins.input", lambda prompt="": next(typed))
+        hidden = iter(["too-short", API_HASH])
+        monkeypatch.setattr("getpass.getpass", lambda prompt="": next(hidden))
+
+        out = run(cli_runner, "--json", "auth", "api", "set")
+        assert out.exit_code == 0, out.output
+        assert API_HASH in (tlgr_home / "api.json").read_text()
+
+    def test_an_account_without_its_own_file_falls_back_to_the_default(self, tlgr_home):
+        from tlgr.core.accounts import AccountManager
+
+        manager = AccountManager(tlgr_home)
+        manager.add_account("bare")
+        assert manager.load_credentials("bare") == (None, None)
+        manager.save_default_credentials(API_ID, API_HASH)
+        assert manager.load_credentials("bare") == (API_ID, API_HASH)
+
+    def test_an_accounts_own_pair_wins_and_is_never_mixed(self, tlgr_home):
+        from tlgr.core.accounts import AccountManager
+
+        manager = AccountManager(tlgr_home)
+        manager.add_account("own")
+        manager.save_credentials(999, OTHER_HASH, "own")
+        manager.save_default_credentials(API_ID, API_HASH)
+        assert manager.load_credentials("own") == (999, OTHER_HASH)
+
+        # Half a pair (an id with no hash) must not borrow a different app's hash.
+        (tlgr_home / "accounts" / "own" / "config.json").write_text('{"api_id": 999}')
+        assert manager.load_credentials("own") == (999, None)
+
+    async def test_a_login_without_flags_uses_the_default(
+        self, live_daemon, client, in_thread, tlgr_home
+    ):
+        from tlgr.core.accounts import AccountManager
+
+        AccountManager(tlgr_home).save_default_credentials(API_ID, API_HASH)
+        sent = await result(
+            client, in_thread, "auth.send-code", {"phone": PHONE, "alias": "newbie"}, account=""
+        )
+        assert sent["type"] == "app"
+        # The account keeps its own copy, so a later `auth api set` of a
+        # different app never moves it.
+        own = tlgr_home / "accounts" / "newbie" / "config.json"
+        assert API_HASH in own.read_text()
+
+    async def test_a_login_with_nothing_names_the_command_that_fixes_it(
+        self, live_daemon, client, in_thread
+    ):
+        with pytest.raises(Exception) as caught:
+            await result(
+                client, in_thread, "auth.send-code", {"phone": PHONE, "alias": "newbie"}, account=""
+            )
+        body = classify(caught.value)
+        assert body.code == "CONFIG_ERROR"
+        assert "tlgr auth api set" in f"{caught.value} {body.hint}"
+
+    async def test_a_login_refuses_an_official_api_id_from_the_flags(
+        self, live_daemon, client, in_thread
+    ):
+        with pytest.raises(Exception) as caught:
+            await result(
+                client,
+                in_thread,
+                "auth.send-code",
+                {"phone": PHONE, "alias": "newbie", "api_id": 611335, "api_hash": API_HASH},
+                account="",
+            )
+        assert classify(caught.value).exit_code == EXIT_USAGE
+        assert "Telegram Desktop" in str(caught.value)
+
+
+def run_env(runner: CliRunner, *args: str, H: str):
+    """`run`, with the api_hash in `$H` and `--api-hash-env H` appended."""
+    from tlgr.cli import cli
+
+    return runner.invoke(cli, [*args, "--api-hash-env", "H"], env={"H": H})
+
+
+# ---------------------------------------------------------------------------
 # auth send-code / verify-code — the resumable login
 # ---------------------------------------------------------------------------
 

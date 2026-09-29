@@ -492,6 +492,31 @@ _MESSAGE_RULES: tuple[tuple[re.Pattern[str], ErrorRule], ...] = (
         ),
         _USAGE,
     ),
+    # The app the login used, not the account, is what is wrong. Telethon
+    # names these ApiIdInvalidError/ApiIdPublishedFloodError, and without a
+    # rule they are exit 1 with no way forward.
+    (
+        re.compile(r"\bAPI_ID_INVALID\b"),
+        ErrorRule(
+            "CONFIG_ERROR",
+            EXIT_CONFIG,
+            400,
+            False,
+            "Telegram does not recognise this api_id/api_hash pair. "
+            "Check it with: tlgr auth api get",
+        ),
+    ),
+    (
+        re.compile(r"\bAPI_ID_PUBLISHED_FLOOD\b"),
+        ErrorRule(
+            "CONFIG_ERROR",
+            EXIT_CONFIG,
+            400,
+            False,
+            "This api_id was published and Telegram throttles it. Register your own at "
+            "https://my.telegram.org/apps, then: tlgr auth api set",
+        ),
+    ),
     # `USERNAME_PURCHASE_AVAILABLE` means the name is free *on Fragment*,
     # which is neither "taken" nor an error tlgr can retry past.
     (re.compile(r"\bUSERNAME_PURCHASE_AVAILABLE\b"), _USAGE),

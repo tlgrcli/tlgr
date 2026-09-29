@@ -87,9 +87,15 @@ bot-only, admin-only) and what tlgr refuses on purpose, each with a reason.
 Login is two ordinary commands, so only reading the code needs a person:
 
 ```bash
-tlgr auth send-code +15551234567 --alias main --api-id 12345 --api-hash-env TLGR_API_HASH --json
+tlgr auth send-code +15551234567 --alias main --json
 tlgr auth verify-code 12345 --alias main --json
 ```
+
+`send-code` exits 10 with `CONFIG_ERROR` when no app is saved. Check with
+`tlgr auth api get --json`: if `configured` is false, the user registers an
+app at https://my.telegram.org/apps and runs `tlgr auth api set` themselves
+(it prompts and hides the hash). Do not ask them to paste the hash into the
+chat, and never use an official Telegram client's api_id.
 
 Ask the user for the code Telegram sends them. Exit 4 with
 `AUTH_PASSWORD_REQUIRED` means two-step verification is on: rerun

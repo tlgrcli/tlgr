@@ -5,9 +5,40 @@ All notable changes to tlgr are recorded here. The format follows
 semantic versioning at the CLI surface, which means the JSON shapes and exit
 codes documented in `AGENT.md` are the public API.
 
-## [Unreleased]
+## [2.1.0] - 2026-09-28
+
+Log in without registering your app's credentials again for every account:
+`tlgr auth api set` saves them once. Also: `chat poster list` resumes long
+walks, and `chat list` no longer drops dialogs at a page boundary.
 
 ### Added
+
+- **Save your app credentials once: `tlgr auth api set`.** Every login needs
+  an `api_id`/`api_hash` from my.telegram.org, and tlgr used to ask for them
+  again for every account you added. Now you register one app, save it, and
+  every later `auth send-code`, `auth qr`, `account add` and `account import`
+  uses it without `--api-id`:
+
+  ```bash
+  tlgr auth api set          # at a terminal: walks you through my.telegram.org, hides the hash
+  tlgr auth api set 1234567 --api-hash-env TLGR_API_HASH   # scripted
+  tlgr auth api get          # what is saved, hash masked; register_url when nothing is
+  tlgr auth api unset        # forget it
+  ```
+
+  The pair lives in `~/.tlgr/api.json` at 0600. Flags on a login still win.
+  Each login keeps copying the pair into the account's own `config.json`, so
+  changing the default later never moves an existing account to another app.
+  An account with no credentials of its own now falls back to the default
+  instead of refusing to start.
+
+- **tlgr refuses the api_ids of Telegram's own apps.** Telegram Desktop,
+  Android, iOS, macOS, Web and Telegram X credentials are published in build
+  files and get copied into third-party tools. Logging in with them breaks
+  Telegram's API terms and gets accounts banned, so `auth api set` and every
+  login now stop with exit 2 and say where to register instead. A hash that
+  is not 32 hex characters is refused the same way, before it can surface as
+  a confusing `API_ID_INVALID`.
 
 - **`chat poster list` can walk deeper than one call.** A single call stops
   at `--max-messages 20000` and at the operation deadline, so a longer
@@ -30,6 +61,13 @@ codes documented in `AGENT.md` are the public API.
   unthrottled.
 
 ### Fixed
+
+- **`API_ID_INVALID` and `API_ID_PUBLISHED_FLOOD` name the fix.** Both used
+  to exit 1 with no hint. They are now `CONFIG_ERROR` (exit 10) and point at
+  `tlgr auth api get` / `tlgr auth api set`.
+
+- **Secret flag errors spell the flag the way you typed it.** A missing
+  variable said `--api_hash-env names X`; it now says `--api-hash-env`.
 
 - **`chat list` no longer loses a block of dialogs at a page boundary.** The
   dialog walk paired each row with its top message by message id alone, but

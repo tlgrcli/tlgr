@@ -10,8 +10,22 @@ pending login lives in the daemon and is mirrored to
 `<account>/login-state.json` at 0600, so the two steps can run minutes apart
 in different processes.
 
+Every login needs an app registration (`api_id` + `api_hash`) from
+<https://my.telegram.org/apps>. Save it once and no login asks for it again:
+
 ```
-tlgr auth send-code +989123456789 --alias work --api-id 12345 --api-hash-env TLGR_API_HASH
+tlgr auth api set 1234567 --api-hash-env TLGR_API_HASH
+→ {"configured": true, "api_id": 1234567, "api_hash": "…9f0c", "path": "~/.tlgr/api.json", "updated": true}
+
+tlgr auth api get          # configured: false → the user has to register first (register_url)
+```
+
+`--api-id` with `--api-hash-env` on any login still wins over the saved
+default. `auth api set` refuses the api_ids of Telegram's own apps (they get
+accounts banned) and a hash that is not 32 hex characters, with exit 2.
+
+```
+tlgr auth send-code +989123456789 --alias work
 → {"account": "work", "phone": "989…89", "type": "app", "code_hash": "5f2a…", "timeout": 60}
 
 tlgr auth verify-code 12345 --alias work --password-env TLGR_2FA_PASSWORD

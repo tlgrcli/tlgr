@@ -190,16 +190,18 @@ def read_secret(
     import os
     import sys
 
+    # *name* is the request field (`api_hash`); the flag spells it with a dash.
+    flag = f"--{name.replace('_', '-')}"
     if file:
         try:
             with open(file, encoding="utf-8") as handle:
                 return handle.read().strip("\n")
         except OSError as exc:
-            raise UsageError(f"--{name}-file: {exc.strerror or exc}", field=name) from exc
+            raise UsageError(f"{flag}-file: {exc.strerror or exc}", field=name) from exc
 
     if stdin:
         if sys.stdin is None or sys.stdin.isatty():
-            raise UsageError(f"--{name}-stdin was given but stdin is a terminal", field=name)
+            raise UsageError(f"{flag}-stdin was given but stdin is a terminal", field=name)
         return sys.stdin.read().strip("\n")
 
     variable = env or default_env
@@ -208,5 +210,5 @@ def read_secret(
         if value is not None:
             return value
         if env:
-            raise UsageError(f"--{name}-env names {variable}, which is not set", field=name)
+            raise UsageError(f"{flag}-env names {variable}, which is not set", field=name)
     return None

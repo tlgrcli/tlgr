@@ -95,7 +95,8 @@ class SessionManager:
         api_id, api_hash = self.accounts.load_credentials(alias)
         if not api_id or not api_hash:
             raise ConfigurationError(
-                f"account {alias!r} has no API credentials. Run: tlgr account add --alias {alias}"
+                f"account {alias!r} has no API credentials and no default is saved. "
+                "Run: tlgr auth api set"
             )
         identity = load_identity(
             self.paths.base,

@@ -1,16 +1,15 @@
 [webhook]
 enabled = true
 url = "http://127.0.0.1:18789/hooks/agent"
-token = "your-shared-secret"
+# The HMAC signing secret belongs out of this file's history. Set it with
+#   tlgr webhook set --secret-env TLGR_WEBHOOK_SECRET
+# which writes it to ~/.tlgr/webhook.toml (mode 0600) as `secret`.
+# `tlgr events list` names every event type you can put below.
 events = [
-  "new_message",
+  "message_new",
   "message_edited",
   "message_deleted",
-  "user_joined",
-  "user_left",
-  "chat_action",
-  "message_read",
-  "reaction",
+  "read_outbox",
 ]
 
 [webhook.retry]

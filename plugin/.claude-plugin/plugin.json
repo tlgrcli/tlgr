@@ -1,6 +1,7 @@
 {
   "name": "tlgr",
   "displayName": "tlgr",
+  "version": "1.0.0",
   "icon": "./.claude-plugin/icon.png",
   "description": "Read and act on a personal Telegram account from Claude Code through the tlgr CLI: catch up on unread chats, search history, send and edit messages, manage chats, contacts and media, and react to Telegram events pushed to a webhook.",
   "author": {

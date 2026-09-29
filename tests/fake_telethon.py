@@ -4589,7 +4589,7 @@ class FakeTelegramClient:
     def _raw_LoadAsyncGraphRequest(self, request: Any) -> Any:
         # The token is the only thing that says which graph was asked for, so
         # the story group's graph and the chat group's answer differently.
-        if getattr(request, "token", "") == "graph-token":
+        if getattr(request, "token", "") == "demo-graph-token":
             return types.StatsGraph(json=types.DataJSON(data='{"columns": ["reactions"]}'))
         return types.StatsGraph(json=types.DataJSON(data='{"columns": ["x"]}'))
 
@@ -5396,7 +5396,7 @@ class FakeTelegramClient:
     def _raw_GetStoryStatsRequest(self, request: Any) -> Any:
         return types.stats.StoryStats(
             views_graph=types.StatsGraph(json=types.DataJSON(data='{"columns": []}')),
-            reactions_by_emotion_graph=types.StatsGraphAsync(token="graph-token"),
+            reactions_by_emotion_graph=types.StatsGraphAsync(token="demo-graph-token"),
         )
 
     def _raw_GetStoryPublicForwardsRequest(self, request: Any) -> Any:

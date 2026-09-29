@@ -83,7 +83,7 @@ async def _drain(pusher: WebhookPusher, received: list, expected: int = 1) -> No
 class TestDelivery:
     async def test_a_real_payload_is_delivered_and_signed(self, receiver, tlgr_home: Path):
         config = WebhookConfig(
-            enabled=True, url=receiver["url"], secret="topsecret", events=["message_new"]
+            enabled=True, url=receiver["url"], secret="demo-secret", events=["message_new"]
         )
         pusher = WebhookPusher(config, tlgr_home)
         await pusher.start()
@@ -97,7 +97,7 @@ class TestDelivery:
         body = delivery["body"]
         headers = delivery["headers"]
 
-        expected = "sha256=" + hmac.new(b"topsecret", body, hashlib.sha256).hexdigest()
+        expected = "sha256=" + hmac.new(b"demo-secret", body, hashlib.sha256).hexdigest()
         assert headers["X-Tlgr-Signature"] == expected
         assert headers["X-Tlgr-Seq"] == "91824"
         assert headers["X-Tlgr-Event"] == "message_new"

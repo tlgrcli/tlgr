@@ -8,6 +8,8 @@ the oldest daemon this CLI will talk to rather than restart.
 
 from __future__ import annotations
 
+from typing import Final
+
 from tlgr import __version__
 
 VERSION = __version__
@@ -15,10 +17,10 @@ PROTOCOL = 2
 MIN_DAEMON_PROTOCOL = 2
 
 #: The header names the two ends agree on (§5.1).
-HEADER_CLIENT = "X-Tlgr-Client"
-HEADER_PROTOCOL = "X-Tlgr-Protocol"
-HEADER_REQUEST_ID = "X-Request-Id"
-HEADER_TOKEN = "X-Tlgr-Token"
+HEADER_CLIENT: Final = "X-Tlgr-Client"
+HEADER_PROTOCOL: Final = "X-Tlgr-Protocol"
+HEADER_REQUEST_ID: Final = "X-Request-Id"
+HEADER_TOKEN: Final = "X-Tlgr-Token"
 
 __all__ = [
     "HEADER_CLIENT",

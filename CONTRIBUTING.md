@@ -129,6 +129,13 @@ Until that publisher exists the `publish` job fails and the GitHub release
 still succeeds, which is the intended order: the release is the artefact of
 record, PyPI is a distribution channel on top of it.
 
+### The Claude Code plugin
+
+`plugin/` is a Claude Code plugin that ships the Agent Skill in
+`plugin/skills/tlgr/SKILL.md`. It is versioned separately from tlgr: raise
+`version` in `plugin/.claude-plugin/plugin.json` in the same PR whenever the
+skill changes, or `claude plugin update` keeps serving users the old copy.
+
 ## Reporting Issues
 
 When reporting bugs, please include:

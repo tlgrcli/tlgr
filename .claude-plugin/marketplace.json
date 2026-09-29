@@ -5,11 +5,13 @@
     "name": "tlgrcli",
     "url": "https://github.com/tlgrcli"
   },
+  "strict": true,
   "plugins": [
     {
       "name": "tlgr",
       "source": "./plugin",
-      "description": "Read and act on a personal Telegram account through the tlgr CLI."
+      "description": "Read and act on a personal Telegram account through the tlgr CLI.",
+      "strict": true
     }
   ]
 }

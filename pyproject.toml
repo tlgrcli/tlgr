@@ -33,7 +33,7 @@ dependencies = [
     # Pinned to the minor: tlgr reads a handful of Telethon internals
     # (`_save_states_and_entities`, raw TL constructors at layer 227), and a
     # minor bump has moved those before. `~=1.44.0` allows 1.44.x patches only.
-    "telethon~=1.44.0",
+    "telethon>=1.44,<1.46",
     "click>=8.0",
     "aiohttp>=3.9",
     # msgspec is the single wire-shape definition (models, requests, schema).

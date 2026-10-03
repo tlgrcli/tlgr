@@ -1,188 +1,180 @@
-"""End-to-end tests for the Gateway pipeline."""
+"""End-to-end tests for the Gateway pipeline: filters, processors, actions.
+
+The job is fed real TL updates and its actions land on a scheduler with a
+virtual clock and a recording op runner, so each test reads what would have
+reached the op layer.
+"""
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
+from fake_telethon import FakeTelegramClient, World
+from job_helpers import ALICE, deliver, group_update, make_scheduler, private_update
 
+from tlgr.actions import register_action
 from tlgr.filters.compose import parse_filter_config
 from tlgr.gateway.config import ActionConfig, GatewayConfig
 from tlgr.gateway.engine import Gateway
 from tlgr.processors import ProcessorChain
 
 
-def _make_tg_event(text="hello", is_private=True, sender_id=100):
-    msg = MagicMock()
-    msg.text = text
-    msg.message = text
-    msg.sender_id = sender_id
-    msg.out = False
-    msg.reply_to = None
-    msg.forward = None
-    msg.media = None
-    msg.entities = None
-    msg.date = datetime(2025, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
-    msg.action = None
-    msg.sender = MagicMock(bot=False)
-
-    ev = MagicMock()
-    ev.message = msg
-    ev.chat_id = 42
-    ev.is_private = is_private
-    ev.is_group = not is_private
-    ev.is_channel = False
-    ev.reply = AsyncMock()
-
-    chat = MagicMock()
-    chat.title = ""
-    chat.megagroup = False
-    ev.chat = chat
-
-    return ev
+def _client():
+    return SimpleNamespace(client=FakeTelegramClient(World()), resolve_chat=AsyncMock())
 
 
-def _make_client():
-    client = MagicMock()
-    client.resolve_chat = AsyncMock(return_value=999)
-    client.client = MagicMock()
-    client.client.forward_messages = AsyncMock()
-    client.client.send_message = AsyncMock()
-    client.client.send_file = AsyncMock()
-    client.client.on = MagicMock(side_effect=lambda *a, **kw: lambda f: f)
-    return client
+def _reply(text, **kwargs):
+    return ActionConfig(name="reply", config={"text": text, "typing": False}, **kwargs)
+
+
+@pytest.fixture
+async def sched():
+    scheduler, runner, clock = make_scheduler()
+    scheduler.start()
+    try:
+        yield scheduler, runner, clock
+    finally:
+        await scheduler.stop(timeout=0.1)
 
 
 class TestGatewayPipeline:
-    @pytest.mark.asyncio
-    async def test_filter_match_triggers_action(self):
+    async def test_filter_match_triggers_action(self, sched):
+        scheduler, runner, clock = sched
         config = GatewayConfig(
             name="test-reply",
-            account="test",
+            account="work",
             filters=parse_filter_config({"chat_type": "private"}),
-            actions=[ActionConfig(name="reply", config="hello!")],
+            actions=[_reply("hello!")],
         )
-        client = _make_client()
-        gw = Gateway(config, client)
+        gw = Gateway(config, _client(), scheduler=scheduler)
         await gw.setup()
 
-        tg_event = _make_tg_event(is_private=True)
-        await gw._handle(tg_event)
+        await deliver(gw, private_update(10))
+        await clock.advance(1)
 
-        tg_event.reply.assert_awaited_once_with("hello!")
+        assert runner.requests("message.send") == [
+            {"chat": str(ALICE), "text": "hello!", "reply_to": 10, "parse": "md"}
+        ]
         assert gw._stats["matched"] == 1
 
-    @pytest.mark.asyncio
-    async def test_filter_mismatch_skips(self):
+    async def test_filter_mismatch_skips(self, sched):
+        scheduler, runner, clock = sched
         config = GatewayConfig(
             name="test-skip",
-            account="test",
+            account="work",
             filters=parse_filter_config({"chat_type": "private"}),
-            actions=[ActionConfig(name="reply", config="hello!")],
+            actions=[_reply("hello!")],
         )
-        client = _make_client()
-        gw = Gateway(config, client)
+        gw = Gateway(config, _client(), scheduler=scheduler)
         await gw.setup()
 
-        tg_event = _make_tg_event(is_private=False)
-        await gw._handle(tg_event)
+        await deliver(gw, group_update(10))
+        await clock.advance(1)
 
-        tg_event.reply.assert_not_awaited()
+        assert runner.calls == []
         assert gw._stats["skipped"] == 1
 
-    @pytest.mark.asyncio
-    async def test_no_filters_matches_all(self):
-        config = GatewayConfig(
-            name="test-all",
-            account="test",
-            filters=None,
-            actions=[ActionConfig(name="reply", config="yo")],
-        )
-        client = _make_client()
-        gw = Gateway(config, client)
-        await gw.setup()
+    async def test_no_filters_matches_all(self, sched):
+        scheduler, runner, clock = sched
+        config = GatewayConfig(name="test-all", account="work", actions=[_reply("yo")])
+        gw = Gateway(config, _client(), scheduler=scheduler)
 
-        tg_event = _make_tg_event()
-        await gw._handle(tg_event)
+        await deliver(gw, group_update(10))
+        await clock.advance(1)
 
-        tg_event.reply.assert_awaited_once_with("yo")
+        assert runner.requests("message.send")[0]["text"] == "yo"
 
-    @pytest.mark.asyncio
-    async def test_multiple_actions(self):
+    async def test_multiple_actions(self, sched):
+        scheduler, runner, clock = sched
         config = GatewayConfig(
             name="test-multi",
-            account="test",
-            actions=[
-                ActionConfig(name="reply", config="got it!"),
-                ActionConfig(name="reply", config="second reply"),
-            ],
+            account="work",
+            actions=[_reply("got it!"), _reply("second reply")],
         )
-        client = _make_client()
-        gw = Gateway(config, client)
-        await gw.setup()
+        gw = Gateway(config, _client(), scheduler=scheduler)
 
-        tg_event = _make_tg_event()
-        await gw._handle(tg_event)
+        await deliver(gw, private_update(10))
+        await clock.run_for(5)
 
-        assert tg_event.reply.await_count == 2
+        assert [r["text"] for r in runner.requests("message.send")] == ["got it!", "second reply"]
 
-    @pytest.mark.asyncio
-    async def test_per_action_filter(self):
+    async def test_per_action_filter(self, sched):
+        scheduler, runner, clock = sched
         config = GatewayConfig(
             name="test-per-action",
-            account="test",
+            account="work",
             actions=[
-                ActionConfig(
-                    name="reply",
-                    config="private only",
-                    filters=parse_filter_config({"chat_type": "private"}),
-                ),
-                ActionConfig(name="reply", config="always"),
+                _reply("private only", filters=parse_filter_config({"chat_type": "private"})),
+                _reply("always"),
             ],
         )
-        client = _make_client()
-        gw = Gateway(config, client)
-        await gw.setup()
+        gw = Gateway(config, _client(), scheduler=scheduler)
 
-        tg_event = _make_tg_event(is_private=False)
-        await gw._handle(tg_event)
+        await deliver(gw, group_update(10))
+        await clock.advance(1)
 
-        # First action should be skipped (filter mismatch), second should run
-        assert tg_event.reply.await_count == 1
-        assert tg_event.reply.call_args[0][0] == "always"
+        assert [r["text"] for r in runner.requests("message.send")] == ["always"]
 
-    @pytest.mark.asyncio
-    async def test_job_level_processors(self):
+    async def test_job_level_processors(self, sched):
+        scheduler, runner, clock = sched
         chain = ProcessorChain().add("add_prefix", {"prefix": "[BOT]"})
         config = GatewayConfig(
-            name="test-proc",
-            account="test",
-            processors=chain,
-            actions=[ActionConfig(name="reply", config="hello")],
+            name="test-proc", account="work", processors=chain, actions=[_reply("hello")]
         )
-        client = _make_client()
-        gw = Gateway(config, client)
-        await gw.setup()
+        gw = Gateway(config, _client(), scheduler=scheduler)
 
-        tg_event = _make_tg_event()
-        await gw._handle(tg_event)
+        await deliver(gw, private_update(10))
+        await clock.advance(1)
 
-        call_text = tg_event.reply.call_args[0][0]
-        assert "[BOT]" in call_text
+        assert "[BOT]" in runner.requests("message.send")[0]["text"]
 
-    @pytest.mark.asyncio
-    async def test_unknown_action_logs_error(self):
+    async def test_unknown_action_logs_error(self, sched):
+        scheduler, runner, clock = sched
         config = GatewayConfig(
             name="test-unknown",
-            account="test",
+            account="work",
             actions=[ActionConfig(name="nonexistent_action", config="x")],
         )
-        client = _make_client()
-        gw = Gateway(config, client)
-        await gw.setup()
+        gw = Gateway(config, _client(), scheduler=scheduler)
 
-        tg_event = _make_tg_event()
-        await gw._handle(tg_event)
+        await deliver(gw, private_update(10))
 
+        assert gw._stats["errors"] == 1
+
+    async def test_a_function_action_still_runs_at_once(self, sched):
+        scheduler, runner, clock = sched
+        seen = []
+
+        @register_action("_test_legacy")
+        async def legacy(event, config, client, chain=None):
+            seen.append((event.raw.message.id, config))
+
+        config = GatewayConfig(
+            name="test-legacy",
+            account="work",
+            actions=[ActionConfig(name="_test_legacy", config="cfg")],
+        )
+        gw = Gateway(config, _client(), scheduler=scheduler)
+        await deliver(gw, private_update(10))
+        assert seen == [(10, "cfg")]
+
+    async def test_status_reports_per_action_counters(self, sched):
+        scheduler, runner, clock = sched
+        config = GatewayConfig(name="test-status", account="work", actions=[_reply("hi")])
+        gw = Gateway(config, _client(), scheduler=scheduler)
+        await deliver(gw, private_update(10))
+        status = gw.status()
+        assert status["matched"] == 1
+        assert status["actions"][0]["pending"] == 1
+        await clock.advance(1)
+        status = gw.status()
+        assert status["actions"][0]["done"] == 1
+        assert status["actions"][0]["pending"] == 0
+
+    async def test_without_a_scheduler_an_action_is_an_error_not_a_crash(self):
+        config = GatewayConfig(name="test-none", account="work", actions=[_reply("hi")])
+        gw = Gateway(config, _client())
+        await deliver(gw, private_update(10))
         assert gw._stats["errors"] == 1

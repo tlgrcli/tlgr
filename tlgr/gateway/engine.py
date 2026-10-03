@@ -20,6 +20,13 @@ group (PR-4).
 
 Without a bus — a unit test, or a daemon that has not started one — the job
 falls back to registering Telethon handlers exactly as v1 did.
+
+Actions no longer run inside the handler. The job evaluates its filters,
+rolls each action's `percent`, plans the payloads and hands them to the
+account's `ActionScheduler` (`gateway/scheduler.py`), which owns delays,
+pacing, persistence and execution through the op layer. The handler returns
+as soon as the items are queued, so a 90 second `delay` never holds the bus
+lane the event arrived on.
 """
 
 from __future__ import annotations
@@ -30,9 +37,12 @@ import time
 from typing import Any
 
 from tlgr.actions import get_action
-from tlgr.filters.compose import FilterNode, Op, evaluate
+from tlgr.actions.base import Action, MessageFacts, facts_from_event
+from tlgr.filters.compose import FilterNode, Op, evaluate_async
 from tlgr.gateway.config import ActionConfig, GatewayConfig
 from tlgr.gateway.event import Event
+from tlgr.gateway.knobs import merge_knobs
+from tlgr.gateway.pending import PendingItem
 from tlgr.gateway.tlevents import build_event, builder_for_job_event
 from tlgr.jobs.base import BaseJob
 from tlgr.jobs.client import JobClient
@@ -113,8 +123,10 @@ class Gateway(BaseJob):
         client: JobClient,
         webhook=None,
         bus=None,
+        scheduler=None,
     ) -> None:
         self._gw = config
+        self._scheduler = scheduler
         shim = _GatewayJobConfig(config)
         super().__init__(shim, client, webhook)  # type: ignore[arg-type]
         self._handlers: list = []
@@ -124,6 +136,14 @@ class Gateway(BaseJob):
         self._refs_pending = False
         self._next_resolve = 0.0
         self._unresolved_logged: set[str] = set()
+        self._no_scheduler_logged = False
+
+    def status(self) -> dict[str, Any]:
+        row = super().status()
+        row.update(self._stats)
+        scheduler = self._scheduler
+        row["actions"] = scheduler.job_stats(self.name) if scheduler is not None else []
+        return row
 
     async def setup(self) -> None:
         await self._resolve_chat_refs()
@@ -244,19 +264,22 @@ class Gateway(BaseJob):
             event_type=event_type,
         )
 
-        ok, reason = evaluate(self._gw.filters, envelope)
+        ok, reason = await evaluate_async(self._gw.filters, envelope)
         if not ok:
             self._stats["skipped"] += 1
             return
 
         self._stats["matched"] += 1
 
-        for action_cfg in self._gw.actions:
-            await self._run_action(action_cfg, envelope)
+        facts: list[MessageFacts] = []
+        for index, action_cfg in enumerate(self._gw.actions):
+            await self._run_action(index, action_cfg, envelope, facts)
 
-    async def _run_action(self, ac: ActionConfig, envelope: Event) -> None:
+    async def _run_action(
+        self, index: int, ac: ActionConfig, envelope: Event, facts: list[MessageFacts]
+    ) -> None:
         if ac.filters:
-            ok, reason = evaluate(ac.filters, envelope)
+            ok, reason = await evaluate_async(ac.filters, envelope)
             if not ok:
                 return
 
@@ -268,8 +291,89 @@ class Gateway(BaseJob):
 
         chain = ac.processors or self._gw.processors
 
-        try:
-            await func(envelope, ac.config, self.client, chain)
-        except Exception as e:
-            log.warning("[%s] action '%s' failed: %s", self.name, ac.name, e)
+        if not isinstance(func, Action):
+            # An action written against the old function interface runs at
+            # once, outside the scheduler, exactly as it always did.
+            try:
+                await func(envelope, ac.config, self.client, chain)
+            except Exception as e:
+                log.warning("[%s] action '%s' failed: %s", self.name, ac.name, e)
+                self._stats["errors"] += 1
+            return
+
+        scheduler = self._scheduler
+        if scheduler is None:
+            if not self._no_scheduler_logged:
+                log.warning("[%s] no action scheduler for this account; actions not run", self.name)
+                self._no_scheduler_logged = True
             self._stats["errors"] += 1
+            return
+
+        try:
+            self._schedule(scheduler, index, func, ac, chain, envelope, facts)
+        except Exception as e:
+            log.warning("[%s] action '%s' could not be scheduled: %s", self.name, ac.name, e)
+            scheduler.count(self.name, index, ac.name, "errors", error=str(e))
+
+    def _schedule(
+        self,
+        scheduler: Any,
+        index: int,
+        action: Action,
+        ac: ActionConfig,
+        chain: Any,
+        envelope: Event,
+        facts_memo: list[MessageFacts],
+    ) -> None:
+        """Roll, plan and queue one action for one event. Never awaits."""
+        if not facts_memo:
+            facts_memo.append(facts_from_event(envelope.raw))
+        facts = facts_memo[0]
+        params = ac.params if ac.params is not None else action.parse(ac.config)
+        knobs = merge_knobs(self._gw.knobs, ac.knobs)
+
+        album = None
+        if action.album_once and facts.grouped_id:
+            album = (self.name, index, facts.chat_id, facts.grouped_id)
+            rolled = scheduler.album_roll(album, knobs.percent)
+        else:
+            rolled = scheduler.roll(knobs.percent)
+        if not rolled:
+            scheduler.count(self.name, index, action.name, "skipped")
+            return
+
+        payloads = action.plan(facts, params, chain, scheduler.rng)
+        if not payloads:
+            scheduler.count(self.name, index, action.name, "skipped")
+            return
+
+        received = scheduler.clock.now()
+        expiry = scheduler.expiry_for(action)
+        quiet = knobs.presence.quiet_hours
+        for payload in payloads:
+            low, high = knobs.delay
+            delay = scheduler.rng.uniform(low, high) if high > low else low
+            delay += action.extra_delay(facts, params)
+            extra = action.key_extra(payload)
+            item = PendingItem(
+                id=scheduler.new_id(),
+                job=self.name,
+                action=action.name,
+                index=index,
+                account=self._gw.account,
+                chat_id=facts.chat_id,
+                msg_id=facts.msg_id,
+                received_at=received,
+                due_at=received + delay,
+                expires_at=received + expiry if expiry is not None else None,
+                peer=facts.peer,
+                topic_id=facts.topic_id,
+                grouped_id=facts.grouped_id,
+                presence=knobs.presence.mode,
+                quiet_hours=quiet.text if quiet is not None else None,
+                on_takeover=knobs.on_takeover,
+                dry_run=knobs.dry_run,
+                payload=payload,
+                key=f"{self.name}|{index}|{facts.chat_id}|{facts.msg_id}|{extra}",
+            )
+            scheduler.submit(item, album=album, has_caption=bool(facts.text))

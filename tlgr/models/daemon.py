@@ -250,8 +250,13 @@ class DeadLetterResult(Model):
     dry_run: bool = False
 
 
-class JobState(Model):
-    """One gateway job."""
+class JobState(Model, omit_defaults=False):
+    """One gateway job.
+
+    `omit_defaults=False` because `enabled` and `running` are the answer:
+    with the default, an enabled job dropped `enabled` and a stopped one
+    dropped `running`, and `job list` printed `-` for both.
+    """
 
     name: str
     account: str = ""

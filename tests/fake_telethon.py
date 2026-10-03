@@ -1429,6 +1429,17 @@ class FakeTelegramClient:
         self._handlers: list[tuple[Any, Any]] = []
         self.disconnected: asyncio.Future[None] = asyncio.get_event_loop().create_future()
         self._requests = 0
+        # What Telethon's events and messages read off a client: `_set_client`
+        # looks entities up here, `build()` takes `_self_id`, and
+        # `Message.text` unparses through `parse_mode` (None means plain text).
+        self.parse_mode = None
+        from telethon._updates import EntityCache
+
+        self._mb_entity_cache = EntityCache(self_id=self.world.me.id, self_bot=False)
+
+    @property
+    def _self_id(self) -> int:
+        return int(self.world.me.id)
 
     # -- connection --------------------------------------------------------
 

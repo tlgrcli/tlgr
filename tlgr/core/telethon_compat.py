@@ -141,9 +141,14 @@ def install_too_long_hook(client: Any, callback: Callable[[str, int | None], Any
     Telethon consumes both inside `MessageBox` and delivers nothing to
     handlers, so a client that was offline long enough to blow the server's
     difference window silently skips history (checklist 9). The hook wraps
-    `MessageBox.apply_difference` / `apply_channel_difference` **on this
-    client's own box instance**, never on the class, so one account's hook
-    cannot fire for another's.
+    `MessageBox.apply_difference` / `apply_channel_difference` **for this
+    client's own box only**, so one account's hook cannot fire for another's.
+
+    `MessageBox` declares `__slots__`, so the methods cannot be replaced on
+    the instance: that raised `AttributeError: ... is read-only` on every
+    account's first connect. Instead the box is moved onto a subclass built
+    for this one client. The subclass adds no slots, so the layout matches and
+    `__class__` assignment is allowed.
 
     `callback(scope, channel_id)` is called with `TOO_LONG_GLOBAL`/`None` or
     `TOO_LONG_CHANNEL`/`<id>`.
@@ -153,38 +158,42 @@ def install_too_long_hook(client: Any, callback: Callable[[str, int | None], Any
         _warn_once("_message_box")
         return False
 
-    installed = False
+    base = type(box)
+    overrides: dict[str, Any] = {"__slots__": ()}
 
-    original_global = getattr(box, "apply_difference", None)
+    original_global = getattr(base, "apply_difference", None)
     if callable(original_global):
 
-        def apply_difference(diff: Any, chat_hashes: Any, _orig: Any = original_global) -> Any:
+        def apply_difference(self: Any, diff: Any, chat_hashes: Any) -> Any:
             if type(diff).__name__ == "DifferenceTooLong":
                 _safe(callback, TOO_LONG_GLOBAL, None)
-            return _orig(diff, chat_hashes)
+            return original_global(self, diff, chat_hashes)
 
-        box.apply_difference = apply_difference
-        installed = True
+        overrides["apply_difference"] = apply_difference
     else:  # pragma: no cover - present in 1.44
         _warn_once("MessageBox.apply_difference")
 
-    original_channel = getattr(box, "apply_channel_difference", None)
+    original_channel = getattr(base, "apply_channel_difference", None)
     if callable(original_channel):
 
-        def apply_channel_difference(
-            request: Any, diff: Any, chat_hashes: Any, _orig: Any = original_channel
-        ) -> Any:
+        def apply_channel_difference(self: Any, request: Any, diff: Any, chat_hashes: Any) -> Any:
             if type(diff).__name__ == "ChannelDifferenceTooLong":
                 channel = getattr(request, "channel", None)
                 _safe(callback, TOO_LONG_CHANNEL, getattr(channel, "channel_id", None))
-            return _orig(request, diff, chat_hashes)
+            return original_channel(self, request, diff, chat_hashes)
 
-        box.apply_channel_difference = apply_channel_difference
-        installed = True
+        overrides["apply_channel_difference"] = apply_channel_difference
     else:  # pragma: no cover - present in 1.44
         _warn_once("MessageBox.apply_channel_difference")
 
-    return installed
+    if len(overrides) == 1:
+        return False
+    try:
+        box.__class__ = type(base.__name__, (base,), overrides)
+    except TypeError as exc:
+        _warn_once("MessageBox subclassing", str(exc))
+        return False
+    return True
 
 
 def _safe(callback: Callable[..., Any], *args: Any) -> None:

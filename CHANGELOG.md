@@ -31,6 +31,35 @@ codes documented in `AGENT.md` are the public API.
 
 ### Fixed
 
+- **Gateway jobs work again, and incoming updates reach the daemon at all.**
+  Four faults stacked up, and each one alone was enough to stop every job:
+
+  - The daemon attached its update handler before the account's client
+    existed, so no incoming update reached the event bus. Jobs, webhooks and
+    `watch` saw the daemon's own sends and nothing else. Every job stopped
+    with `matched=0 skipped=0`.
+  - The bus hands a job the raw TL update, but filters and actions read a
+    Telethon event (`chat_id`, `is_private`, `reply()`). The job now builds
+    that event the way a Telethon handler would, including
+    `NewMessage(incoming=True)`, so an auto-reply never answers the
+    account's own messages.
+  - `filter_chat_id` skipped `@name` refs, expecting the gateway to resolve
+    them, and nothing did, so `chat_id: "@channel"` never matched. Jobs now
+    resolve them at start, and retry once a minute if the account was
+    offline.
+  - A restarted daemon started no jobs until `tlgr job reload`. It now
+    starts them at boot.
+
+- **Accounts no longer go "degraded" on every start** with `AttributeError:
+  'MessageBox' object attribute 'apply_difference' is read-only`. Telethon's
+  `MessageBox` declares `__slots__`, so the too-long hook now installs on a
+  per-client subclass, and the account no longer burns a reconnect or runs
+  without the hook.
+
+- **`job list` reports `enabled` and `running` even when they are at their
+  defaults.** Before, an enabled job that was not running showed `-` in both
+  columns, the same as a disabled one.
+
 - **`chat list` no longer loses a block of dialogs at a page boundary.** The
   dialog walk paired each row with its top message by message id alone, but
   only private chats share one id space: every channel and supergroup numbers

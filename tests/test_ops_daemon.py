@@ -520,6 +520,17 @@ class TestConfigCountries:
 
 
 class TestJobs:
+    def test_a_job_row_always_says_whether_it_is_enabled_and_running(self):
+        """With `omit_defaults`, an enabled, stopped job printed `-` in both columns."""
+        import msgspec
+
+        from tlgr.models.daemon import JobState
+
+        row = msgspec.to_builtins(JobState(name="archive", enabled=True, running=False))
+        assert row["enabled"] is True
+        assert row["running"] is False
+        assert row["matched"] == 0
+
     def test_a_job_is_added_from_flags(self, tlgr_home):
         added = local(
             "job.add",

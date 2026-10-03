@@ -348,6 +348,13 @@ class Gateway(BaseJob):
             return
 
         received = scheduler.clock.now()
+        # The key identifies the work: the same message replayed by catch-up
+        # after a crash is not acted on twice. An edit is new work, so it is
+        # keyed by its edit time as well.
+        event = envelope.event_type
+        if event != "new_message":
+            edited = getattr(envelope.raw.message, "edit_date", None)
+            event = f"{event}@{edited.timestamp() if edited else ''}"
         expiry = scheduler.expiry_for(action)
         quiet = knobs.presence.quiet_hours
         for payload in payloads:
@@ -374,6 +381,6 @@ class Gateway(BaseJob):
                 on_takeover=knobs.on_takeover,
                 dry_run=knobs.dry_run,
                 payload=payload,
-                key=f"{self.name}|{index}|{facts.chat_id}|{facts.msg_id}|{extra}",
+                key=f"{self.name}|{index}|{event}|{facts.chat_id}|{facts.msg_id}|{extra}",
             )
             scheduler.submit(item, album=album, has_caption=bool(facts.text))

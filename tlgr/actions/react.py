@@ -49,7 +49,7 @@ def _emoji(value: Any) -> str:
     value = value.strip()
     if value.startswith(_CUSTOM) and not value[len(_CUSTOM) :].isdigit():
         raise ActionError(f"react: {value!r} is not custom:<document id>")
-    return value
+    return str(value)
 
 
 def _choices(value: Any) -> list[list[Any]]:

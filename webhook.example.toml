@@ -19,3 +19,8 @@ backoff_base = 2  # seconds between retries (exponential)
 
 [webhook.filters]
 chats = []  # empty = all chats, or ["@channel", "-100123456"]
+# Any gateway job filter works here too (tlgr/filters/README.md), e.g.
+#   chat_type = "private"
+#   contains = ["invoice"]
+# With one set, event types Telethon has no event for (typing, for one) are
+# not delivered, and the daemon logs that once per type.

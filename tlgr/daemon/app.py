@@ -100,7 +100,7 @@ class Daemon:
             **factory_kwargs,
         )
         self.webhook_config = load_webhook_config(self.paths.base)
-        self.webhook = WebhookPusher(self.webhook_config, self.paths.base)
+        self.webhook = WebhookPusher(self.webhook_config, self.paths.base, accounts=self.get_client)
         self._job_runner = JobRunner()
         # Long file transfers: the ones `--background` hands over, and the
         # per-DC budgets that stop one 2 GB download from starving five

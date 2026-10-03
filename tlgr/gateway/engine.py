@@ -13,10 +13,10 @@ behind is bounded rather than unbounded.
 The pipeline itself is unchanged, and filters still read a high-level
 Telethon event (`NewMessage.Event` and friends). The bus carries the raw TL
 update beside the normalised envelope, so the job builds that event itself
-with the same builder a Telethon handler would have used, including
-`NewMessage(incoming=True)`, so a job never answers the account's own
-messages. The full move to model-based filters belongs to the updates group
-(PR-4).
+(`gateway/tlevents.py`) with the builder a Telethon handler would have used,
+including `NewMessage(incoming=True)`, so a job never answers the account's
+own messages. The full move to model-based filters belongs to the updates
+group (PR-4).
 
 Without a bus — a unit test, or a daemon that has not started one — the job
 falls back to registering Telethon handlers exactly as v1 did.
@@ -25,17 +25,15 @@ falls back to registering Telethon handlers exactly as v1 did.
 from __future__ import annotations
 
 import asyncio
-import inspect
 import logging
 import time
 from typing import Any
-
-from telethon import events
 
 from tlgr.actions import get_action
 from tlgr.filters.compose import FilterNode, Op, evaluate
 from tlgr.gateway.config import ActionConfig, GatewayConfig
 from tlgr.gateway.event import Event
+from tlgr.gateway.tlevents import build_event, builder_for_job_event
 from tlgr.jobs.base import BaseJob
 from tlgr.jobs.client import JobClient
 
@@ -73,31 +71,11 @@ def _bus_types(names: list[str]) -> set[str]:
     return wanted
 
 
-_EVENT_TYPE_MAP = {
-    "new_message": (events.NewMessage, {}),
-    "message_edited": (events.MessageEdited, {}),
-    "message_deleted": (events.MessageDeleted, {}),
-    "chat_action": (events.ChatAction, {}),
-    "user_joined": (events.UserUpdate, {}),
-    "message_read": (events.MessageRead, {}),
-}
-
-
-def _builder_for(event_type_name: str) -> Any | None:
-    mapping = _EVENT_TYPE_MAP.get(event_type_name)
-    if not mapping:
-        return None
-    event_cls, kwargs = mapping
-    if event_type_name == "new_message":
-        kwargs = {"incoming": True}
-    return event_cls(**kwargs)
-
-
 def _builders(names: list[str]) -> list[tuple[str, Any]]:
     """One Telethon event builder per v1 event name, in the job's order."""
     out: list[tuple[str, Any]] = []
     for name in names:
-        builder = _builder_for(name)
+        builder = builder_for_job_event(name)
         if builder is not None:
             out.append((name, builder))
     return out
@@ -207,7 +185,7 @@ class Gateway(BaseJob):
                 # A self-origin echo or a synthesised event: the filters read
                 # the raw Telethon object, so there is nothing to evaluate.
                 return
-            built = await self._build(builders, raw)
+            built = await build_event(builders, raw, self.client.client)
             if built is None:
                 return
             tg_event, event_type = built
@@ -220,35 +198,9 @@ class Gateway(BaseJob):
         except asyncio.CancelledError:
             raise
 
-    async def _build(self, builders: list[tuple[str, Any]], update: Any) -> tuple[Any, str] | None:
-        """The high-level event Telethon would have handed a handler, or None.
-
-        This mirrors `EventBuilderDict` in Telethon's `_dispatch_update`: build,
-        attach the update's entities and the client, then apply the builder's
-        own filter, which is where `incoming=True` drops outgoing messages.
-        """
-        client = self.client.client
-        self_id = getattr(client, "_self_id", None)
-        for event_type, builder in builders:
-            event = builder.build(update, None, self_id)
-            if not event:
-                continue
-            if isinstance(event, events.common.EventCommon):
-                event.original_update = update
-                event._entities = getattr(update, "_entities", None) or {}
-                event._set_client(client)
-            if not builder.resolved:
-                await builder.resolve(client)
-            passed = builder.filter(event)
-            if inspect.isawaitable(passed):
-                passed = await passed
-            if passed:
-                return event, event_type
-        return None
-
     async def _run_on_client(self) -> None:
         for event_type_name in self._gw.events:
-            builder = _builder_for(event_type_name)
+            builder = builder_for_job_event(event_type_name)
             if builder is None:
                 log.warning("[%s] unknown event type: %s", self.name, event_type_name)
                 continue

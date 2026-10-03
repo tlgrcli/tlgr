@@ -469,35 +469,47 @@ class ActionScheduler:
             waiter.cancel()
 
     async def _worker(self, kind: str) -> None:
-        pacer = self.pacers[kind]
+        # A bug in one step must not end the worker: a dead worker would stop
+        # that kind on this account for good, silently.
         while not self._closed:
-            self._wake[kind].clear()
-            item = self._peek(kind)
-            if item is None:
-                await self._wait(kind, None)
-                continue
-            now = self.clock.now()
-            if item.due_at > now:
-                await self._wait(kind, item.due_at - now)
-                continue
-            action = get_builtin(item.action)
-            if action is None:
-                self._finish(item, "errors", error=f"unknown action {item.action!r}")
-                continue
-            if item.expires_at is not None and now >= item.expires_at:
-                self._finish(item, "expired")
-                continue
-            if self._hold_for_quiet_hours(item, action, now):
-                continue
-            if not item.dry_run:
-                wait = pacer.delay(now)
-                if wait > 0:
-                    await self._wait(kind, wait)
-                    continue
-            batch = self._batch_for(item, action, now)
-            if not item.dry_run:
-                pacer.consume(now)
-            await self._execute(action, batch)
+            try:
+                await self._step(kind)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception("the %s worker for %s hit an unexpected error", kind, self.account)
+                await self.clock.sleep(1.0)
+
+    async def _step(self, kind: str) -> None:
+        """Wait for, or run, the next item of *kind*."""
+        pacer = self.pacers[kind]
+        self._wake[kind].clear()
+        item = self._peek(kind)
+        if item is None:
+            await self._wait(kind, None)
+            return
+        now = self.clock.now()
+        if item.due_at > now:
+            await self._wait(kind, item.due_at - now)
+            return
+        action = get_builtin(item.action)
+        if action is None:
+            self._finish(item, "errors", error=f"unknown action {item.action!r}")
+            return
+        if item.expires_at is not None and now >= item.expires_at:
+            self._finish(item, "expired")
+            return
+        if self._hold_for_quiet_hours(item, action, now):
+            return
+        if not item.dry_run:
+            wait = pacer.delay(now)
+            if wait > 0:
+                await self._wait(kind, wait)
+                return
+        batch = self._batch_for(item, action, now)
+        if not item.dry_run:
+            pacer.consume(now)
+        await self._execute(action, batch)
 
     def _batch_for(self, item: PendingItem, action: Action, now: float) -> list[PendingItem]:
         key = action.batch_key(item)

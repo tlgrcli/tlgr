@@ -107,6 +107,8 @@ class DaemonStatus(Model, omit_defaults=False):
     events: EventBusStatus | None = None
     webhook: dict[str, Any] = {}
     jobs: list[dict[str, Any]] = []
+    #: Per account: the job-action queue (pending by action, pacers, presence).
+    actions: dict[str, Any] = {}
     # v1's `/daemon/status` carried these two, and AGENT.md documents them.
     connections: dict[str, bool] = {}
     disconnected: list[str] = []

@@ -102,6 +102,10 @@ class Daemon:
         self.webhook_config = load_webhook_config(self.paths.base)
         self.webhook = WebhookPusher(self.webhook_config, self.paths.base, accounts=self.get_client)
         self._job_runner = JobRunner()
+        # One action scheduler per account, shared by every job on it: the
+        # pacer queues are per (account, action kind), not per job.
+        self._schedulers: dict[str, Any] = {}
+        self._pacing: dict[str, Any] = {}
         # Long file transfers: the ones `--background` hands over, and the
         # per-DC budgets that stop one 2 GB download from starving five
         # thumbnail fetches (§6.7).
@@ -221,28 +225,83 @@ class Daemon:
     def list_jobs(self) -> list[dict[str, Any]]:
         return self._job_runner.list_jobs()
 
+    @property
+    def schedulers(self) -> dict[str, Any]:
+        return dict(self._schedulers)
+
+    def action_scheduler(self, alias: str) -> Any:
+        """The account's job-action scheduler, created and started on first use."""
+        found = self._schedulers.get(alias)
+        if found is not None:
+            return found
+        from tlgr.gateway.executor import DaemonOpRunner
+        from tlgr.gateway.pending import PendingStore
+        from tlgr.gateway.scheduler import ActionScheduler
+
+        found = ActionScheduler(
+            alias,
+            DaemonOpRunner(self, alias),
+            store=PendingStore(self.paths.account_dir(alias) / "pending.json"),
+            tz=self._jobs_timezone(),
+            # The account-level `[presence]` setting already owns the status.
+            presence_enabled=self.config.presence.mode == "off",
+        )
+        found.configure(self._pacing.get(alias))
+        self.bus.add_handler(found.on_bus)
+        found.start()
+        self._schedulers[alias] = found
+        return found
+
+    def _jobs_timezone(self) -> Any:
+        """`[defaults] timezone` for quiet hours; local time when it is unset."""
+        name = (self.config.defaults.timezone or "").strip()
+        if not name:
+            return None
+        try:
+            from zoneinfo import ZoneInfo
+
+            return ZoneInfo(name)
+        except Exception:
+            log.warning("unknown timezone %r in [defaults]; quiet hours use local time", name)
+            return None
+
     async def remove_job(self, name: str) -> bool:
-        return await self._job_runner.remove_job(name)
+        removed = await self._job_runner.remove_job(name)
+        for scheduler in self._schedulers.values():
+            scheduler.forget_job(name)
+        return removed
 
     async def enable_job(self, name: str) -> bool:
         return await self._job_runner.enable_job(name)
 
     async def disable_job(self, name: str) -> bool:
+        # Disabling says "stop": what the job had queued is dropped as well.
+        for scheduler in self._schedulers.values():
+            scheduler.cancel(job=name)
         return await self._job_runner.disable_job(name)
 
     async def reload_jobs(self) -> dict[str, Any]:
-        from tlgr.gateway.config import load_gateway_configs
+        from tlgr.gateway.config import load_jobs_file
 
-        new_configs = await asyncio.to_thread(load_gateway_configs, self.base)
+        jobs_file = await asyncio.to_thread(load_jobs_file, self.base)
+        for problem in jobs_file.problems:
+            log.error("jobs.yaml: %s", problem)
+        new_configs = jobs_file.jobs
+        self._pacing = jobs_file.pacing
+        for alias, scheduler in self._schedulers.items():
+            scheduler.configure(self._pacing.get(alias))
         default_account = self.config.default_account or self.accounts.get_active() or ""
         old_names = set(self._job_runner._jobs)
         new_names = {jc.name for jc in new_configs}
-        removed = old_names - new_names
+        # A job that failed validation keeps running as it was: a typo in an
+        # edit must not take a working job down with it.
+        removed = old_names - new_names - set(jobs_file.rejected)
         added = new_names - old_names
         updated = old_names & new_names
 
         for name in removed:
-            await self._job_runner.remove_job(name)
+            await self.remove_job(name)
+        active: dict[str, set[str]] = {}
         for job_config in new_configs:
             if job_config.name not in added and job_config.name not in updated:
                 continue
@@ -256,11 +315,19 @@ class Daemon:
                 log.warning("job %r references unusable account %r", job_config.name, alias)
                 continue
             try:
-                job = self._job_runner.create_job(job_config, client, self.webhook, self.bus)
+                scheduler = self.action_scheduler(alias)
+                job = self._job_runner.create_job(
+                    job_config, client, self.webhook, self.bus, scheduler
+                )
                 if job.enabled:
                     job.start()
+                active.setdefault(alias, set()).add(job_config.name)
             except Exception:
                 log.exception("could not create job %r", job_config.name)
+        # Pending actions saved by the last run come back once their jobs
+        # exist again, with the due times they had.
+        for alias, names in active.items():
+            self._schedulers[alias].resume(names)
         self.activity.jobs_running = len(
             [j for j in self._job_runner.list_jobs() if j.get("running")]
         )
@@ -269,6 +336,7 @@ class Daemon:
             "added": sorted(added),
             "removed": sorted(removed),
             "updated": sorted(updated),
+            "problems": list(jobs_file.problems),
         }
 
     def request_shutdown(self) -> None:
@@ -293,6 +361,7 @@ class Daemon:
             },
             "accounts": self.sessions.snapshot(),
             "jobs": self._job_runner.list_jobs(),
+            "actions": {alias: s.snapshot() for alias, s in self._schedulers.items()},
             "webhook": self.webhook.snapshot(),
             "activity": {
                 **{**self.activity.snapshot(), "pending_logins": self.preauth.pending_count},
@@ -412,6 +481,11 @@ class Daemon:
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await task
 
+        # Job actions start nothing new from here; one already talking to
+        # Telegram is an in-flight request and the drain below waits for it.
+        for scheduler in list(self._schedulers.values()):
+            scheduler.close()
+
         # Wait for in-flight requests rather than cancelling them: a ten
         # minute scan that is killed at second 599 has cost the account the
         # requests it already made and produced nothing (COR-11).
@@ -420,6 +494,13 @@ class Daemon:
 
         with contextlib.suppress(Exception):
             await self._job_runner.stop_all()
+        # After the jobs (nothing new is queued) and before the sessions (a
+        # running action may finish): what is still pending is written to
+        # `accounts/<alias>/pending.json` and resumes at the next start.
+        for scheduler in list(self._schedulers.values()):
+            self.bus.remove_handler(scheduler.on_bus)
+            with contextlib.suppress(Exception):
+                await scheduler.stop(timeout=min(5.0, max(0.5, deadline - time.monotonic())))
         # A half-written download keeps its `.part` file, so the next
         # `media download --resume` continues where the shutdown stopped it.
         with contextlib.suppress(Exception):

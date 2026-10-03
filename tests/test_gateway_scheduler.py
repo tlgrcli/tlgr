@@ -578,6 +578,24 @@ class TestFailures:
         assert len(runner.requests("message.forward")) == 3
         assert _stats(scheduler)["done"] == 1
 
+    async def test_an_expiring_action_gives_up_after_a_few_retries(self, sched):
+        scheduler, runner, clock = sched
+        runner.fail("reaction.add", *[ConnectionError("down")] * 10)
+        job = _job(scheduler, [{"react": "👍"}])
+        await deliver(job, private_update(10))
+        await clock.run_for(600, step=5)
+        assert len(runner.requests("reaction.add")) == 4
+        assert _stats(scheduler)["errors"] == 1
+
+    async def test_a_forward_rides_out_a_long_reconnect(self, sched):
+        scheduler, runner, clock = sched
+        runner.fail("message.forward", *[ConnectionError("down")] * 6)
+        job = _job(scheduler, [{"forward": {"to": "@archive"}}])
+        await deliver(job, private_update(10))
+        await clock.run_for(3 * 3600, step=60)
+        assert len(runner.requests("message.forward")) == 7
+        assert _stats(scheduler)["done"] == 1
+
     async def test_a_permanent_failure_is_counted(self, sched):
         scheduler, runner, clock = sched
         runner.fail("message.forward", errors.ChatWriteForbiddenError(request=None))

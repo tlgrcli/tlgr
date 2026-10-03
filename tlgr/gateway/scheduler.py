@@ -61,6 +61,11 @@ KINDS: tuple[str, ...] = tuple(DEFAULT_PACING)
 
 #: Transient failures: retried this many times, after these waits (seconds).
 RETRY_BACKOFF_S = (5.0, 30.0, 120.0)
+#: An action that never expires (forward, read) keeps retrying a transient
+#: failure every ten minutes up to this many attempts, so a relay rides out
+#: an account that is reconnecting for an hour instead of dropping posts.
+PATIENT_RETRIES = 12
+PATIENT_BACKOFF_S = 600.0
 #: FLOOD_WAITs an item survives before it is counted as an error.
 MAX_FLOOD_RETRIES = 10
 #: An outgoing message within this long of tlgr's own send is tlgr's echo.
@@ -564,11 +569,18 @@ class ActionScheduler:
                 else:
                     self._reschedule(item, now + wait + self.rng.uniform(1.0, 5.0))
             return
+        patient = self.expiry_for(action) is None
+        limit = PATIENT_RETRIES if patient else len(RETRY_BACKOFF_S)
         for item in batch:
             item.attempts += 1
             item.last_error = message
-            if body.retryable and item.attempts <= len(RETRY_BACKOFF_S):
-                backoff = RETRY_BACKOFF_S[item.attempts - 1] * self.rng.uniform(1.0, 1.5)
+            if body.retryable and item.attempts <= limit:
+                base = (
+                    RETRY_BACKOFF_S[item.attempts - 1]
+                    if item.attempts <= len(RETRY_BACKOFF_S)
+                    else PATIENT_BACKOFF_S
+                )
+                backoff = base * self.rng.uniform(1.0, 1.5)
                 log.info(
                     "[%s] %s failed (%s); retrying in %ds",
                     item.job,

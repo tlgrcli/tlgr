@@ -4,8 +4,50 @@
 #   event -> filters -> processors -> actions
 #
 # See tlgr/gateway/README.md for the full reference.
+#
+# Every action runs through tlgr's op layer and is paced per account and
+# action kind. The optional `pacing:` block changes the pace; the values
+# below are the defaults.
+
+pacing:
+  main:
+    react:   {every: 4s, per_hour: 300}
+    read:    {every: 2s}
+    view:    {every: 2s}
+    forward: {every: 1.5s}
+    reply:   {every: 1.5s}
+    expire:  {react: 24h, view: 24h, reply: 24h}
 
 jobs:
+  # Acknowledge DMs from contacts the way a person would: read after a
+  # while, listen to voice notes, sometimes react, and answer a new chat.
+  - name: dm-ack
+    account: main
+    filters: {chat_type: private, sender_is_contact: true}
+    presence: {mode: session, quiet_hours: "01:00-08:00"}
+    on_takeover: cancel        # cancel | cancel_read | ignore
+    actions:
+      - read:  {delay: 10-90s}           # + reading time
+      - view:  {delay: 15-120s}          # voice/round notes
+      - react:
+          emoji: ["👍", "❤", "🔥"]       # random; or {"👍": 3, "🔥": 1}
+          percent: 60
+          delay: 30-300s
+      - reply:
+          text: "Got it, will answer soon"
+          filters: {chat_is_new: true}
+          typing: true                   # default for reply
+          delay: 1-3m
+
+  # Try a rule without touching Telegram: it is scheduled, logged and
+  # counted, never sent.
+  - name: dry-run-example
+    account: main
+    dry_run: true
+    filters: {chat_type: private}
+    actions:
+      - react: "👀"
+
   # Auto-reply to all private messages
   - name: private-bot
     account: main

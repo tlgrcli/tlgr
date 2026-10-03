@@ -1,117 +1,170 @@
 # Actions
 
-Registry-based pipeline actions for the Gateway. Actions are the final stage
-of the pipeline -- they execute side effects (sending messages, forwarding,
-etc.) based on the event that passed through filters and processors.
+The last stage of a gateway job: what it does with a message that passed its
+filters. Every built-in action runs through the op layer (the same
+operations the CLI calls), in process, for the job's account, so a job gets
+the policy allow/deny list, the rate limiter, the flood-wait budget and the
+self-origin events on the bus, exactly like a command typed by hand.
 
 ## How it works
 
 ```mermaid
 flowchart TB
-    E["Event passes filters"] --> LOOP["For each action in the job's action list"]
-    LOOP --> CHECK["Check per-action filters<br/>(optional)"]
-    CHECK --> RESOLVE["Resolve processor chain<br/>(per-action overrides job-level)"]
-    RESOLVE --> EXEC["Execute<br/>action_func(event, config, client, chain)"]
+    E["Event passes the job's filters"] --> LOOP["For each action"]
+    LOOP --> CHECK["Per-action filters"]
+    CHECK --> ROLL["percent roll"]
+    ROLL --> PLAN["plan(): payloads, on the bus lane, no awaits"]
+    PLAN --> Q["Account scheduler: delay, quiet hours, pacer, persistence"]
+    Q --> EXEC["execute(): operations through dispatch, when due"]
 ```
 
-Every action is an async function registered with `@register_action`. Actions
-receive:
-- `event` -- the `Event` envelope
-- `config` -- the action's YAML config value
-- `client` -- a `ClientWrapper` for Telegram API calls
-- `chain` -- an optional `ProcessorChain` for text modification
+An action is an `Action` subclass (`base.py`) registered with
+`@register_action`. It is split in two because the halves happen at
+different times, possibly in different processes:
+
+* `plan(facts, params, chain, rng)` runs when the event arrives. It reads
+  the message through `MessageFacts`, applies processors, picks the emoji,
+  and returns plain payloads. It never awaits, so the bus lane is never held.
+* `execute(items, runtime)` runs when the item is due and its pacer slot is
+  open, possibly after a restart, from nothing but the persisted
+  `PendingItem`. It calls operations through `runtime.op(...)`.
+
+Class attributes tell the scheduler how to treat the kind: its expiry, whether
+quiet hours hold it, which `on_takeover` modes cancel it, whether an album
+gets one action, and how items coalesce (`batch_key`).
+
+A plain async function registered with `@register_action` is still accepted.
+It receives `(event, config, client, chain)` and runs at once, outside the
+scheduler, as actions always did.
 
 ## Built-in actions
 
-### reply
-
-Sends a static text reply to the triggering message.
-
-```yaml
-actions:
-  - reply: "shut up i'm just a bot!"
-```
-
-If a processor chain is provided, it's applied to the reply text before sending.
+Every action also takes the shared knobs `delay`, `percent`, `presence`,
+`on_takeover`, `dry_run` and `filters`; see `tlgr/gateway/README.md`.
 
 ### forward
 
-Forwards the message to one or more destinations.
-
 ```yaml
-actions:
-  - forward:
-      to: ["@clean_feed", "@archive"]
-      drop_author: true
-      processors:
-        - strip_formatting
+- forward: "@archive"
+- forward:
+    to: ["@clean_feed", "@archive"]
+    drop_author: true
+    processors: [strip_formatting]
 ```
 
-| Config key | Type | Description |
-|------------|------|-------------|
-| `to` | `str` or `list[str]` | Destination chat(s) |
-| `drop_author` | `bool` | Remove original author attribution |
-| `processors` | `list` | Per-action processors (override job-level) |
-| `filters` | `dict` | Per-action filters (AND'd with job-level) |
+| Key | Type | Description |
+|-----|------|-------------|
+| `to` | `str` or `list` | Destination chat(s); each is its own pending item |
+| `drop_author` | `bool` | Hide the original author (native forward) |
+| `processors` | `list` | Rewrite the text; turns the forward into a re-send |
 
-When processors are present, the message text is transformed and sent as a new
-message (or caption for media). Without processors, the message is forwarded
-natively via Telegram's forward API.
+Without processors: `message.forward` (`--no-author` with `drop_author`).
+With processors the processed text is re-sent with `message.send`, or a photo
+or document is re-sent with the processed caption (`media.upload
+--from-message`); text keeps its formatting as markdown. A link preview is
+regenerated from the text. Service messages, empty messages and
+self-destructing media are skipped. Pacing: 1 per 1.5 s. Never expires, never
+held by quiet hours, never cancelled by a takeover.
 
-## Per-action overrides
-
-Each action can have its own `filters` and `processors` that specialize the
-job-level pipeline:
+### reply
 
 ```yaml
-jobs:
-  - name: selective
-    filters:
-      chat_type: private
-    actions:
-      # This action only runs for messages with media
-      - forward:
-          to: ["@media_archive"]
-          filters:
-            has_media: true
-
-      # This action runs for all private messages
-      - reply: "got your message!"
+- reply: "Away until Monday"
+- reply: {text: "Got it", typing: true, delay: 1-3m, processors: [...]}
 ```
 
-Per-action filters are AND'd with the job-level filters. Per-action processors
-replace (not extend) the job-level processor chain.
+| Key | Type | Description |
+|-----|------|-------------|
+| `text` | `str` | The reply; processors apply to it |
+| `typing` | `bool` | Show "typing..." first (default `true`) |
 
-## Adding a custom action
+Typing lasts about 40 characters a second of the text, clamped to 2-15 s
+(`chat.typing`), then `message.send` goes out as a reply to the message. The
+reply queue is not held while typing: the item is re-queued for the moment
+typing ends. No indicator in a broadcast channel. An album gets one reply.
+Pacing: 1 per 1.5 s. Expires after 24 h.
 
-1. Create an async function with signature
-   `(event: Event, config: Any, client: ClientWrapper, chain: ProcessorChain | None)`.
-2. Decorate it with `@register_action("name")`.
-3. Import it in `__init__.py`.
+### react
+
+```yaml
+- react: "👍"
+- react: ["👍", "❤", "🔥"]        # one, uniformly at random, per message
+- react: {"👍": 3, "🔥": 1}       # weighted
+- react: {emoji: ["👍", "🔥"], big: false, percent: 60, delay: 30-300s}
+- react: "custom:5368324170671202286"   # a custom (Premium) emoji
+```
+
+The job's choice replaces any reaction the account already had on the
+message (`reaction.add --replace`). A chat that does not allow the emoji is
+not checked first: the reaction is sent and REACTION_INVALID shows in the
+action's `errors`. Knobs need the long form (a weighted mapping is all
+emoji).
+
+Reacting implies reading: before the reaction goes out the chat is read up
+to that message, coalesced with any read already pending for the chat, so
+the other side never sees a reaction on a message still shown unread. This
+happens even if the job has no `read` action. An album gets one reaction, on
+the message with the caption, else the first one (where Telegram Desktop and
+Android attach album reactions). Pacing: 1 per 4 s, at most 300 an hour.
+Expires after 24 h.
+
+### read
+
+```yaml
+- read: {}
+- read: true
+- read: {delay: 10-90s, mentions: true, reactions: true}
+```
+
+Marks the chat read up to the triggering message, never further (never
+`max_id=0`). `message.read` picks the RPC for the peer: `readHistory` for a
+private chat or basic group, `channels.readHistory` for a channel or
+supergroup, `readDiscussion` for a forum topic. Reads that are due together
+for one chat go out as one call with the highest id. On top of `delay`, the
+item waits about as long as reading the text takes (250 words a minute, plus
+3 s for media, at most 60 s). `mentions` and `reactions` also clear those
+badges. Pacing: 1 per 2 s. Never expires.
+
+### view
+
+```yaml
+- view: {}
+- view: {include_view_once: true}
+```
+
+In a broadcast channel: `message.view.get --increment` (getMessagesViews with
+`increment=true`), one call per chat with every id that is due. In a private
+chat or group: voice notes and round video notes are marked listened
+(`message.read --contents`). View-once and self-destructing media is never
+consumed unless `include_view_once: true`. A message with nothing to view
+counts as `skipped`. `view` and `read` are independent. Pacing: 1 per 2 s.
+Expires after 24 h.
+
+## Writing an action
 
 ```python
-# tlgr/actions/react.py
 from tlgr.actions import register_action
+from tlgr.actions.base import Action, Outcome
 
 
-@register_action("react")
-async def action_react(event, config, client, chain=None):
-    if event.source != "telegram":
-        return
-    emoji = str(config) if isinstance(config, str) else config.get("emoji", "👍")
-    msg = event.raw.message
-    await client.react_to_message(event.raw.chat_id, msg.id, emoji)
+@register_action("pin")
+class Pin(Action):
+    name = "pin"
+    cancelled_by = frozenset({"cancel"})
+
+    def parse(self, config):
+        return {"notify": bool((config or {}).get("notify", False))}
+
+    def plan(self, facts, params, chain, rng):
+        return [{"notify": params["notify"]}]
+
+    async def execute(self, items, rt):
+        item = items[0]
+        request = {"chat": str(item.chat_id), "msg_id": item.msg_id, **item.payload}
+        await rt.op("message.pin", request)
+        return Outcome()
 ```
 
-Then import in `__init__.py`:
-
-```python
-from tlgr.actions import react  # noqa: F401
-```
-
-Now usable in YAML:
-
-```yaml
-actions:
-  - react: "👍"
-```
+Add a pacer rule for it to `DEFAULT_PACING` in `gateway/pacer.py` (the
+scheduler runs one queue per entry there) and it is paced, persisted and
+counted like the built-ins.

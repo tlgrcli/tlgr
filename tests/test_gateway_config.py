@@ -186,3 +186,12 @@ class TestErrors:
         loaded = parse_jobs_document({"jobs": [{"name": "a", "actions": [{"read": {}}]}] * 2})
         assert [job.name for job in loaded.jobs] == ["a"]
         assert "used twice" in loaded.problems[0]
+
+
+def test_the_shipped_example_validates():
+    from pathlib import Path
+
+    example = Path(__file__).resolve().parent.parent / "jobs.example.yaml"
+    loaded = parse_jobs_document(yaml.safe_load(example.read_text(encoding="utf-8")))
+    assert loaded.problems == []
+    assert "dm-ack" in {job.name for job in loaded.jobs}

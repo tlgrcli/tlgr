@@ -68,6 +68,17 @@ Valid message types: `text`, `photo`, `video`, `document`, `sticker`, `voice`,
 | `from_users` | Sender must be in list | `list[int]` |
 | `exclude_users` | Sender must NOT be in list | `list[int]` |
 
+### Dialog filters (`dialog.py`)
+
+These may ask Telegram, so they are coroutines and only run in the job
+engine (`evaluate_async`); the synchronous `evaluate` rejects them with a
+reason. Both answers are cached per account.
+
+| Filter | Description | Value type |
+|--------|-------------|------------|
+| `sender_is_contact` | Sender is (or with `false`, is not) in the account's contacts (`User.contact`; refetched after 10 minutes when the update carried no sender) | `bool` |
+| `chat_is_new` | In a private chat, this is the first message the dialog has ever had (one history probe per chat, then cached) | `bool` |
+
 ## Composition
 
 Top-level filter keys are AND'd together. Use `any_of` for OR and `none_of`

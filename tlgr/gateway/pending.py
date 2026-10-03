@@ -57,7 +57,10 @@ class PendingItem:
     grouped_id: int | None = None
     #: A multi-step action's progress; `reply` is `""` then `send`.
     phase: str = ""
+    #: Transient failures so far.
     attempts: int = 0
+    #: FLOOD_WAITs so far, counted apart so a flood does not use up retries.
+    floods: int = 0
     presence: str = "leave"
     quiet_hours: str | None = None
     on_takeover: str = "cancel"
@@ -109,11 +112,15 @@ class PendingStore:
         return items[:MAX_PENDING], recent[-RECENT_KEYS:]
 
     def save(self, items: list[PendingItem], recent: list[str]) -> None:
+        self.save_raw([item.to_json() for item in items], recent)
+
+    def save_raw(self, items: list[dict[str, Any]], recent: list[str]) -> None:
+        """Write already-serialised items; safe to run in a worker thread."""
         from tlgr.core.paths import write_private
 
         body = {
             "version": _VERSION,
-            "items": [item.to_json() for item in items[:MAX_PENDING]],
+            "items": items[:MAX_PENDING],
             "recent": recent[-RECENT_KEYS:],
         }
         with contextlib.suppress(OSError):

@@ -552,6 +552,34 @@ class TestTakeover:
         await scheduler.on_bus(bus_envelope(), echo)
         assert [item.action for item in scheduler.items.values()] == ["reply"]
 
+    async def test_the_read_that_follows_tlgrs_own_send_is_not_a_takeover(self, sched):
+        scheduler, runner, clock = sched
+        job = _job(scheduler, [{"read": {"delay": "60s"}}])
+        await deliver(job, private_update(10))
+        scheduler.begin_send(ALICE)
+        update = types.UpdateReadHistoryInbox(
+            peer=types.PeerUser(user_id=ALICE),
+            max_id=12,
+            still_unread_count=0,
+            pts=2,
+            pts_count=1,
+        )
+        await scheduler.on_bus(bus_envelope(), update)
+        assert len(scheduler.items) == 1
+
+    async def test_a_read_in_one_forum_topic_leaves_other_topics_alone(self, sched):
+        from job_helpers import topic_update
+
+        scheduler, runner, clock = sched
+        job = _job(scheduler, [{"reply": {"text": "hi", "delay": "60s"}}])
+        await deliver(job, topic_update(70, topic=60))
+        await deliver(job, topic_update(71, topic=50))
+        update = types.UpdateReadChannelDiscussionInbox(
+            channel_id=5150, top_msg_id=60, read_max_id=80
+        )
+        await scheduler.on_bus(bus_envelope(), update)
+        assert [item.topic_id for item in scheduler.items.values()] == [50]
+
     async def test_a_message_after_the_read_point_survives(self, sched):
         scheduler, runner, clock = sched
         job = _job(scheduler, [{"reply": {"text": "hi", "delay": "60s"}}])
@@ -609,6 +637,57 @@ class TestFailures:
         await clock.run_for(3 * 3600, step=60)
         assert len(runner.requests("message.forward")) == 7
         assert _stats(scheduler)["done"] == 1
+
+    async def test_a_request_cancelled_by_a_disconnect_is_retried(self, sched):
+        """Telethon cancels in-flight requests on disconnect; the worker must survive."""
+        scheduler, runner, clock = sched
+        runner.fail("message.forward", asyncio.CancelledError())
+        job = _job(scheduler, [{"forward": {"to": "@archive"}}])
+        await deliver(job, private_update(10))
+        await deliver(job, private_update(11, user=ALICE + 1))
+        await clock.run_for(60, step=1)
+        assert len(runner.requests("message.forward")) == 3
+        assert _stats(scheduler)["done"] == 2
+
+    async def test_a_flood_does_not_use_up_the_transient_retries(self, sched):
+        scheduler, runner, clock = sched
+        runner.fail(
+            "message.forward",
+            errors.FloodWaitError(request=None, capture=20),
+            ConnectionError("reset"),
+        )
+        job = _job(scheduler, [{"forward": {"to": "@archive"}}])
+        await deliver(job, private_update(10))
+        await clock.run_for(60, step=1)
+        assert len(runner.requests("message.forward")) == 3
+        item_stats = _stats(scheduler)
+        assert item_stats["done"] == 1
+
+    async def test_a_running_action_of_a_removed_job_is_not_requeued(self, sched):
+        scheduler, runner, clock = sched
+        gate = asyncio.Event()
+
+        async def slow(request):
+            await gate.wait()
+            raise ConnectionError("reset")
+
+        original = runner.__call__
+
+        async def call(op, request):
+            if op == "message.forward":
+                runner.calls.append((op, dict(request), clock.now()))
+                return await slow(request)
+            return await original(op, request)
+
+        scheduler.runner = call
+        job = _job(scheduler, [{"forward": {"to": "@archive"}}])
+        await deliver(job, private_update(10))
+        await clock.advance(1)
+        assert scheduler.forget_job("dm") == 1
+        gate.set()
+        await clock.run_for(60, step=1)
+        assert scheduler.items == {}
+        assert len(runner.requests("message.forward")) == 1
 
     async def test_a_permanent_failure_is_counted(self, sched):
         scheduler, runner, clock = sched

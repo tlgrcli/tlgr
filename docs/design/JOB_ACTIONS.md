@@ -33,6 +33,12 @@ interface keep working.
 * Pacer state (the rolling hour, the slow-down) is not persisted; a restart
   starts the hour afresh. The server-side flood memory (`flood.json`) still
   survives, which is the part that matters.
+* Due times are wall-clock, sleeps are monotonic, so a worker never sleeps
+  more than 60 s before looking at the clock again; a delay that spans a Mac
+  sleep fires at most a minute late.
+* A request cancelled by Telethon (it cancels everything in flight when the
+  client disconnects) is a transient failure of that action, never the end of
+  the worker; a worker that ends anyway is restarted.
 * Dry-run items skip the pacer and presence: they never touch Telegram, so
   they should not slow the real actions on the same account.
 
@@ -46,6 +52,8 @@ uses.
   the item is rescheduled at `now + wait + 1..5 s`. The kind's pacer is held
   past the wait and its spacing doubles (up to 8x), recovering after ten
   minutes without another flood. An item gives up after 10 floods (an error).
+  Floods are counted apart from transient failures, so one does not use up
+  the other's retries.
 * Retryable (`RETRYABLE`: network, timeouts, server errors, disconnected):
   three retries after about 5 s, 30 s and 2 min (each x1-1.5). An action
   that never expires (forward, read) then keeps retrying every ten minutes,
@@ -164,8 +172,11 @@ to view; view-once media needs `include_view_once: true`.
   echo can arrive before the answer.
 * An outgoing message is tlgr's own when its id is one tlgr recorded sending,
   or when tlgr sent in that chat less than 10 s earlier.
+* A read that arrives within 10 s of tlgr sending in that chat is also tlgr's
+  own: sending marks the chat read on the server.
 * Takeover drops items in that chat with a message id up to the read or sent
-  id, by each item's own `on_takeover`; forwards are never dropped.
+  id, by each item's own `on_takeover`; forwards are never dropped. A read in
+  a forum topic only drops items of that topic (forum ids span the chat).
 * `job queue cancel` counts what it drops as `superseded` too.
 
 ### Filters

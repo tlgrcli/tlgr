@@ -72,6 +72,8 @@ MAX_FLOOD_RETRIES = 10
 OWN_SEND_WINDOW_S = 10.0
 #: Items released at the end of quiet hours are spread over this long.
 QUIET_RELEASE_SPREAD_S = 300.0
+#: The longest a worker sleeps before looking at the wall clock again.
+MAX_WAIT_S = 60.0
 #: Writes to `pending.json` are coalesced over this long.
 SAVE_DEBOUNCE_S = 1.0
 _ALBUM_MEMORY = 2000
@@ -132,6 +134,8 @@ class ActionScheduler:
         self._seq = itertools.count()
         self._workers: dict[str, asyncio.Task[None]] = {}
         self._running: set[str] = set()
+        #: Running items whose job was removed or cancelled meanwhile.
+        self._cancelled: set[str] = set()
         self._tasks: set[asyncio.Task[Any]] = set()
         self._keys: dict[str, str] = {}
         self._recent: OrderedDict[str, None] = OrderedDict()
@@ -144,6 +148,7 @@ class ActionScheduler:
         self._own_sent: dict[int, deque[int]] = {}
         self._own_send_at: dict[int, float] = {}
         self._save_handle: asyncio.TimerHandle | None = None
+        self._save_task: asyncio.Future[None] | None = None
         self._held: list[PendingItem] = []
         self._loaded = False
         self._resumed = False
@@ -169,9 +174,11 @@ class ActionScheduler:
         for kind in KINDS:
             task = self._workers.get(kind)
             if task is None or task.done():
-                self._workers[kind] = asyncio.create_task(
+                task = asyncio.create_task(
                     self._worker(kind), name=f"tlgr-actions:{self.account}:{kind}"
                 )
+                task.add_done_callback(lambda done, kind=kind: self._restart_worker(kind, done))
+                self._workers[kind] = task
 
     def close(self) -> None:
         """Start no new action; the one running now may finish."""
@@ -194,6 +201,9 @@ class ActionScheduler:
         self._workers.clear()
         self._tasks.clear()
         await self.presence.stop()
+        if self._save_task is not None:
+            with contextlib.suppress(Exception):
+                await self._save_task
         self.flush()
 
     def preload(self) -> None:
@@ -357,7 +367,9 @@ class ActionScheduler:
         """A job was removed: drop its pending items and its counters."""
         dropped = [item for item in self.items.values() if item.job == job]
         for item in dropped:
-            if item.id not in self._running:
+            if item.id in self._running:
+                self._cancelled.add(item.id)
+            else:
                 self._remove(item)
         for key in [key for key in self.stats if key[0] == job]:
             del self.stats[key]
@@ -386,6 +398,8 @@ class ActionScheduler:
         cancelled: list[PendingItem] = []
         for item in list(self.items.values()):
             if item.id in self._running:
+                if everything or (job is not None and item.job == job and not wanted):
+                    self._cancelled.add(item.id)
                 continue
             if not everything:
                 if wanted and item.id not in wanted:
@@ -422,7 +436,26 @@ class ActionScheduler:
         except RuntimeError:
             self.flush()
             return
-        self._save_handle = loop.call_later(SAVE_DEBOUNCE_S, self.flush)
+        self._save_handle = loop.call_later(SAVE_DEBOUNCE_S, self._save_soon)
+
+    def _save_soon(self) -> None:
+        """The debounced save: serialise here, write in a thread."""
+        self._save_handle = None
+        if self.store is None:
+            return
+        self.preload()
+        items = [item.to_json() for item in [*self.pending(), *self._held]]
+        recent = list(self._recent)
+        store = self.store
+        previous = self._save_task
+
+        async def write() -> None:
+            if previous is not None:
+                with contextlib.suppress(Exception):
+                    await previous
+            await asyncio.to_thread(store.save_raw, items, recent)
+
+        self._save_task = asyncio.ensure_future(write())
 
     def flush(self) -> None:
         if self._save_handle is not None:
@@ -460,7 +493,9 @@ class ActionScheduler:
             return
         if timeout <= 0:
             return
-        sleeper = asyncio.ensure_future(self.clock.sleep(timeout))
+        # Due times are wall-clock, sleeps are monotonic; after the machine
+        # sleeps they disagree. Re-checking every minute bounds the drift.
+        sleeper = asyncio.ensure_future(self.clock.sleep(min(timeout, MAX_WAIT_S)))
         waiter = asyncio.ensure_future(event.wait())
         try:
             await asyncio.wait({sleeper, waiter}, return_when=asyncio.FIRST_COMPLETED)
@@ -475,10 +510,28 @@ class ActionScheduler:
             try:
                 await self._step(kind)
             except asyncio.CancelledError:
-                raise
+                if self._cancel_is_ours():
+                    raise
+                log.warning("the %s worker for %s was cancelled from outside", kind, self.account)
             except Exception:
                 log.exception("the %s worker for %s hit an unexpected error", kind, self.account)
                 await self.clock.sleep(1.0)
+
+    def _cancel_is_ours(self) -> bool:
+        """Was the running task cancelled by `stop()` (or the loop), not a request?"""
+        if self._closed:
+            return True
+        task = asyncio.current_task()
+        cancelling = getattr(task, "cancelling", None)
+        return bool(cancelling()) if cancelling is not None else False
+
+    def _restart_worker(self, kind: str, task: asyncio.Task[None]) -> None:
+        """The backstop: a worker that ended while the scheduler runs is restarted."""
+        if self._closed:
+            return
+        log.warning("restarting the %s worker for %s", kind, self.account)
+        self._workers.pop(kind, None)
+        self.start()
 
     async def _step(self, kind: str) -> None:
         """Wait for, or run, the next item of *kind*."""
@@ -523,25 +576,33 @@ class ActionScheduler:
             and other.id not in self._running
             and other.due_at <= now
             and action.batch_key(other) == key
+            and (other.expires_at is None or other.expires_at > now)
+            and self._quiet_until(other, action, now) is None
         ]
         batch.sort(key=lambda other: other.due_at)
         batch = batch[:100]
         return batch if any(other is item for other in batch) else [item, *batch[:99]]
 
-    def _hold_for_quiet_hours(self, item: PendingItem, action: Action, now: float) -> bool:
+    def _quiet_until(self, item: PendingItem, action: Action, now: float) -> float | None:
+        """When *item*'s quiet hours end, or None if it may run now."""
         if not action.quiet_hold or not item.quiet_hours:
-            return False
+            return None
         quiet = self._quiet.get(item.quiet_hours)
         if quiet is None:
             try:
                 quiet = QuietHours.parse(item.quiet_hours)
             except ValueError:
-                return False
+                return None
             self._quiet[item.quiet_hours] = quiet
         local = datetime.fromtimestamp(now, self.tz)
         if not quiet.contains(local):
+            return None
+        return quiet.window_end(local).timestamp()
+
+    def _hold_for_quiet_hours(self, item: PendingItem, action: Action, now: float) -> bool:
+        release = self._quiet_until(item, action, now)
+        if release is None:
             return False
-        release = quiet.window_end(local).timestamp()
         self._reschedule(item, release + self.rng.uniform(0.0, QUIET_RELEASE_SPREAD_S))
         return True
 
@@ -566,10 +627,16 @@ class ActionScheduler:
                     outcome = await action.execute(batch, _Runtime(self))
                 finally:
                     await self.presence.after(first.presence)
-        except asyncio.CancelledError:
-            for item in batch:
-                item.state = "pending"
-            raise
+        except asyncio.CancelledError as cancelled:
+            if self._cancel_is_ours():
+                for item in batch:
+                    item.state = "pending"
+                raise
+            # Telethon cancels every request in flight when the client
+            # disconnects (`daemon reconnect`, a proxy change). That is a
+            # transient failure of this action, not a request to stop.
+            self._failed(action, batch, ConnectionError(f"request cancelled: {cancelled}"))
+            return
         except Exception as exc:
             self._failed(action, batch, exc)
             return
@@ -577,7 +644,9 @@ class ActionScheduler:
             for item in batch:
                 self._running.discard(item.id)
         for item in batch:
-            if outcome.status == "later" and outcome.due_at is not None:
+            if self._doomed(item):
+                self._finish(item, "superseded")
+            elif outcome.status == "later" and outcome.due_at is not None:
                 self._reschedule(item, outcome.due_at)
             else:
                 self._finish(item, "skipped" if outcome.status == "skipped" else "done")
@@ -599,9 +668,11 @@ class ActionScheduler:
                 self.account,
             )
             for item in batch:
-                item.attempts += 1
+                item.floods += 1
                 item.last_error = message
-                if item.attempts > MAX_FLOOD_RETRIES:
+                if self._doomed(item):
+                    self._finish(item, "superseded")
+                elif item.floods > MAX_FLOOD_RETRIES:
                     self._finish(item, "errors", error=message)
                 else:
                     self._reschedule(item, now + wait + self.rng.uniform(1.0, 5.0))
@@ -611,7 +682,9 @@ class ActionScheduler:
         for item in batch:
             item.attempts += 1
             item.last_error = message
-            if body.retryable and item.attempts <= limit:
+            if self._doomed(item):
+                self._finish(item, "superseded")
+            elif body.retryable and item.attempts <= limit:
                 base = (
                     RETRY_BACKOFF_S[item.attempts - 1]
                     if item.attempts <= len(RETRY_BACKOFF_S)
@@ -639,7 +712,12 @@ class ActionScheduler:
         self.count(item.job, item.index, item.action, outcome, error=error)
         self._dirty()
 
+    def _doomed(self, item: PendingItem) -> bool:
+        """Cancelled while it was running: finish it, never requeue it."""
+        return item.id in self._cancelled
+
     def _remove(self, item: PendingItem) -> None:
+        self._cancelled.discard(item.id)
         self.items.pop(item.id, None)
         if item.key and self._keys.get(item.key) == item.id:
             del self._keys[item.key]
@@ -757,7 +835,10 @@ class ActionScheduler:
         self._read_marks[key] = max(self._read_marks.get(key, 0), max_id)
         if max_id <= self._own_read.get(key, 0):
             return  # the echo of a read tlgr sent
-        self._takeover(chat_id, max_id, "read elsewhere")
+        sent_at = self._own_send_at.get(chat_id)
+        if sent_at is not None and self.clock.now() - sent_at < OWN_SEND_WINDOW_S:
+            return  # sending marks the chat read; that read is tlgr's too
+        self._takeover(chat_id, max_id, "read elsewhere", topic_id=topic_id)
 
     def outgoing(self, chat_id: int, msg_id: int) -> None:
         if msg_id in self._own_sent.get(chat_id, ()):
@@ -767,11 +848,13 @@ class ActionScheduler:
             return
         self._takeover(chat_id, msg_id, "sent from another device")
 
-    def _takeover(self, chat_id: int, up_to: int, why: str) -> None:
+    def _takeover(self, chat_id: int, up_to: int, why: str, *, topic_id: int | None = None) -> None:
         dropped = 0
         for item in list(self.items.values()):
             if item.chat_id != chat_id or item.msg_id > up_to or item.id in self._running:
                 continue
+            if topic_id is not None and item.topic_id != topic_id:
+                continue  # forum ids span the chat; a read in one topic says nothing of another
             action = get_builtin(item.action)
             if action is None or item.on_takeover not in action.cancelled_by:
                 continue

@@ -83,6 +83,10 @@ class PresenceManager:
                 self._linger_until = self._clock.now() + LINGER_S
                 continue
             await self._set(online=False)
+            if self._holds > 0:
+                # An action started while the offline request was in flight.
+                await self._set(online=True)
+                return
 
     async def _set(self, *, online: bool) -> None:
         self.online = online

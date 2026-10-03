@@ -9,12 +9,14 @@ Modules in this package auto-register their filters on import.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from tlgr.gateway.event import Event
 
-FilterFunc = Callable[[Event, Any], tuple[bool, str]]
+#: A filter returns its verdict, or a coroutine of it when it has to ask
+#: Telegram (`chat_is_new`); `compose.evaluate_async` awaits those.
+FilterFunc = Callable[[Event, Any], tuple[bool, str] | Awaitable[tuple[bool, str]]]
 
 _REGISTRY: dict[str, FilterFunc] = {}
 
@@ -38,5 +40,5 @@ def list_filters() -> list[str]:
 
 
 # Import built-in filter modules so they self-register.
-from tlgr.filters import content, context, message, temporal, user  # noqa: E402, F401
-from tlgr.filters.compose import evaluate, parse_filter_config  # noqa: E402, F401
+from tlgr.filters import content, context, dialog, message, temporal, user  # noqa: E402, F401
+from tlgr.filters.compose import evaluate, evaluate_async, parse_filter_config  # noqa: E402, F401

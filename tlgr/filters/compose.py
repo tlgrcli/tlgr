@@ -10,6 +10,7 @@ themselves contain ``any_of`` / ``none_of``, enabling arbitrary nesting.
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -83,7 +84,10 @@ def _parse_child_list(items: list[dict[str, Any]] | Any) -> list[FilterNode]:
 def evaluate(node: FilterNode | None, event: Event) -> tuple[bool, str]:
     """Recursively evaluate *node* against *event*.
 
-    Returns ``(passed, reason)`` just like individual filters.
+    Returns ``(passed, reason)`` just like individual filters. A filter that
+    has to ask Telegram (`chat_is_new` probes the history) is a coroutine and
+    can only run under `evaluate_async`; here it rejects with a reason rather
+    than leaking an unawaited coroutine.
     """
     if node is None:
         return True, "no filters"
@@ -94,7 +98,13 @@ def evaluate(node: FilterNode | None, event: Event) -> tuple[bool, str]:
         func = get_filter(node.filter_name)
         if func is None:
             return False, f"unknown filter: {node.filter_name}"
-        return func(event, node.filter_value)
+        result = func(event, node.filter_value)
+        if inspect.isawaitable(result):
+            close = getattr(result, "close", None)
+            if close is not None:
+                close()
+            return False, f"{node.filter_name} needs the job engine (it asks Telegram)"
+        return result
 
     if node.op is Op.AND:
         for child in node.children:
@@ -114,6 +124,51 @@ def evaluate(node: FilterNode | None, event: Event) -> tuple[bool, str]:
 
     if node.op is Op.NOT:
         ok, reason = evaluate(node.children[0], event)
+        if ok:
+            return False, f"excluded: {reason}"
+        return True, "not-match passed"
+
+    return False, "invalid node"
+
+
+async def evaluate_async(node: FilterNode | None, event: Event) -> tuple[bool, str]:
+    """`evaluate`, awaiting the filters that are coroutines.
+
+    Same short-circuit order as the sync walk, so an expensive filter placed
+    after a cheap one only runs for the events the cheap one let through.
+    """
+    if node is None:
+        return True, "no filters"
+
+    if node.op is Op.LEAF:
+        from tlgr.filters import get_filter
+
+        func = get_filter(node.filter_name)
+        if func is None:
+            return False, f"unknown filter: {node.filter_name}"
+        result = func(event, node.filter_value)
+        if inspect.isawaitable(result):
+            return await result
+        return result
+
+    if node.op is Op.AND:
+        for child in node.children:
+            ok, reason = await evaluate_async(child, event)
+            if not ok:
+                return False, reason
+        return True, "all passed"
+
+    if node.op is Op.OR:
+        reasons: list[str] = []
+        for child in node.children:
+            ok, reason = await evaluate_async(child, event)
+            if ok:
+                return True, reason
+            reasons.append(reason)
+        return False, f"none matched: {'; '.join(reasons)}"
+
+    if node.op is Op.NOT:
+        ok, reason = await evaluate_async(node.children[0], event)
         if ok:
             return False, f"excluded: {reason}"
         return True, "not-match passed"

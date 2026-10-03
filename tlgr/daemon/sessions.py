@@ -40,13 +40,13 @@ class SessionManager:
         *,
         accounts: AccountManager | None = None,
         client_factory: Any = build_client,
-        on_session_ready: Any = None,
+        on_client: Any = None,
     ) -> None:
         self.paths = paths
         self.config = config
         self.accounts = accounts or AccountManager(paths.base)
         self._factory = client_factory
-        self._on_ready = on_session_ready
+        self._on_client = on_client
         self._sessions: dict[str, AccountSession] = {}
         self._limiters: dict[str, RateLimiter] = {}
         self._locks: dict[str, asyncio.Lock] = {}
@@ -133,6 +133,7 @@ class SessionManager:
             options=self._options(alias),
             client_factory=self._factory,
             on_state=on_state,
+            on_client=self._on_client,
             state_save_interval=self.config.daemon.state_save_interval,
             presence=self.config.presence.mode,
             resync_depth=self.config.daemon.resync_depth,
@@ -160,9 +161,6 @@ class SessionManager:
             session = self._make(alias)
             await session.start()
             self._sessions[alias] = session
-            if self._on_ready is not None:
-                with contextlib.suppress(Exception):
-                    await self._on_ready(session)
             return session
 
     async def connect_all(self, aliases: list[str]) -> dict[str, str]:

@@ -153,6 +153,7 @@ class AccountSession:
         client_factory: Callable[[Path, ClientOptions], Any] = build_client,
         on_state: Callable[[str, str, int | None], None] | None = None,
         on_event: Callable[[str, Any], None] | None = None,
+        on_client: Callable[[AccountSession], Awaitable[None]] | None = None,
         state_save_interval: int = 60,
         presence: str = "off",
         resync_depth: int = 50,
@@ -166,6 +167,7 @@ class AccountSession:
         self._factory = client_factory
         self._on_state = on_state
         self._on_event = on_event
+        self._on_client = on_client
         self.state_save_interval = state_save_interval
         self.presence = presence
         self.resync_depth = resync_depth
@@ -307,6 +309,7 @@ class AccountSession:
         """Connect, authorise, catch up, then wait for the connection to end."""
         if self.client is None:
             self.client = self._factory(self.session_path, self.options)
+            await self._client_built()
             self._install_hooks()
 
         await self.client.connect()
@@ -370,6 +373,30 @@ class AccountSession:
             self.catch_up_pending = False
 
     # -- hooks -------------------------------------------------------------
+
+    async def _client_built(self) -> None:
+        """Hand the new client to whoever feeds its updates into the bus.
+
+        This runs here, inside the supervisor, because the client does not
+        exist until the first connect attempt builds it. The daemon used to
+        attach its handler straight after `start()`, which only schedules the
+        supervisor, so it always found `client is None` and no incoming update
+        ever reached a job, a webhook or `watch`. The client is built once and
+        kept across reconnects, so this runs once per session.
+        """
+        if self._on_client is None:
+            return
+        try:
+            await self._on_client(self)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.warning(
+                "could not attach update handlers for %s: %s",
+                self.alias,
+                exc,
+                extra={"account": self.alias},
+            )
 
     def _install_hooks(self) -> None:
         compat.install_reconnect_hook(self.client, self._on_reconnect)

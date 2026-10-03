@@ -96,7 +96,7 @@ class Daemon:
             self.paths,
             self.config,
             accounts=self.accounts,
-            on_session_ready=self._attach_handlers,
+            on_client=self._attach_handlers,
             **factory_kwargs,
         )
         self.webhook_config = load_webhook_config(self.paths.base)
@@ -141,7 +141,7 @@ class Daemon:
     # -- session plumbing --------------------------------------------------
 
     async def _attach_handlers(self, session: Any) -> None:
-        """Feed a newly connected account's updates into the bus.
+        """Feed an account's updates into the bus, once its client is built.
 
         The handler body is deliberately tiny: normalise, number, fan out. Any
         real work happens on a bus worker lane, because with

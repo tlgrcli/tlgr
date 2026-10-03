@@ -23,6 +23,7 @@ from tlgr.daemon import dispatch as dispatch_module
 from tlgr.daemon.policy import Policy
 from tlgr.models.base import Request
 from tlgr.models.envelope import OpRequest
+from tlgr.models.peer import PeerRef
 from tlgr.ops._spec import OperationSpec, Surface
 from tlgr.registry import ALIASES, REGISTRY
 
@@ -245,6 +246,46 @@ async def test_in_flight_is_counted_and_released(daemon, op, stub_account):
     await dispatch_module.dispatch(daemon, _request("test.inflight", account=stub_account))
     assert depth == [1]
     assert daemon.sessions.get(stub_account).in_flight == 0
+
+
+def test_peer_refs_are_parsed_with_the_type_hints_read_once(op, monkeypatch):
+    """`/v1/op` takes `"@alice"` for a `PeerRef`, without re-reading hints per call.
+
+    The hints depend on the request type alone, and each read `eval`s every
+    annotation string, so they are read once per type, not once per request.
+    """
+    import dataclasses
+    import typing
+
+    class Refs(Request):
+        chat: PeerRef | None = None
+        members: list[PeerRef] = []
+        text: str = ""
+
+    spec = dataclasses.replace(op("test.peerrefs"), request=Refs)
+
+    reads: list[Any] = []
+    real = typing.get_type_hints
+
+    def counting(obj: Any, *args: Any, **kwargs: Any) -> Any:
+        reads.append(obj)
+        return real(obj, *args, **kwargs)
+
+    monkeypatch.setattr(typing, "get_type_hints", counting)
+
+    payload = {"chat": "@alice", "members": ["@bobby", 42], "text": "@carol"}
+    for _ in range(3):
+        out = dispatch_module.normalise_peer_refs(spec, payload)
+        assert out["chat"] == {"raw": "@alice", "kind": "username", "value": "alice"}
+        assert [m["raw"] for m in out["members"]] == ["@bobby", "42"]
+        assert out["text"] == "@carol"
+    assert payload["chat"] == "@alice"
+    assert reads.count(Refs) == 1
+
+    fields = dispatch_module._peer_ref_fields(Refs)
+    assert dict(fields) == {"chat": False, "members": True}
+    with pytest.raises(TypeError):
+        fields["text"] = False  # type: ignore[index]
 
 
 def test_decode_request_rejects_garbage():

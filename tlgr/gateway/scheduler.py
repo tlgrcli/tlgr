@@ -144,6 +144,8 @@ class ActionScheduler:
         self._own_sent: dict[int, deque[int]] = {}
         self._own_send_at: dict[int, float] = {}
         self._save_handle: asyncio.TimerHandle | None = None
+        self._held: list[PendingItem] = []
+        self._loaded = False
         self._resumed = False
         self._closed = False
         self._full_logged = False
@@ -194,23 +196,42 @@ class ActionScheduler:
         await self.presence.stop()
         self.flush()
 
-    def resume(self, active_jobs: Iterable[str]) -> int:
-        """Reload the persisted queue once, keeping items of jobs that still exist."""
-        if self._resumed or self.store is None:
-            self._resumed = True
-            return 0
-        self._resumed = True
-        items, recent = self.store.load()
+    def preload(self) -> None:
+        """Read the persisted queue now, before any job can submit.
+
+        The finished-item keys take effect at once, so an update replayed by
+        catch-up in the first seconds after a restart is still recognised.
+        The items wait in `_held` until `resume` knows which jobs exist.
+        """
+        if self._loaded or self.store is None:
+            self._loaded = True
+            return
+        self._loaded = True
+        self._held, recent = self.store.load()
         for key in recent:
             self._recent[key] = None
+        for item in self._held:
+            # Held keys count as pending: a replay must not schedule a copy.
+            if item.key:
+                self._recent[item.key] = None
+
+    def resume(self, active_jobs: Iterable[str]) -> int:
+        """Queue the persisted items whose jobs still exist, once."""
+        self.preload()
+        if self._resumed:
+            return 0
+        self._resumed = True
+        held, self._held = self._held, []
         active = set(active_jobs)
         restored = dropped = 0
-        for item in items:
+        for item in held:
             if item.job not in active or get_builtin(item.action) is None:
                 dropped += 1
                 continue
-            if item.id in self.items or item.key in self._keys:
+            if item.id in self.items or (item.key and item.key in self._keys):
                 continue
+            if item.key:
+                self._recent.pop(item.key, None)
             self._insert(item)
             restored += 1
         if dropped:
@@ -219,9 +240,10 @@ class ActionScheduler:
                 dropped,
                 self.account,
             )
+        if restored or dropped:
+            self._dirty()
         if restored:
             log.info("resumed %d pending action(s) on %s", restored, self.account)
-            self._dirty()
         return restored
 
     # -- submission -----------------------------------------------------------
@@ -408,7 +430,10 @@ class ActionScheduler:
             self._save_handle = None
         if self.store is None:
             return
-        self.store.save(self.pending(), list(self._recent))
+        # Never overwrite a queue that was not read yet: read it, keep its
+        # items held, and write them back beside ours.
+        self.preload()
+        self.store.save([*self.pending(), *self._held], list(self._recent))
 
     # -- the workers --------------------------------------------------------------
 

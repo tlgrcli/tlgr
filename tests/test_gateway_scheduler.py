@@ -180,6 +180,20 @@ class TestPersistence:
         finally:
             await second.stop(timeout=0.1)
 
+    async def test_a_replay_before_resume_does_not_schedule_a_copy(self, tmp_path):
+        store = PendingStore(tmp_path / "pending.json")
+        first, _, clock = make_scheduler(store=store)
+        job = _job(first, [{"read": {"delay": "100s"}}])
+        await deliver(job, private_update(10))
+        first.flush()
+
+        second, _, _ = make_scheduler(clock=clock, store=store)
+        second.preload()
+        await deliver(_job(second, [{"read": {"delay": "100s"}}]), private_update(10))
+        assert second.items == {}
+        assert second.resume({"dm"}) == 1
+        assert len(second.items) == 1
+
     async def test_items_of_a_removed_job_are_dropped_on_resume(self, tmp_path):
         store = PendingStore(tmp_path / "pending.json")
         first, _, clock = make_scheduler(store=store)

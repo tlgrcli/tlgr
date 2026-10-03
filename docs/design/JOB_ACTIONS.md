@@ -47,7 +47,10 @@ uses.
   past the wait and its spacing doubles (up to 8x), recovering after ten
   minutes without another flood. An item gives up after 10 floods (an error).
 * Retryable (`RETRYABLE`: network, timeouts, server errors, disconnected):
-  three retries after about 5 s, 30 s and 2 min (each x1-1.5).
+  three retries after about 5 s, 30 s and 2 min (each x1-1.5). An action
+  that never expires (forward, read) then keeps retrying every ten minutes,
+  up to 12 attempts in all (about 1.5 h), so a relay rides out an account
+  that is reconnecting instead of dropping posts.
 * Everything else is permanent and counted under `errors` with `last_error`
   (`USAGE: REACTION_INVALID: ...`): REACTION_INVALID, MESSAGE_ID_INVALID,
   CHAT_WRITE_FORBIDDEN, policy denials, PEER_FLOOD and frozen accounts. The

@@ -328,7 +328,9 @@ after its event arrived is dropped and counted as `expired`.
 
 Failures: a FLOOD_WAIT reschedules the item after the wait and doubles that
 queue's spacing (up to 8x, recovering after ten quiet minutes); a transient
-failure (network, server) is retried after about 5 s, 30 s and 2 min; any
+failure (network, server) is retried after about 5 s, 30 s and 2 min, and a
+forward or read (which never expire) then every ten minutes for about an
+hour and a half; any
 other error (REACTION_INVALID, MESSAGE_ID_INVALID, CHAT_WRITE_FORBIDDEN, a
 policy refusal) is counted under the action's `errors` and not retried.
 

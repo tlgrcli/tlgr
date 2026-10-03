@@ -247,6 +247,7 @@ class Daemon:
             presence_enabled=self.config.presence.mode == "off",
         )
         found.configure(self._pacing.get(alias))
+        found.preload()
         self.bus.add_handler(found.on_bus)
         found.start()
         self._schedulers[alias] = found

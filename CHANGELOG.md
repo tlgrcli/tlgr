@@ -31,6 +31,16 @@ codes documented in `AGENT.md` are the public API.
 
 ### Fixed
 
+- **Webhook filters work.** Both halves of `[webhook.filters]` were dead.
+  `chats` was checked against a list nothing ever filled, so setting it
+  dropped every event that had a chat; `@name` entries are now resolved
+  through the event's account and retried once a minute if that fails.
+  The other keys (`chat_type`, `contains`, ...) were evaluated against the
+  raw TL update, which the filters cannot read, so they raised or never
+  matched. They now see the same Telethon event a gateway job does. Event
+  types Telethon has no event for are not delivered while such a filter is
+  set, and the daemon says so once per type.
+
 - **Gateway jobs work again, and incoming updates reach the daemon at all.**
   Four faults stacked up, and each one alone was enough to stop every job:
 

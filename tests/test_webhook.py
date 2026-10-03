@@ -227,6 +227,53 @@ class TestWiring:
             await daemon.shutdown(drain=0.1)
         assert json.loads(receiver["received"][0]["body"])["event"]["payload"]["id"] == 1
 
+    async def test_a_filtered_webhook_delivers_an_incoming_update(
+        self, receiver, tlgr_home: Path, stub_account, world
+    ):
+        """End to end: Telethon update → bus → filters on a built event → POST."""
+        from fake_telethon import fake_client_factory
+        from telethon.tl import types
+
+        from tlgr.core.config import WebhookFilterConfig, save_webhook_config
+        from tlgr.daemon.app import Daemon
+        from tlgr.daemon.session import SessionState
+
+        save_webhook_config(
+            WebhookConfig(
+                enabled=True,
+                url=receiver["url"],
+                secret="k",
+                events=["message_new"],
+                filters=WebhookFilterConfig(raw={"chat_type": "private"}),
+            ),
+            tlgr_home,
+        )
+        daemon = Daemon(tlgr_home, client_factory=fake_client_factory(world))
+        await daemon.start_services()
+        try:
+            session = await daemon.sessions.ensure(stub_account)
+            for _ in range(200):
+                if session.state == SessionState.ONLINE:
+                    break
+                await asyncio.sleep(0.01)
+            for peer, text in ((types.PeerChannel(channel_id=9), "post"), (None, "dm")):
+                message = types.Message(
+                    id=len(text),
+                    peer_id=peer or types.PeerUser(user_id=4242),
+                    from_id=types.PeerUser(user_id=4242),
+                    date=None,
+                    message=text,
+                )
+                await session.client.feed(
+                    types.UpdateNewMessage(message=message, pts=1, pts_count=1)
+                )
+            await _drain(daemon.webhook, receiver["received"])
+            await asyncio.sleep(0.1)
+        finally:
+            await daemon.shutdown(drain=0.1)
+        bodies = [json.loads(r["body"])["event"] for r in receiver["received"]]
+        assert [b["payload"]["text"] for b in bodies] == ["dm"]
+
     async def test_an_enabled_webhook_disables_idle_stop(self, tlgr_home: Path, stub_account):
         """COR-08: a daemon that exits has silently unsubscribed."""
         from tlgr.core.config import save_webhook_config

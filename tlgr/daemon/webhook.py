@@ -30,6 +30,7 @@ import os
 import random
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -51,15 +52,37 @@ DEAD_LETTER_FILE = CONFIG_DIR / "dead_letter.jsonl"
 _DEAD_LETTER_MAX_BYTES = 16 * 1024 * 1024
 _DEAD_LETTER_BACKUPS = 3
 
+#: How long before retrying a `filters.chats` ref that did not resolve,
+#: typically because the account was offline when the first event came in.
+_RESOLVE_RETRY_SECONDS = 60.0
+
 
 class WebhookPusher:
     """Bounded queue + worker pool + HMAC + dead letter."""
 
-    def __init__(self, config: WebhookConfig, base: Path | None = None) -> None:
+    def __init__(
+        self,
+        config: WebhookConfig,
+        base: Path | None = None,
+        *,
+        accounts: Callable[[str], Any] | None = None,
+    ) -> None:
         self.config = config
         self.base = Path(base) if base is not None else CONFIG_DIR
         self._session: Any = None
-        self._resolved_chat_ids: set[int] = set()
+        #: alias → that account's job client (`.client`, `.resolve_chat`), or
+        #: None while it is not connected. The filters need both.
+        self._accounts = accounts
+        self._chat_ids: set[int] = set()
+        self._pending_refs: list[str] = []
+        self._next_resolve = 0.0
+        self._logged: set[str] = set()
+        self._builders: dict[str, Any] = {}
+        for ref in config.filters.chats:
+            try:
+                self._chat_ids.add(int(ref))
+            except (TypeError, ValueError):
+                self._pending_refs.append(str(ref))
         self._dead_letter_path = self.base / "dead_letter.jsonl"
         self._queue: asyncio.Queue[tuple[bytes, dict[str, str]]] | None = None
         self._workers: list[asyncio.Task[None]] = []
@@ -113,36 +136,96 @@ class WebhookPusher:
             self._session = None
 
     # -- filtering ---------------------------------------------------------
+    #
+    # Both halves used to be dead. `filters.chats` was compared against a set
+    # nothing ever filled, so configuring it dropped every event that had a
+    # chat. The other `[webhook.filters]` keys were evaluated against the raw
+    # TL update the bus carries, while every filter reads a high-level
+    # Telethon event, so they raised or never matched.
 
-    def set_resolved_chats(self, chat_ids: set[int]) -> None:
-        self._resolved_chat_ids = chat_ids
+    async def _chat_allowed(self, event: EventEnvelope) -> bool:
+        if not self.config.filters.chats or event.chat_id is None:
+            return True
+        if self._pending_refs and time.monotonic() >= self._next_resolve:
+            await self._resolve_refs(event.account)
+        return event.chat_id in self._chat_ids
 
-    def should_push(
-        self, event_type: str, chat_id: int | None = None, tg_event: Any = None
-    ) -> bool:
-        if not self.config.enabled:
-            return False
-        if event_type not in self.config.events:
-            return False
-        if self.config.filters.chats and chat_id is not None:
-            if chat_id not in self._resolved_chat_ids:
+    async def _resolve_refs(self, account: str) -> None:
+        """Resolve `@name` chats through *account*; retry failures in a minute."""
+        self._next_resolve = time.monotonic() + _RESOLVE_RETRY_SECONDS
+        job = self._accounts(account) if self._accounts is not None else None
+        if job is None:
+            return
+        still: list[str] = []
+        for ref in self._pending_refs:
+            try:
+                self._chat_ids.add(int(await job.resolve_chat(ref)))
+            except Exception as exc:
+                self._log_once(f"chat:{ref}", "webhook cannot resolve chat %s: %s", ref, exc)
+                still.append(ref)
+        self._pending_refs = still
+
+    async def _filters_pass(self, event: EventEnvelope, raw: Any) -> bool:
+        """Evaluate `[webhook.filters]` against the event Telethon would build.
+
+        An event type with no Telethon builder (typing, presence of a story,
+        ...) cannot be described to the filters at all, so it is not
+        delivered while filters are set; that is logged once per type.
+        """
+        from tlgr.filters.compose import evaluate
+        from tlgr.gateway.event import Event
+        from tlgr.gateway.tlevents import build_event, builder_for_bus_type
+
+        builder = self._builders.get(event.type)
+        if builder is None:
+            builder = builder_for_bus_type(event.type)
+            if builder is None:
+                self._log_once(
+                    f"type:{event.type}",
+                    "webhook filters cannot be applied to %s events; not delivering them",
+                    event.type,
+                )
                 return False
-        if self._filter_node is not None and tg_event is not None:
-            from tlgr.filters.compose import evaluate
-            from tlgr.gateway.event import Event
+            self._builders[event.type] = builder
+        job = self._accounts(event.account) if self._accounts is not None else None
+        client = getattr(job, "client", None)
+        if client is None:
+            return False
+        built = await build_event([(event.type, builder)], raw, client)
+        if built is None:
+            return False
+        tg_event, _label = built
+        envelope = Event(
+            source="telegram", raw=tg_event, account=event.account, event_type=event.type
+        )
+        try:
+            ok, _reason = evaluate(self._filter_node, envelope)
+        except Exception as exc:
+            log.debug("webhook filter raised on %s: %s", event.type, exc)
+            return False
+        return ok
 
-            envelope = Event(source="telegram", raw=tg_event, event_type=event_type)
-            ok, _ = evaluate(self._filter_node, envelope)
-            if not ok:
-                return False
-        return True
+    def _log_once(self, key: str, message: str, *args: Any) -> None:
+        level = logging.DEBUG if key in self._logged else logging.WARNING
+        self._logged.add(key)
+        log.log(level, message, *args)
 
     # -- the bus handler ---------------------------------------------------
 
     async def on_event(self, event: EventEnvelope, raw: Any = None) -> None:
-        """The bus handler. Encodes, signs and enqueues; never sends inline."""
-        if not self.should_push(event.type, event.chat_id, raw):
+        """The bus handler. Filters, encodes, signs and enqueues; never sends inline.
+
+        A self-origin event (the daemon's own send) has no raw update, so
+        `[webhook.filters]` cannot be evaluated and does not apply to it;
+        `events` and `chats` still do.
+        """
+        if not self.config.enabled or event.type not in self.config.events:
             return
+        if not await self._chat_allowed(event):
+            return
+        if self._filter_node is not None and raw is not None:
+            if not await self._filters_pass(event, raw):
+                return
         self.enqueue(event)
 
     def enqueue(self, event: EventEnvelope) -> None:

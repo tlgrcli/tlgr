@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import time
 from typing import Any
 
 from telethon import events
@@ -39,6 +40,10 @@ from tlgr.jobs.base import BaseJob
 from tlgr.jobs.client import JobClient
 
 log = logging.getLogger("tlgr.gateway")
+
+#: How long a job waits before retrying a `@chat` ref it could not resolve,
+#: typically because its account was still offline when the job started.
+_RESOLVE_RETRY_SECONDS = 60.0
 
 
 class _GatewayJobConfig:
@@ -138,6 +143,9 @@ class Gateway(BaseJob):
         self._bus = bus
         self._bus_handler = None
         self._stats: dict[str, int] = {"matched": 0, "skipped": 0, "errors": 0}
+        self._refs_pending = False
+        self._next_resolve = 0.0
+        self._unresolved_logged: set[str] = set()
 
     async def setup(self) -> None:
         await self._resolve_chat_refs()
@@ -154,9 +162,13 @@ class Gateway(BaseJob):
 
         `filter_chat_id` compares `event.chat_id`, an int, and skips string
         refs on the promise that the gateway resolves them first. Nothing
-        did, so a job filtered on `@channel` could never match.
+        did, so a job filtered on `@channel` could never match. A ref that
+        fails (the account is offline at boot, say) stays a string and is
+        retried from `_handle`, at most once a minute.
         """
         nodes = [self._gw.filters] + [action.filters for action in self._gw.actions]
+        self._refs_pending = False
+        self._next_resolve = time.monotonic() + _RESOLVE_RETRY_SECONDS
         for leaf in _chat_id_leaves(nodes):
             refs = leaf.filter_value if isinstance(leaf.filter_value, list) else [leaf.filter_value]
             resolved: list = []
@@ -167,7 +179,10 @@ class Gateway(BaseJob):
                 try:
                     resolved.append(await self.client.resolve_chat(str(ref)))
                 except Exception as exc:
-                    log.warning("[%s] cannot resolve chat %s: %s", self.name, ref, exc)
+                    level = logging.DEBUG if ref in self._unresolved_logged else logging.WARNING
+                    self._unresolved_logged.add(ref)
+                    log.log(level, "[%s] cannot resolve chat %s: %s", self.name, ref, exc)
+                    self._refs_pending = True
                     resolved.append(ref)
             leaf.filter_value = resolved if isinstance(leaf.filter_value, list) else resolved[0]
 
@@ -267,6 +282,9 @@ class Gateway(BaseJob):
         )
 
     async def _handle(self, tg_event, event_type: str = "new_message") -> None:
+        if self._refs_pending and time.monotonic() >= self._next_resolve:
+            await self._resolve_chat_refs()
+
         envelope = Event(
             source="telegram",
             raw=tg_event,

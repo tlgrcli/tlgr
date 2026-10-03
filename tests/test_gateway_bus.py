@@ -242,3 +242,33 @@ class TestChatRefResolution:
 
         assert config.filters.filter_value == "@nope"
         assert "cannot resolve chat @nope" in caplog.text
+
+    async def test_a_ref_that_failed_at_boot_is_retried_when_events_arrive(self, bus, client):
+        """An account still offline when the job starts must not leave it deaf for good."""
+        answers = [ValueError("offline"), SOURCE_MARKED]
+
+        async def resolve(ref):
+            answer = answers.pop(0)
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+
+        client.resolve_chat = AsyncMock(side_effect=resolve)
+        config = _parse_job(
+            {
+                "name": "archive",
+                "account": "Neo",
+                "filters": {"chat_id": "@source"},
+                "actions": [{"forward": {"to": [-1000000009999]}}],
+            }
+        )
+        job = Gateway(config, client, bus=bus)
+        await _running(job, bus)
+        try:
+            job._next_resolve = 0.0  # the retry interval has passed
+            await bus.deliver(_channel_post())
+        finally:
+            await job.stop()
+
+        assert job._stats["matched"] == 1
+        assert config.filters.filter_value == SOURCE_MARKED

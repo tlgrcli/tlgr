@@ -119,6 +119,7 @@ class Daemon:
         self._start_time = time.time()
         self._runner: web.AppRunner | None = None
         self._idle_task: asyncio.Task[None] | None = None
+        self._jobs_task: asyncio.Task[None] | None = None
         self._token: str | None = None
         self.idle_timeout = effective_idle_timeout(
             self.config.daemon.idle_timeout,
@@ -358,8 +359,28 @@ class Daemon:
             extra={"count": len(results)},
         )
         self._idle_task = asyncio.create_task(self._idle_monitor(), name="tlgr-idle")
+        self._jobs_task = asyncio.create_task(self._start_jobs(), name="tlgr-jobs")
         await self._shutdown_event.wait()
         await self.shutdown()
+
+    async def _start_jobs(self) -> None:
+        """Load `jobs.yaml` and start every enabled job, once accounts are up.
+
+        Without this a restarted daemon ran no jobs until someone ran
+        `tlgr job reload`, which is how the gateway sat idle from a restart
+        on 2026-09-30 until it was noticed. It runs in the background because
+        each job may wait for its account to come online, and readiness must
+        not wait for that.
+        """
+        try:
+            result = await self.reload_jobs()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("could not start jobs from jobs.yaml")
+            return
+        if result.get("added"):
+            log.info("started %d job(s) from jobs.yaml", len(result["added"]))
 
     async def _idle_monitor(self) -> None:
         while not self._shutdown_event.is_set():
@@ -385,10 +406,11 @@ class Daemon:
             drain if drain is not None else self.config.daemon.drain_seconds
         )
 
-        if self._idle_task is not None:
-            self._idle_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await self._idle_task
+        for task in (self._idle_task, self._jobs_task):
+            if task is not None:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await task
 
         # Wait for in-flight requests rather than cancelling them: a ten
         # minute scan that is killed at second 599 has cost the account the

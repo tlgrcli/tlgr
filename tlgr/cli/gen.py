@@ -687,4 +687,40 @@ def build_click_tree(
             if path == spec.path:
                 continue
             _place(root, path, build_command(spec))
+    for spec in specs:
+        if "group-default" in spec.tags:
+            _default_leaf(root, spec.path)
     return root
+
+
+def _default_leaf(root: dict[str, Any], path: Sequence[str]) -> None:
+    """Let the group above *path* run it when no subcommand is given.
+
+    `tlgr job queue` lists the queue and `tlgr job queue cancel` cancels from
+    it. The registry cannot spell that with ids (an id may not also be a
+    group), so the list op is `job.queue.list`, tagged `group-default`, and
+    its group invokes it when called bare. Options still go on the leaf:
+    `tlgr job queue list --job dm-ack`.
+    """
+    *groups, leaf = path
+    container: Any = root
+    for name in groups:
+        container = (
+            container.get(name) if isinstance(container, dict) else container.commands.get(name)
+        )
+        if not isinstance(container, click.Group):
+            return
+    command = container.commands.get(leaf)
+    if command is None:
+        return
+    group = container
+
+    @click.pass_context
+    def run_default(ctx: click.Context) -> None:
+        if ctx.invoked_subcommand is None:
+            ctx.invoke(command)
+
+    group.invoke_without_command = True
+    group.no_args_is_help = False
+    group.callback = run_default
+    group.help = f"{group.help or ''} Without a subcommand: {leaf}.".strip()

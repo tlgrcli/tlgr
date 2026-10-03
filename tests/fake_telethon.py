@@ -1722,8 +1722,13 @@ class FakeTelegramClient:
         return self._affected_history()
 
     def _raw_ReadHistoryRequest(self, request: Any) -> Any:
-        chat_id = self._chat_id(request.peer)
+        # `messages.readHistory` and `channels.readHistory` share a class
+        # name; the channel one carries `channel` and answers a bare bool.
+        channel = getattr(request, "channel", None)
+        chat_id = self._chat_id(channel if channel is not None else request.peer)
         self.world.read_inbox[chat_id] = int(request.max_id)
+        if channel is not None:
+            return True
         return types.messages.AffectedMessages(pts=1, pts_count=0)
 
     def _raw_SaveDraftRequest(self, request: Any) -> bool:

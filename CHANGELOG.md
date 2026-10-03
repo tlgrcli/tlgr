@@ -9,6 +9,39 @@ codes documented in `AGENT.md` are the public API.
 
 ### Added
 
+- **Job actions `react`, `read` and `view`.** `react` puts an emoji (one,
+  a random pick from a list, or a weighted pick) on the message, replacing
+  the account's previous reaction; it reads the chat up to that message
+  first, so nobody sees a reaction on a message still shown unread, and an
+  album gets one reaction. `read` marks the chat read up to the triggering
+  message with the right RPC for the peer (forum topics included), coalesces
+  per chat and waits a reading time on top of its delay; `mentions` and
+  `reactions` clear those badges. `view` counts a channel view, or marks a
+  voice or round note listened in a DM or group, and never consumes
+  view-once media unless told to.
+- **Knobs on every action, or on the job as a default:** `delay` (a random
+  delay from when the event arrived, which never blocks the bus), `percent`,
+  `presence` (`leave`, `blip`, `session`, with optional `quiet_hours`),
+  `on_takeover` (what to drop when you act in the chat yourself from another
+  device) and `dry_run`.
+- **`reply` shows "typing..." first** (about 40 characters a second, 2-15 s),
+  on by default, `typing: false` to turn it off. Long form
+  `reply: {text, typing, delay, filters, processors}`.
+- **Pacing per account and action kind**, configurable in a top-level
+  `pacing:` block of `jobs.yaml`, with cautious defaults (a reaction every
+  4 s and at most 300 an hour; reads and views every 2 s; forwards and
+  replies every 1.5 s). FLOOD_WAIT reschedules and slows the queue,
+  transient errors retry with backoff, permanent ones are counted.
+- **Pending actions survive restarts and crashes** in
+  `accounts/<alias>/pending.json` and resume at their original due time.
+  React, view and reply expire 24 h after the event (configurable); read and
+  forward never do. A message replayed after a crash is not acted on twice.
+- **Filters `sender_is_contact` and `chat_is_new`.**
+- **`tlgr job queue`** lists pending actions with their due time, and
+  `tlgr job queue cancel` drops them by id, `--chat`, `--job` or `--all`.
+  `job list`, `job get` and `daemon status` report per-action counters:
+  done, skipped, superseded, expired, pending and errors.
+
 - **`chat poster list` can walk deeper than one call.** A single call stops
   at `--max-messages 20000` and at the operation deadline, so a longer
   history could not be harvested at all: a bigger number was refused and
@@ -28,6 +61,27 @@ codes documented in `AGENT.md` are the public API.
   size, because it is part of a long walk. Before, only calls above 3000
   messages were paced, so a chain of small calls would have read history
   unthrottled.
+
+### Changed
+
+- **Every job action now runs through the op layer and is paced.** `forward`
+  and `reply` used to call Telethon directly from the bus handler; they now
+  run as `message.forward`, `message.send` and `media.upload` operations, so
+  a job obeys the policy allow/deny list, the rate limiter and the flood
+  budget like the CLI does. Their meaning is unchanged: a native forward
+  (with `drop_author`), or with processors a re-send of the processed text
+  or media caption; a reply to the matched message with processors applied.
+  Forwards on one account are now spaced at least 1.5 s apart, a
+  link-preview post is re-sent as text instead of failing, and an album gets
+  one reply instead of one per photo.
+- **`jobs.yaml` is validated strictly.** An unknown key, a bad duration, a
+  percent outside 0-100 or an unknown presence mode is reported with the
+  job's name and the action's position, by `job add`, `job reload
+  --validate-only` and `config validate`. A broken job is skipped at load
+  while the others run, and a job whose edit broke it keeps running on
+  `job reload`.
+- **`job get` runs in the daemon** so it can report live counters, and
+  `job disable` also drops what the job had queued.
 
 ### Fixed
 

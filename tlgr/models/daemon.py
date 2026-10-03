@@ -107,6 +107,8 @@ class DaemonStatus(Model, omit_defaults=False):
     events: EventBusStatus | None = None
     webhook: dict[str, Any] = {}
     jobs: list[dict[str, Any]] = []
+    #: Per account: the job-action queue (pending by action, pacers, presence).
+    actions: dict[str, Any] = {}
     # v1's `/daemon/status` carried these two, and AGENT.md documents them.
     connections: dict[str, bool] = {}
     disconnected: list[str] = []
@@ -250,12 +252,37 @@ class DeadLetterResult(Model):
     dry_run: bool = False
 
 
+class ActionCounters(Model, omit_defaults=False):
+    """What one action of a job has done since the daemon started.
+
+    `skipped` is a percent roll that said no, or a message with nothing to do
+    (no voice note to listen to, an album sibling); `superseded` is a pending
+    action dropped because the account acted in the chat from another device
+    or an operator cancelled it; `expired` is one that waited past its expiry.
+    """
+
+    index: int = 0
+    action: str = ""
+    done: int = 0
+    skipped: int = 0
+    superseded: int = 0
+    expired: int = 0
+    pending: int = 0
+    errors: int = 0
+    last_error: str | None = None
+
+
 class JobState(Model, omit_defaults=False):
     """One gateway job.
 
     `omit_defaults=False` because `enabled` and `running` are the answer:
     with the default, an enabled job dropped `enabled` and a stopped one
     dropped `running`, and `job list` printed `-` for both.
+
+    `skipped` is the job-level filter count (events the job's filters
+    rejected); the per-action counters are in `action_counters`, and `done`,
+    `superseded`, `expired` and `pending` are their totals. `errors` is the
+    job's own errors plus every action's.
     """
 
     name: str
@@ -272,6 +299,39 @@ class JobState(Model, omit_defaults=False):
     errors: int = 0
     last_match_at: str | None = None
     last_error: str | None = None
+    done: int = 0
+    superseded: int = 0
+    expired: int = 0
+    pending: int = 0
+    action_counters: list[ActionCounters] = []
+
+
+class PendingAction(Model, omit_defaults=False):
+    """One job action waiting for its delay, its pacer slot or quiet hours."""
+
+    id: str
+    account: str = ""
+    job: str = ""
+    action: str = ""
+    chat_id: int = 0
+    msg_id: int = 0
+    #: `waiting` (before its due time), `due` (waiting for a pacer slot) or
+    #: `running`.
+    state: str = "waiting"
+    due_at: str | None = None
+    eta_s: int = 0
+    expires_at: str | None = None
+    attempts: int = 0
+    dry_run: bool = False
+    detail: str = ""
+    last_error: str | None = None
+
+
+class QueueCancel(Model, omit_defaults=False):
+    """`job queue cancel`: how many pending actions were dropped, and which."""
+
+    cancelled: int = 0
+    ids: list[str] = []
 
 
 class Job(Model):

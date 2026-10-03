@@ -775,6 +775,7 @@ async def daemon_status(ctx: OpContext, req: DaemonStatusReq) -> DaemonStatus:
         else None,
         webhook=status.get("webhook") or {},
         jobs=status.get("jobs") or [],
+        actions=status.get("actions") or {},
         connections={row.alias: row.state == "online" for row in rows},
         disconnected=sorted(row.alias for row in rows if row.state != "online"),
     )

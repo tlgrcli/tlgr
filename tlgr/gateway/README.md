@@ -10,9 +10,8 @@ flowchart TB
     ENV --> FILT["Filter Tree\nAND / OR / NOT composition"]
     FILT -->|"passed"| PROC["Processors\ntext modification chain (optional)"]
     PROC --> ACT["Action List\n1..N actions"]
-    ACT --> A1["reply"]
-    ACT --> A2["forward"]
-    ACT --> A3["future: react, pin, delete, ..."]
+    ACT --> SCH["Action scheduler\n(per account: delay, pacer, persistence)"]
+    SCH --> OPS["op layer\nforward, reply, react, read, view"]
 
     FILT -->|"rejected"| DROP["skip"]
 ```
@@ -61,6 +60,36 @@ jobs:
           to: ["@archive"]
           processors: [add_prefix:prefix=[FWD]]  # overrides job-level
 ```
+
+A DM job using the newer actions and knobs:
+
+```yaml
+jobs:
+  - name: dm-ack
+    account: Neo
+    filters: {chat_type: private, sender_is_contact: true}
+    presence: {mode: session, quiet_hours: "01:00-08:00"}
+    on_takeover: cancel        # cancel | cancel_read | ignore
+    actions:
+      - read:  {delay: 10-90s}           # + reading time
+      - view:  {delay: 15-120s}          # voice/round notes
+      - react:
+          emoji: ["👍", "❤", "🔥"]       # random; or {"👍": 3, "🔥": 1}
+          percent: 60
+          delay: 30-300s
+      - reply:
+          text: "Got it, will answer soon"
+          filters: {chat_is_new: true}
+          typing: true                   # default for reply
+          delay: 1-3m
+```
+
+The file is validated strictly: an unknown key on a job or an action, a bad
+duration, a percent outside 0-100 or an unknown presence mode is reported
+with the job's name and the action's position (`tlgr job reload
+--validate-only`, `tlgr config validate`, and `tlgr job add` refuses it). At
+load, a broken job is skipped and logged while the other jobs still run; on
+`job reload`, a job whose edit broke it keeps running in its last good form.
 
 ### Action syntax
 
@@ -159,6 +188,13 @@ Valid types: `text`, `photo`, `video`, `document`, `sticker`, `voice`, `video_no
 | `from_users` | Sender must be in list | `list[int]` |
 | `exclude_users` | Sender must NOT be in list | `list[int]` |
 
+#### Dialog (`dialog.py`)
+
+| Filter | Description | Value |
+|--------|-------------|-------|
+| `sender_is_contact` | Sender is in the account's contacts | `bool` |
+| `chat_is_new` | First message ever in a private chat (one history probe per chat, cached) | `bool` |
+
 ### Adding a custom filter
 
 ```python
@@ -232,51 +268,141 @@ def uppercase(text, config=None):
 
 ## Actions
 
-### Built-in actions
-
-#### reply
-
-Sends a static text reply to the triggering message.
-
-```yaml
-- reply: "hello!"
-```
-
-#### forward
-
-Forwards the message to one or more destinations.
+Five built-in actions: `forward`, `reply`, `react`, `read` and `view`. Every
+one runs through the op layer (the same code paths the CLI uses), in process,
+for the job's account, so a job inherits the policy allow/deny list, the rate
+limiter, the flood-wait budget and the self-origin events on the bus. The
+reference for each action and its keys is `tlgr/actions/README.md`.
 
 ```yaml
-- forward:
-    to: ["@clean_feed", "@archive"]
-    drop_author: true
-    processors: [strip_formatting]
+actions:
+  - forward: {to: ["@archive"], drop_author: true}
+  - reply: {text: "Got it", typing: true, delay: 1-3m}
+  - react: {emoji: ["👍", "❤", "🔥"], percent: 60, delay: 30-300s}
+  - read: {delay: 10-90s, mentions: true}
+  - view: {delay: 15-120s}
 ```
 
-| Key | Type | Description |
-|-----|------|-------------|
-| `to` | `str` or `list[str]` | Destination chat(s) |
-| `drop_author` | `bool` | Remove original author |
-| `processors` | `list` | Override job-level processors |
-| `filters` | `dict` | AND'd with job-level filters |
+### Knobs every action takes
+
+Set on an action, or on the job as a default for all its actions (the
+action's value wins). The defaults keep a job doing exactly what it did
+before the knobs existed, apart from pacing.
+
+| Knob | Default | Meaning |
+|------|---------|---------|
+| `delay` | none | Uniform random delay, measured from when the daemon received the event (not the message date). `10-90s`, `1-3m`, `5s`, `500ms`. |
+| `percent` | `100` | Chance (0-100) of acting on a given message, rolled per message per action. An album is one roll. A roll-out counts as `skipped`. |
+| `presence` | `leave` | `leave`, `blip`, `session`, or `{mode: ..., quiet_hours: "01:00-08:00"}`. See below. |
+| `on_takeover` | `cancel` | `cancel`, `cancel_read` or `ignore`. See below. |
+| `dry_run` | `false` | Run filters, rolls and scheduling, log what would be done and count it, never call Telegram. |
+| `filters` | none | Per-action filters, AND'd with the job's. |
+
+A delay never blocks the bus: the job's handler queues the action and
+returns, and the account's scheduler runs it when it is due. Actions of one
+job are scheduled independently, so a forward can go at once while a
+reaction on the same message waits two minutes.
+
+### Pacing
+
+One pacer queue per (account, action kind), shared by every job on the
+account, so a backlog of reactions never delays a forward. `every` is a
+floor: jitter only lengthens the gap, drawing it from `[every, 1.5 x every]`.
+A backlog (hundreds of messages replayed by catch-up) is acted on, never
+skipped, at the configured rate.
+
+```yaml
+pacing:                    # optional; these are the defaults
+  Neo:                     # account alias
+    react:   {every: 4s, per_hour: 300}
+    read:    {every: 2s}
+    view:    {every: 2s}
+    forward: {every: 1.5s}
+    reply:   {every: 1.5s}
+    expire:  {react: 24h, view: 24h, reply: 24h}   # read and forward: never
+```
+
+An absent `per_hour` keeps the default cap; `per_hour: null` lifts it.
+`expire` takes a duration or `never`; an action still pending that long
+after its event arrived is dropped and counted as `expired`.
+
+Failures: a FLOOD_WAIT reschedules the item after the wait and doubles that
+queue's spacing (up to 8x, recovering after ten quiet minutes); a transient
+failure (network, server) is retried after about 5 s, 30 s and 2 min, and a
+forward or read (which never expire) then every ten minutes for about an
+hour and a half; any
+other error (REACTION_INVALID, MESSAGE_ID_INVALID, CHAT_WRITE_FORBIDDEN, a
+policy refusal) is counted under the action's `errors` and not retried.
+
+### Persistence
+
+Pending actions (delayed, or waiting for their pacer slot) are kept in
+`~/.tlgr/accounts/<alias>/pending.json` (mode 0600, written atomically, at
+most 10 000 items) and survive a restart or a crash. At boot, once the jobs
+are running, each resumes at its original due time; an overdue one goes
+through the pacer. Items of a job that no longer exists are dropped. The
+file also remembers recently finished items, so an update replayed after a
+crash is not acted on twice.
+
+### Presence
+
+Telethon never sends `account.updateStatus`, so tlgr reads as offline while
+it reacts and replies. `presence` changes that, per account:
+
+* `leave` (default): never touch presence.
+* `blip`: online just before the action, offline about 5 s after.
+  Overlapping blips merge.
+* `session`: online while any action of the account is running or due within
+  a few seconds, offline about 5 s after the last.
+* `quiet_hours: "01:00-08:00"`: read, view, react and reply (not forward) are
+  held until the window ends, then released through the pacer, spread over
+  five minutes. The window is in `[defaults] timezone`, or local time.
+
+Two jobs asking for different modes on one account: the most online request
+wins while its actions run. A `leave` action never turns presence on, and
+never ends an online stretch a `blip` or `session` action started. If the
+account-level `[presence] mode` is not `off`, the daemon already owns the
+account's status and job presence does nothing.
+
+### Manual takeover
+
+When you act in a chat yourself from another device (read it elsewhere, or
+send a message there), pending actions for messages up to that point are
+dropped and counted as `superseded`, according to `on_takeover`:
+
+| `on_takeover` | Drops |
+|---------------|-------|
+| `cancel` (default) | read, view, react and reply |
+| `cancel_read` | read and view only |
+| `ignore` | nothing |
+
+Forwards are never cancelled. Reads and sends tlgr made itself are told apart
+by the message ids it recorded, so its own read receipt does not count as a
+takeover.
+
+### Inspecting and controlling
+
+```bash
+tlgr job list                    # per-job and per-action counters
+tlgr job get dm-ack              # one job's pipeline and counters
+tlgr job queue                   # pending actions (same as: tlgr job queue list)
+tlgr job queue list --job dm-ack --chat @alice
+tlgr job queue cancel 3f2a9c1b7e # by id
+tlgr job queue cancel --chat @alice --yes
+tlgr job queue cancel --all --yes
+```
+
+Counters per action: `done`, `skipped` (percent roll, nothing to view, album
+sibling), `superseded` (takeover or cancel), `expired`, `pending`, `errors`
+(with `last_error`). `tlgr daemon status` also shows each account's queue.
 
 ### Adding a custom action
 
-```python
-from tlgr.actions import register_action
-
-
-@register_action("react")
-async def action_react(event, config, client, chain=None):
-    if event.source != "telegram":
-        return
-    emoji = str(config)
-    await client.react_to_message(event.raw.chat_id, event.raw.message.id, emoji)
-```
-
-```yaml
-- react: "thumbs_up"
-```
+A built-in action is an `Action` subclass with a `plan` (runs on the bus
+lane, returns payloads) and an `execute` (runs when due, calls operations
+through the runtime). See `tlgr/actions/README.md`. A plain async function
+registered with `@register_action` still works: it runs at once, outside the
+scheduler, with `(event, config, client, chain)`.
 
 ## Engine lifecycle
 
@@ -290,19 +416,24 @@ flowchart LR
 The `Gateway` class extends `BaseJob`, integrating with the daemon's `JobRunner` lifecycle. On each incoming event:
 
 1. Wrap in `Event` envelope
-2. Evaluate the filter tree
+2. Evaluate the filter tree (awaiting the filters that ask Telegram)
 3. If passed, iterate over actions
-4. For each action: check per-action filters, resolve processor chain, execute
+4. For each action: check per-action filters, roll `percent`, plan the
+   payloads (processors applied, emoji picked) and queue them on the
+   account's scheduler, which runs them through the op layer when due
 
 ## Managing jobs
 
 ```bash
-tlgr job add           # open jobs.yaml in $EDITOR
-tlgr job list          # show jobs and status
+tlgr job add --name dm --action 'read:delay=10-90s' --action 'react:emoji=👍'
+tlgr job add --edit    # open jobs.yaml in $EDITOR
+tlgr job list          # show jobs, status and counters
+tlgr job queue         # pending actions
 tlgr job enable <name>
-tlgr job disable <name>
+tlgr job disable <name> # also drops what the job had queued
 tlgr job remove <name>
-tlgr config validate   # check YAML + validate names against registries
+tlgr job reload --validate-only
+tlgr config validate   # check YAML, knobs, pacing and names against registries
 ```
 
 No code changes needed for new jobs -- the Gateway engine handles any combination of registered filters, processors, and actions.

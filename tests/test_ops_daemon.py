@@ -476,6 +476,14 @@ class TestConfigValidate:
         assert report.ok is False
         assert "unknown event type" in report.errors[0].message
 
+    def test_a_bad_job_knob_is_an_error(self, tlgr_home):
+        (tlgr_home / "jobs.yaml").write_text(
+            "jobs:\n  - name: dm\n    actions:\n      - react: {emoji: '👍', percent: 140}\n"
+        )
+        report = local("config.validate", {"file": "jobs"})
+        assert report.ok is False
+        assert "percent" in report.errors[0].message
+
 
 class TestConfigServer:
     async def test_it_reads_the_server_limits(self, live_daemon, client, in_thread):

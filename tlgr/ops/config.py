@@ -1077,13 +1077,17 @@ async def config_validate(ctx: OpContext, req: ConfigValidateReq) -> ValidationR
 
 def _validate_jobs(base: Any) -> list[ValidationIssue]:
     from tlgr.actions import get_action
-    from tlgr.gateway.config import load_gateway_configs
+    from tlgr.gateway.config import load_jobs_file
 
     issues: list[ValidationIssue] = []
     try:
-        configs = load_gateway_configs(base)
+        jobs_file = load_jobs_file(base)
     except Exception as exc:
         return [ValidationIssue(file="jobs.yaml", message=str(exc))]
+    # Unknown keys, bad durations, percents, presence modes, pacing: the same
+    # parser the daemon runs, so "validate passed" means "the daemon loads it".
+    issues.extend(ValidationIssue(file="jobs.yaml", message=p) for p in jobs_file.problems)
+    configs = jobs_file.jobs
     for config in configs:
         if not config.name:
             issues.append(ValidationIssue(file="jobs.yaml", message="a job has no `name`"))

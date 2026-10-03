@@ -25,7 +25,14 @@ from tlgr.core import eventtypes
 from tlgr.core.errors import EXIT_EMPTY, NotFoundError, UsageError
 from tlgr.core.pagination import PageKind, build_page
 from tlgr.models.base import Request
-from tlgr.models.daemon import Job, JobState, JobTestFrame
+from tlgr.models.daemon import (
+    ActionCounters,
+    Job,
+    JobState,
+    JobTestFrame,
+    PendingAction,
+    QueueCancel,
+)
 from tlgr.models.page import Page
 from tlgr.models.peer import PeerRef
 from tlgr.ops._params import arg, opt
@@ -120,18 +127,15 @@ async def job_list(ctx: OpContext, req: JobListReq) -> Page[JobState]:
         account = str(entry.get("account", ""))
         if ctx.account and ctx.account != "all" and account and account != ctx.account:
             continue
-        rows.append(
-            JobState(
-                name=name,
-                account=account,
-                enabled=enabled,
-                running=bool(running.get("running")),
-                events=[str(e) for e in (entry.get("events") or ["new_message"])],
-                matched=int(running.get("matched") or 0),
-                skipped=int(running.get("skipped") or 0),
-                errors=int(running.get("errors") or 0),
-            )
+        state = JobState(
+            name=name,
+            account=account,
+            enabled=enabled,
+            running=bool(running.get("running")),
+            events=[str(e) for e in (entry.get("events") or ["new_message"])],
         )
+        _apply_counters(state, running)
+        rows.append(state)
     return build_page(
         rows,
         op="job.list",
@@ -139,6 +143,40 @@ async def job_list(ctx: OpContext, req: JobListReq) -> Page[JobState]:
         has_more=False,
         total=len(rows),
     )
+
+
+def _apply_counters(state: JobState, running: dict[str, Any]) -> None:
+    """Copy the engine's counters onto *state*: the job's own and each action's."""
+    state.matched = int(running.get("matched") or 0)
+    state.skipped = int(running.get("skipped") or 0)
+    errors = int(running.get("errors") or 0)
+    counters: list[ActionCounters] = []
+    for row in running.get("actions") or []:
+        if not isinstance(row, dict):
+            continue
+        counters.append(
+            ActionCounters(
+                index=int(row.get("index") or 0),
+                action=str(row.get("action") or ""),
+                done=int(row.get("done") or 0),
+                skipped=int(row.get("skipped") or 0),
+                superseded=int(row.get("superseded") or 0),
+                expired=int(row.get("expired") or 0),
+                pending=int(row.get("pending") or 0),
+                errors=int(row.get("errors") or 0),
+                last_error=row.get("last_error"),
+            )
+        )
+    state.action_counters = counters
+    state.done = sum(c.done for c in counters)
+    state.superseded = sum(c.superseded for c in counters)
+    state.expired = sum(c.expired for c in counters)
+    state.pending = sum(c.pending for c in counters)
+    state.actions_run = state.done
+    state.errors = errors + sum(c.errors for c in counters)
+    last = [c.last_error for c in counters if c.last_error]
+    if last:
+        state.last_error = last[-1]
 
 
 SPEC_JOB_LIST = OperationSpec(
@@ -159,7 +197,7 @@ SPEC_JOB_LIST = OperationSpec(
     idempotent=True,
     rate_class="local",
     timeout_s=30,
-    columns=("name", "account", "enabled", "running", "matched", "errors"),
+    columns=("name", "account", "enabled", "running", "matched", "pending", "done", "errors"),
     example={
         "items": [
             {
@@ -168,6 +206,10 @@ SPEC_JOB_LIST = OperationSpec(
                 "enabled": True,
                 "running": True,
                 "events": ["new_message"],
+                "matched": 12,
+                "done": 12,
+                "pending": 1,
+                "action_counters": [{"index": 0, "action": "forward", "done": 12, "pending": 1}],
             }
         ],
         "has_more": False,
@@ -187,7 +229,7 @@ class JobGetReq(Request):
 
 
 async def job_get(ctx: OpContext, req: JobGetReq) -> JobState:
-    """One job's resolved pipeline: filters, processors, actions."""
+    """One job's resolved pipeline (filters, processors, actions) and its counters."""
     entry = _find(_load_raw(), req.name)
     state = JobState(
         name=req.name,
@@ -198,6 +240,13 @@ async def job_get(ctx: OpContext, req: JobGetReq) -> JobState:
         processors=[str(p) for p in (entry.get("processors") or [])],
         actions=[a for a in (entry.get("actions") or []) if isinstance(a, dict)],
     )
+    daemon = getattr(ctx, "daemon", None)
+    if daemon is not None:
+        running: dict[str, Any] = next(
+            (row for row in daemon.list_jobs() if row.get("name") == req.name), {}
+        )
+        state.running = bool(running.get("running"))
+        _apply_counters(state, running)
     if req.explain:
         state.filters = {
             key: {"value": value, "resolves_to": _explain_filter(key)}
@@ -226,11 +275,10 @@ SPEC_JOB_GET = OperationSpec(
     request=JobGetReq,
     response=JobState,
     impl=job_get,
-    summary="Show one job's resolved pipeline (filters, processors, actions)",
+    summary="Show one job's resolved pipeline (filters, processors, actions) and counters",
     needs_account=False,
-    needs_auth=False,
     needs_client=False,
-    surface=Surface.LOCAL,
+    surface=Surface.DAEMON,
     idempotent=True,
     rate_class="local",
     timeout_s=15,
@@ -279,7 +327,7 @@ def _coerce(raw: str) -> Any:
 
 
 def _action(spec: str) -> dict[str, Any]:
-    """`reply:hello` or `forward:to=@archive` → one action entry."""
+    """`reply:hello`, `forward:to=@archive`, `react:emoji=👍`, `read:delay=10-90s`."""
     name, sep, rest = spec.partition(":")
     name = name.strip()
     if not name:
@@ -313,6 +361,14 @@ class JobAddReq(Request):
     processor: Annotated[
         list[str], opt("--processor", metavar="NAME", help="Processor entry (repeatable).")
     ] = []
+    knob: Annotated[
+        list[str],
+        opt(
+            "--knob",
+            metavar="KEY=VALUE",
+            help="Job-level action default: delay, percent, presence, on_takeover, dry_run.",
+        ),
+    ] = []
     enabled: Annotated[bool, opt("--enabled/--disabled", help="Initial state.")] = True
     edit: Annotated[
         bool, opt("--edit", help="Open jobs.yaml in $EDITOR instead (the v1 behaviour).")
@@ -340,6 +396,7 @@ async def job_add(ctx: OpContext, req: JobAddReq) -> Job:
         if any(isinstance(e, dict) and e.get("name") == name for e in document["jobs"]):
             raise UsageError(f"a job named {name!r} already exists; remove it first", field="name")
         eventtypes.resolve_selectors(entry.get("events") or ["new_message"])
+        _validate(entry)
         document["jobs"].append(entry)
         added.append(name)
 
@@ -352,6 +409,16 @@ async def job_add(ctx: OpContext, req: JobAddReq) -> Job:
         events=[str(e) for e in (first.get("events") or [])],
         added=added,
     )
+
+
+def _validate(entry: dict[str, Any]) -> None:
+    """Refuse a job the engine would refuse, naming every problem in it."""
+    from tlgr.gateway.config import JobConfigError, _parse_job
+
+    try:
+        _parse_job(entry)
+    except JobConfigError as exc:
+        raise UsageError("; ".join(exc.problems), field="action") from None
 
 
 def _entries_from(req: JobAddReq) -> list[dict[str, Any]]:
@@ -368,6 +435,8 @@ def _entries_from(req: JobAddReq) -> list[dict[str, Any]]:
         entry["filters"] = _pairs(req.filter, "filter")
     if req.processor:
         entry["processors"] = list(req.processor)
+    if req.knob:
+        entry.update(_pairs(req.knob, "knob"))
     if req.action:
         entry["actions"] = [_action(spec) for spec in req.action]
     if not entry.get("actions"):
@@ -571,25 +640,21 @@ async def job_reload(ctx: OpContext, req: JobReloadReq) -> Job:
     to run before a reload rather than after one: a config with a typo would
     otherwise take effect as "that job is gone".
     """
-    from tlgr.gateway.config import load_gateway_configs
+    from tlgr.gateway.config import load_jobs_file
 
     daemon = _runner(ctx)
     base = getattr(getattr(daemon, "paths", None), "base", None)
-    configs = load_gateway_configs(base)
-    problems: list[str] = []
+    jobs_file = load_jobs_file(base)
+    configs = jobs_file.jobs
+    problems: list[str] = list(jobs_file.problems)
     for config in configs:
-        if not config.name:
-            problems.append("a job has no `name`")
         if not config.actions:
             problems.append(f"job {config.name!r} has no actions and would do nothing")
-        for action in config.actions:
-            from tlgr.actions import get_action
-
-            if get_action(action.name) is None:
-                problems.append(f"job {config.name!r} uses unknown action {action.name!r}")
 
     if req.validate_only or problems:
-        return Job(name="", enabled=True, loaded=len(configs), errors=problems)
+        return Job(
+            name="", enabled=True, loaded=len(configs) + len(jobs_file.rejected), errors=problems
+        )
 
     result = await daemon.reload_jobs()
     return Job(
@@ -620,6 +685,216 @@ SPEC_JOB_RELOAD = OperationSpec(
     example_args="job reload --validate-only",
     covers_partial=("updates.stream-webhook-delivery",),
     coverage_note="reloads the consumers; delivery is the webhook pusher's.",
+    tags=frozenset({"agent-safe"}),
+)
+
+
+# ---------------------------------------------------------------------------
+# job queue list / cancel
+# ---------------------------------------------------------------------------
+
+
+def _stamp(value: float | None) -> str | None:
+    if value is None:
+        return None
+    from datetime import datetime, timezone
+
+    return datetime.fromtimestamp(value, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _detail(item: Any) -> str:
+    payload = item.payload or {}
+    if item.action == "react":
+        return str(payload.get("emoji", ""))
+    if item.action == "forward":
+        return f"to {payload.get('to', '')}" + (" (re-send)" if payload.get("resend") else "")
+    if item.action == "reply":
+        text = str(payload.get("text", ""))
+        return (text[:40] + "...") if len(text) > 40 else text
+    if item.action == "view":
+        return str(payload.get("mode", ""))
+    if item.action == "read":
+        extras = [flag for flag in ("mentions", "reactions") if payload.get(flag)]
+        return "+".join(extras)
+    return ""
+
+
+async def _chat_ids(ctx: OpContext, daemon: Any, ref: str | None) -> dict[str, int | None]:
+    """`--chat` per account: a marked id is itself, `@name` is resolved per account."""
+    if ref is None:
+        return {}
+    out: dict[str, int | None] = {}
+    with contextlib.suppress(ValueError):
+        marked = int(ref)
+        return dict.fromkeys(daemon.schedulers, marked)
+    for alias in daemon.schedulers:
+        client = daemon.get_client(alias)
+        try:
+            out[alias] = int(await client.resolve_chat(ref)) if client is not None else None
+        except Exception:
+            out[alias] = None
+    return out
+
+
+def _accounts(ctx: OpContext, daemon: Any) -> dict[str, Any]:
+    schedulers = dict(daemon.schedulers)
+    if ctx.account and ctx.account != "all":
+        return {alias: s for alias, s in schedulers.items() if alias == ctx.account}
+    return schedulers
+
+
+class JobQueueListReq(Request):
+    job: Annotated[str | None, opt("--job", metavar="NAME", help="Only this job.")] = None
+    chat: Annotated[
+        str | None, opt("--chat", metavar="CHAT", help="Only this chat (@name or marked id).")
+    ] = None
+    action: Annotated[
+        str | None, opt("--action", metavar="NAME", help="Only this action (react, read, ...).")
+    ] = None
+
+
+async def job_queue_list(ctx: OpContext, req: JobQueueListReq) -> Page[PendingAction]:
+    """Every pending job action: what it is, where, and when it is due."""
+    daemon = _runner(ctx)
+    chats = await _chat_ids(ctx, daemon, req.chat)
+    rows: list[PendingAction] = []
+    for alias, scheduler in sorted(_accounts(ctx, daemon).items()):
+        now = scheduler.clock.now()
+        for item in scheduler.pending():
+            if req.job and item.job != req.job:
+                continue
+            if req.action and item.action != req.action:
+                continue
+            if req.chat is not None and item.chat_id != chats.get(alias):
+                continue
+            running = scheduler.is_running(item.id)
+            rows.append(
+                PendingAction(
+                    id=item.id,
+                    account=alias,
+                    job=item.job,
+                    action=item.action,
+                    chat_id=item.chat_id,
+                    msg_id=item.msg_id,
+                    state="running" if running else "due" if item.due_at <= now else "waiting",
+                    due_at=_stamp(item.due_at),
+                    eta_s=max(0, round(item.due_at - now)),
+                    expires_at=_stamp(item.expires_at),
+                    attempts=item.attempts,
+                    dry_run=item.dry_run,
+                    detail=_detail(item),
+                    last_error=item.last_error,
+                )
+            )
+    return build_page(
+        rows, op="job.queue.list", kind=PageKind.LOCAL, has_more=False, total=len(rows)
+    )
+
+
+SPEC_JOB_QUEUE_LIST = OperationSpec(
+    id="job.queue.list",
+    request=JobQueueListReq,
+    response=Page[PendingAction],
+    impl=job_queue_list,
+    summary="List pending job actions (delayed, paced or held by quiet hours)",
+    description=(
+        "Every action a job has scheduled and not yet run, across accounts, "
+        "soonest first. `state` is `waiting` before the due time, `due` while "
+        "it waits for its pacer slot, and `running` while it talks to Telegram."
+    ),
+    paginated=PageKind.LOCAL,
+    needs_account=False,
+    needs_client=False,
+    surface=Surface.DAEMON,
+    idempotent=True,
+    rate_class="local",
+    timeout_s=30,
+    columns=("id", "job", "action", "chat_id", "msg_id", "state", "eta_s", "attempts"),
+    example={
+        "items": [
+            {
+                "id": "3f2a9c1b7e",
+                "account": "work",
+                "job": "dm-ack",
+                "action": "react",
+                "chat_id": 777123,
+                "msg_id": 4410,
+                "state": "waiting",
+                "due_at": "2026-10-04T09:14:07Z",
+                "eta_s": 42,
+                "attempts": 0,
+                "detail": "👍",
+            }
+        ],
+        "has_more": False,
+    },
+    example_args="job queue list --job dm-ack",
+    covers_partial=("updates.stream-event-filtering",),
+    coverage_note="shows what the rules scheduled; the filtering itself is the gateway's.",
+    tags=frozenset({"agent-safe", "group-default"}),
+)
+
+
+class JobQueueCancelReq(Request):
+    ids: Annotated[
+        list[str],
+        arg(0, metavar="ID", required=False, variadic=True, help="Pending action id(s)."),
+    ] = []
+    chat: Annotated[
+        str | None, opt("--chat", metavar="CHAT", help="Everything pending in this chat.")
+    ] = None
+    job: Annotated[str | None, opt("--job", metavar="NAME", help="Everything this job has.")] = None
+    every: Annotated[bool, opt("--all", help="Every pending action on every account.")] = False
+
+
+async def job_queue_cancel(ctx: OpContext, req: JobQueueCancelReq) -> QueueCancel:
+    """Drop pending job actions by id, chat, job, or all of them.
+
+    A cancelled action counts as `superseded` on its job. An action already
+    talking to Telegram is left to finish.
+    """
+    if not (req.ids or req.chat or req.job or req.every):
+        raise UsageError("say what to cancel: an ID, --chat, --job or --all", field="ids")
+    daemon = _runner(ctx)
+    chats = await _chat_ids(ctx, daemon, req.chat)
+    cancelled: list[str] = []
+    for alias, scheduler in sorted(_accounts(ctx, daemon).items()):
+        if req.chat is not None and chats.get(alias) is None:
+            continue
+        dropped = scheduler.cancel(
+            ids=req.ids,
+            chat_id=chats.get(alias) if req.chat is not None else None,
+            job=req.job,
+            everything=req.every,
+        )
+        cancelled.extend(item.id for item in dropped)
+    if not cancelled:
+        ctx.mark_already()
+    return QueueCancel(cancelled=len(cancelled), ids=cancelled)
+
+
+SPEC_JOB_QUEUE_CANCEL = OperationSpec(
+    id="job.queue.cancel",
+    request=JobQueueCancelReq,
+    response=QueueCancel,
+    impl=job_queue_cancel,
+    summary="Cancel pending job actions by id, chat, job, or all",
+    description=(
+        "Selectors combine: `--job dm-ack --chat @alice` drops only that job's "
+        "actions in that chat. A cancelled action counts as `superseded`."
+    ),
+    mutating=True,
+    destructive=True,
+    needs_account=False,
+    needs_client=False,
+    surface=Surface.DAEMON,
+    rate_class="local",
+    timeout_s=30,
+    columns=("cancelled",),
+    example={"cancelled": 2, "ids": ["3f2a9c1b7e", "a81d03c2f4"]},
+    example_args="job queue cancel --job dm-ack --yes",
+    covers_partial=("updates.stream-event-filtering",),
+    coverage_note="cancels what the rules scheduled; the filtering itself is the gateway's.",
     tags=frozenset({"agent-safe"}),
 )
 

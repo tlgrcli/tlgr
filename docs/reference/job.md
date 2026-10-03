@@ -2,15 +2,17 @@
 
 # `tlgr job`
 
-8 operations. Every one takes the global flags (`--json`, `--plain`, `-a/--account`, `--results-only`, `--select`, `--dry-run`, `--yes`, `--no-input`, `--flood-wait-max`, `-v`) anywhere on the line.
+10 operations. Every one takes the global flags (`--json`, `--plain`, `-a/--account`, `--results-only`, `--select`, `--dry-run`, `--yes`, `--no-input`, `--flood-wait-max`, `-v`) anywhere on the line.
 
 | Command | Summary |
 |---|---|
 | [`job add`](#tlgr-job-add) | Add a gateway job |
 | [`job disable`](#tlgr-job-disable) | Disable a job without removing it |
 | [`job enable`](#tlgr-job-enable) | Enable a disabled job |
-| [`job get`](#tlgr-job-get) | Show one job's resolved pipeline (filters, processors, actions) |
+| [`job get`](#tlgr-job-get) | Show one job's resolved pipeline (filters, processors, actions) and counters |
 | [`job list`](#tlgr-job-list) | List gateway jobs and their state |
+| [`job queue cancel`](#tlgr-job-queue-cancel) | Cancel pending job actions by id, chat, job, or all |
+| [`job queue list`](#tlgr-job-queue-list) | List pending job actions (delayed, paced or held by quiet hours) |
 | [`job reload`](#tlgr-job-reload) | Hot-reload jobs.yaml without restarting the daemon |
 | [`job remove`](#tlgr-job-remove) | Remove a job |
 | [`job test`](#tlgr-job-test) | Dry-run a job's filters against real or synthetic events |
@@ -36,6 +38,7 @@ tlgr job add [OPTIONS]
 | `--filter` | text |  | Filter entry (repeatable). |
 | `--from-file` | text |  | Read one job (or a jobs list) from YAML/JSON. |
 | `--for-account` | text |  | Account the job runs on. |
+| `--knob` | text |  | Job-level action default: delay, percent, presence, on_takeover, dry_run. |
 | `--name` | text |  | Job name. |
 | `--processor` | text |  | Processor entry (repeatable). |
 
@@ -105,7 +108,7 @@ toggles a rule; the filtering itself is the gateway's.
 
 ### `job get`
 
-Show one job's resolved pipeline (filters, processors, actions).
+Show one job's resolved pipeline (filters, processors, actions) and counters.
 
 ```
 tlgr job get <NAME> [OPTIONS]
@@ -160,6 +163,72 @@ $ tlgr job list --json
 Partial: `updates.stream-event-filtering`
 
 lists the rules; proving one fires is `job test`.
+
+</details>
+
+### `job queue cancel`
+
+Cancel pending job actions by id, chat, job, or all.
+
+Selectors combine: `--job dm-ack --chat @alice` drops only that job's actions in that chat. A cancelled action counts as `superseded`.
+
+```
+tlgr job queue cancel [ID]... [OPTIONS]
+```
+
+**mutating · destructive (needs `--yes` off a TTY) · runs without an account · returns `QueueCancel`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `ID` | text | any number | Pending action id(s). |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--chat` | text |  | Everything pending in this chat. |
+| `--all` | flag |  | Every pending action on every account. |
+| `--job` | text |  | Everything this job has. |
+
+```console
+$ tlgr job queue cancel --job dm-ack --yes --json
+```
+
+<details><summary>Catalog coverage (0 full, 1 partial)</summary>
+
+Partial: `updates.stream-event-filtering`
+
+cancels what the rules scheduled; the filtering itself is the gateway's.
+
+</details>
+
+### `job queue list`
+
+List pending job actions (delayed, paced or held by quiet hours).
+
+Every action a job has scheduled and not yet run, across accounts, soonest first. `state` is `waiting` before the due time, `due` while it waits for its pacer slot, and `running` while it talks to Telegram.
+
+```
+tlgr job queue list [OPTIONS]
+```
+
+**paginated (`LOCAL` cursor) · idempotent (reports `already`) · runs without an account · returns `Page[PendingAction]`**
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--action` | text |  | Only this action (react, read, ...). |
+| `--chat` | text |  | Only this chat (@name or marked id). |
+| `--job` | text |  | Only this job. |
+
+Pagination is transport-level: `--limit/-n`, `--cursor TOKEN`, `--all` (walked inside the daemon, paced by the account's own rate limiter).
+
+```console
+$ tlgr job queue list --job dm-ack --json
+```
+
+<details><summary>Catalog coverage (0 full, 1 partial)</summary>
+
+Partial: `updates.stream-event-filtering`
+
+shows what the rules scheduled; the filtering itself is the gateway's.
 
 </details>
 

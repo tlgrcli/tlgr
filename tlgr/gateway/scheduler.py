@@ -340,6 +340,9 @@ class ActionScheduler:
 
     # -- the queue as data ------------------------------------------------------
 
+    def is_running(self, item_id: str) -> bool:
+        return item_id in self._running
+
     def pending(self) -> list[PendingItem]:
         return sorted(self.items.values(), key=lambda item: item.due_at)
 

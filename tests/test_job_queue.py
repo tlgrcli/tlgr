@@ -144,6 +144,19 @@ class TestCounters:
         assert status["actions"]["work"]["by_action"]["react"] == 2
 
 
+class TestJobLifecycle:
+    async def test_disable_drops_what_the_job_queued(self, queued, client, in_thread):
+        await call(client, in_thread, "job.disable", {"name": "archive"})
+        assert {item.job for item in queued.scheduler.items.values()} == {"dm-ack"}
+        stats = queued.scheduler.job_stats("archive")
+        assert stats[0]["superseded"] == 2
+
+    async def test_remove_drops_the_queue_and_the_counters(self, queued, client, in_thread):
+        await call(client, in_thread, "job.remove", {"name": "dm-ack"})
+        assert {item.job for item in queued.scheduler.items.values()} == {"archive"}
+        assert queued.scheduler.job_stats("dm-ack") == []
+
+
 class TestValidation:
     async def test_job_add_refuses_bad_knobs(self, live_daemon, client, in_thread):
         bad = {

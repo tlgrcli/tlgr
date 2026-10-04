@@ -1,6 +1,6 @@
 # Pinned to the minor in pyproject; tlgr reads a handful of Telethon
 # internals and a minor bump has moved them before.
-telethon~=1.44.0
+telethon>=1.44,<1.46
 click>=8.0
 aiohttp>=3.9
 tomli>=2.0

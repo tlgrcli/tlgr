@@ -1245,9 +1245,11 @@ re-drive reuses the original delivery id, so a receiver keyed on
 follow that are worth knowing as a caller:
 
 - **The account is always explicit.** The CLI resolves it (`-a` →
-  `TLGR_ACCOUNT` → `[defaults]` → active alias) and sends it; the daemon never
-  picks one for you and answers `ACCOUNT_REQUIRED` (exit 2) when it was not
-  given one. v1 used whichever alias came first out of a set, so a two-account
+  `TLGR_ACCOUNT` → `[accounts] default` → active alias) and sends it; the
+  daemon never picks one for you and answers `ACCOUNT_REQUIRED` (exit 2) when
+  it was not given one. With `require_account` on, only `-a` and
+  `TLGR_ACCOUNT` count, and the CLI refuses a command without one with the
+  same `ACCOUNT_REQUIRED` (exit 2) before it reaches the daemon. v1 used whichever alias came first out of a set, so a two-account
   user could send from the wrong identity with no signal.
 - **Version handshake with one restart.** A client newer than the running
   daemon restarts it exactly once and says so on stderr. `--no-daemon-restart`

@@ -152,6 +152,11 @@ def run_op(spec: OperationSpec, request: msgspec.Struct, state: CliState) -> dic
     # A local operation must not go looking for an account at all: reading the
     # active alias to attach it to `tlgr schema` would be a lie about what ran.
     account = resolve_account(state) if spec.needs_account else state.account
+    # The daemon dispatcher reads the account off `state`, so the resolved
+    # alias has to land there. Keeping it in a local only sent `account: ""`,
+    # and the daemon (which never picks one) refused every command that relied
+    # on `TLGR_ACCOUNT`, the configured default or the active alias.
+    state.account = account
     request_id = uuid.uuid4().hex
 
     # The dry-run short-circuit lives here, before any implementation runs, so

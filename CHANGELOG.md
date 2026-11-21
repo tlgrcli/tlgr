@@ -9,6 +9,20 @@ codes documented in `AGENT.md` are the public API.
 
 ### Added
 
+- **`tlgr.Client`, a Python library for bulk jobs.** `from tlgr import
+  Client`, then `Client("work").op("message.send", {...})` as many times as
+  you like: Python and the CLI are loaded once instead of once per
+  operation, so a loop costs the daemon round trip and nothing else. It
+  returns the `--json` envelope, raises the CLI's typed errors
+  (`RateLimitError.wait_seconds`, `SpamFlagError`, ...), streams NDJSON, and
+  keeps the CLI's guards (production home, `TLGR_ENABLE_COMMANDS`, and no
+  account fallback at all). Importing it does not import the CLI, the
+  registry or Telethon. See "Python Library" in `AGENT.md`.
+- **`DaemonClient.op()` folds an NDJSON answer into one envelope** instead of
+  failing with "a body that is not JSON", so calling a streaming operation
+  without asking for a stream returns its result. Frames in an operation's
+  own vocabulary (`daemon.logs`, `events.watch`) are kept as the result
+  rather than folded to an empty list.
 - **Job actions `react`, `read` and `view`.** `react` puts an emoji (one,
   a random pick from a list, or a weighted pick) on the message, replacing
   the account's previous reaction; it reads the chat up to that message

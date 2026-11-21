@@ -28,7 +28,7 @@ sys.path.insert(0, str(ROOT))
 import tlgr.ops  # noqa: E402,F401  — importing it populates the registry
 from tlgr.cli.gen import _fields  # noqa: E402
 from tlgr.parity import compute, render_table  # noqa: E402
-from tlgr.registry import REGISTRY  # noqa: E402
+from tlgr.registry import REGISTRY, lint_or_raise  # noqa: E402
 from tlgr.schema import response_type_name  # noqa: E402
 
 TARGET = ROOT / "docs" / "reference"
@@ -317,6 +317,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--parity", action="store_true", help="Only regenerate PARITY.md.")
     args = parser.parse_args(argv)
 
+    # Importing the registry no longer lints it, and generating reference
+    # pages from a broken spec would only move the failure somewhere quieter.
+    lint_or_raise()
     pages = generate()
     if args.parity:
         pages = {path: text for path, text in pages.items() if path.name == "PARITY.md"}

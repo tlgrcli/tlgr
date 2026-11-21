@@ -8,8 +8,13 @@ deterministic — the names are sorted, so the registry is built in the same
 order in every checkout — and `_`-prefixed modules are skipped because they
 hold the plumbing (`_spec`, `_send`, …), not specs.
 
-The lint runs at the end, so a malformed spec fails the import rather than
-surfacing later as a missing command or a broken doc.
+The registry lint does not run here. It walks every request and response
+type and evaluates their annotations, which costs more than every operation
+module's import put together, and the CLI imports this package on every
+invocation. A malformed spec still cannot ship: `tests/test_registry_contract`
+asserts the lint is clean, `tools/gen_docs.py` (`make docs`, `make parity`)
+refuses to generate from a broken registry, and the daemon runs it before it
+starts. See `tlgr.registry.lint_or_raise`.
 """
 
 from __future__ import annotations
@@ -19,7 +24,7 @@ import pkgutil
 from types import ModuleType
 
 from tlgr.ops._spec import OpContext, OperationSpec, PageKind, Surface
-from tlgr.registry import REGISTRY, canonical, get, lint_or_raise, register
+from tlgr.registry import REGISTRY, canonical, get, register
 
 __all__ = [
     "REGISTRY",
@@ -59,5 +64,3 @@ for _module in _op_modules():
             _spec = getattr(_module, _name)
             if isinstance(_spec, OperationSpec) and _spec.id not in REGISTRY:
                 register(_spec)
-
-lint_or_raise()

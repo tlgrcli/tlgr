@@ -81,6 +81,13 @@ async def _reload(daemon: Daemon) -> None:
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
 
+    # A malformed operation spec must not reach a running daemon. The lint
+    # used to run as a side effect of importing `tlgr.ops`, which every CLI
+    # invocation paid for; the daemon starts once, so it pays here instead.
+    from tlgr.registry import lint_or_raise
+
+    lint_or_raise()
+
     # SEC-01: before anything creates a file. A daemon started from a shell
     # with a permissive umask would otherwise write a world-readable session,
     # log and socket, and fixing the modes afterwards leaves a window.

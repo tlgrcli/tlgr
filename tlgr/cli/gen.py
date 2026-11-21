@@ -483,11 +483,8 @@ def _build_request(spec: OperationSpec, fields: list[_Field], values: dict[str, 
         raise UsageError(message, field=field) from exc
 
 
-def build_command(
-    spec: OperationSpec, *, name: str | None = None, hidden: bool = False
-) -> click.Command:
-    """Turn one spec into one Click command."""
-    fields = _fields(spec.request)
+def _parameters(spec: OperationSpec, fields: list[_Field]) -> list[click.Parameter]:
+    """The spec's own parameters, before the global flags are attached."""
     parameters: list[click.Parameter] = []
     positional = sorted(
         (f for f in fields if f.cli.get("role") == "arg"), key=lambda f: int(f.cli.get("pos", 0))
@@ -511,8 +508,22 @@ def build_command(
                 ["--dry-run", "-n"], is_flag=True, default=None, help="Do not actually do it."
             )
         )
+    return parameters
+
+
+def build_command(
+    spec: OperationSpec, *, name: str | None = None, hidden: bool = False
+) -> click.Command:
+    """Turn one spec into one Click command.
+
+    The parameters are not built here: `OpCommand` builds them the first time
+    its `params` is read. Reading a request's fields evaluates its annotations,
+    and doing that for all thousand commands is what made every invocation,
+    `--help` included, pay for the whole tree.
+    """
 
     def callback(**values: Any) -> None:
+        fields = command.request_fields()
         ctx = click.get_current_context()
         state = state_from(ctx, values)
         if spec.destructive and not state.dry_run:
@@ -565,14 +576,13 @@ def build_command(
     command = OpCommand(
         spec,
         name=name or spec.verb,
-        params=parameters,
         callback=callback,
         help=_help_text(spec),
         short_help=spec.summary,
         epilog=_epilog(spec),
         hidden=hidden or bool(spec.deprecated),
     )
-    return add_global_options(command)
+    return command
 
 
 class OpCommand(click.Command):
@@ -583,11 +593,42 @@ class OpCommand(click.Command):
     (UX-02), the exit code from the §7.2 table — apply to registry-generated
     commands only. Every unmigrated v1 command keeps v1's error output until
     its own group PR moves it.
+
+    `params` is built from the spec on first read: the request's own
+    parameters, then anything passed to the constructor, then the global
+    flags, which is the order `build_command` used to assemble eagerly.
     """
 
+    _params: list[click.Parameter]
+
     def __init__(self, spec: OperationSpec, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
         self.spec = spec
+        self._fields: list[_Field] | None = None
+        # Set before `super().__init__`, which assigns `params`.
+        self._params_pending = True
+        super().__init__(*args, **kwargs)
+
+    @property
+    def params(self) -> list[click.Parameter]:
+        if self._params_pending:
+            self._params_pending = False
+            try:
+                self._params = _parameters(self.spec, self.request_fields()) + self._params
+                add_global_options(self)
+            except BaseException:
+                self._params_pending = True
+                raise
+        return self._params
+
+    @params.setter
+    def params(self, value: list[click.Parameter]) -> None:
+        self._params = value
+
+    def request_fields(self) -> list[_Field]:
+        """The request's fields, read once per command."""
+        if self._fields is None:
+            self._fields = _fields(self.spec.request)
+        return self._fields
 
     def _wants_json(self, ctx: click.Context | None, args: Sequence[str] = ()) -> bool:
         if "--json" in args:

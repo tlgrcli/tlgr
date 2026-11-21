@@ -2,8 +2,11 @@
 
 Every generated artefact (the Click tree, the daemon dispatch table, the JSON
 Schema, the reference docs, the contract tests) reads this module. The lints
-run at import, so a malformed spec cannot ship: an import-time failure is
-noisy in a way a stale doc or a missing example is not.
+are a gate rather than an import side effect: they evaluate every request and
+response annotation, which is most of what `tlgr --version` used to spend
+before doing anything. A malformed spec still cannot ship, because the
+contract tests, `tools/gen_docs.py` and the daemon's start all fail loudly on
+one (see `lint_or_raise`).
 """
 
 from __future__ import annotations
@@ -517,7 +520,13 @@ def policy_allows(allowlist: str, op_id: str) -> bool:
 
 
 def lint_or_raise() -> None:
-    """Called at the end of `ops/__init__.py`; a broken spec fails the import."""
+    """Fail loudly on a broken spec.
+
+    Called by the daemon before it starts and by `tools/gen_docs.py`, and
+    asserted by `tests/test_registry_contract.py`. Not called on import: the
+    CLI imports the registry on every invocation, and the lint is the most
+    expensive thing that import used to do.
+    """
     problems = lint()
     if problems:
         raise RuntimeError("operation registry lint failed:\n  " + "\n  ".join(problems))

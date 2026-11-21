@@ -110,6 +110,17 @@ codes documented in `AGENT.md` are the public API.
 
 ### Fixed
 
+- **`require_account` refuses a command without an explicit account.** It
+  used to fall back to `[accounts] default` and then the active alias, and
+  refused only when nothing resolved at all, so the rail passed on exactly
+  the state it is meant to distrust. With it on, only `-a` (or its
+  positional form) and `TLGR_ACCOUNT` count, and a command without one is
+  refused locally with `ACCOUNT_REQUIRED`, exit 2, before anything reaches
+  the daemon.
+- **The default-account fallback reaches the daemon.** `run_op` resolved
+  `[accounts] default` or the active alias and then sent `account: ""`, so
+  every command relying on that fallback was refused by the daemon with
+  `ACCOUNT_REQUIRED`. The resolved alias is now the one the request carries.
 - **Webhook filters work.** Both halves of `[webhook.filters]` were dead.
   `chats` was checked against a list nothing ever filled, so setting it
   dropped every event that had a chat; `@name` entries are now resolved

@@ -15,6 +15,8 @@ from typing import Any
 
 import click
 
+from tlgr.core.errors import AccountRequiredError
+
 __all__ = [
     "GLOBAL_FLAG_NAMES",
     "CliState",
@@ -241,33 +243,47 @@ def resolve_account(
     """Resolve the account, in one place, in one order.
 
     positional → `-a/--account` → `TLGR_ACCOUNT` → `[accounts] default` →
-    the active alias. The daemon never picks for you (COR-02); when nothing
-    resolves and the operation needs one, that is a USAGE error naming the
-    ways to supply it.
+    the active alias. The daemon never picks for you (COR-02), so whatever
+    this returns is what the request carries.
+
+    With `require_account` on (`TLGR_REQUIRE_ACCOUNT`, else `[defaults]
+    require_account`; *require* overrides both) only the explicit sources
+    count: the positional, `-a/--account`, and `TLGR_ACCOUNT`, which is the
+    documented environment spelling of `-a`. The configured default and the
+    active alias are never consulted, because they are exactly the state that
+    picks the wrong identity for a script that forgot to say which one it
+    meant. A command that names no account is then refused here, before
+    anything reaches the daemon.
     """
     alias = (positional or state.account or _env_or("TLGR_ACCOUNT")).strip()
+    if alias:
+        return alias
 
-    if not alias:
-        try:
-            from tlgr.core.config import load_app_config
-            from tlgr.core.paths import default_base
-
-            alias = (load_app_config().default_account or "").strip()
-            if not alias:
-                from tlgr.core.accounts import AccountManager
-
-                # `default_base()` rather than the `CONFIG_DIR` constant:
-                # that one is captured at import, so a `TLGR_HOME` set after
-                # the first import was ignored here and the CLI read the
-                # *real* home — which is how a development run reaches a
-                # production tree at all.
-                alias = (AccountManager(default_base()).get_active() or "").strip()
-        except Exception:
-            alias = ""
-
-    if not alias and (require or (require is None and _require_account_enabled())):
-        raise click.UsageError(
-            "No account specified. Pass -a <alias>, set TLGR_ACCOUNT, or set "
-            "[accounts] default in config.toml (see: tlgr account list)."
+    strict = _require_account_enabled() if require is None else require
+    if strict:
+        error = AccountRequiredError(
+            "require_account is on: this command needs an explicit account, and the "
+            "configured default and the active alias are not used"
         )
+        error.hint = "Pass -a <alias> or set TLGR_ACCOUNT (see: tlgr account list)"
+        raise error
+
+    try:
+        from tlgr.core.config import load_app_config
+        from tlgr.core.paths import default_base
+
+        alias = (load_app_config().default_account or "").strip()
+        if not alias:
+            from tlgr.core.accounts import AccountManager
+
+            # `default_base()` rather than the `CONFIG_DIR` constant: that one
+            # is captured at import, so a `TLGR_HOME` set after the first
+            # import was ignored here and the CLI read the *real* home, which
+            # is how a development run reaches a production tree at all.
+            alias = (AccountManager(default_base()).get_active() or "").strip()
+    except Exception:
+        alias = ""
+    # Nothing at all resolved: return "" and let the daemon answer
+    # ACCOUNT_REQUIRED. Refusing here would also refuse a `--dry-run`, which
+    # `run_op` answers locally without an account.
     return alias

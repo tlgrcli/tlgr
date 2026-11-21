@@ -38,7 +38,7 @@ from tlgr.core.errors import (
 from tlgr.core.paths import TlgrPaths, default_base
 from tlgr.models.envelope import OpRequest
 from tlgr.transport import autostart
-from tlgr.transport.ndjson import parse_frame
+from tlgr.transport.ndjson import iter_frames, parse_frame
 from tlgr.version import (
     HEADER_CLIENT,
     HEADER_PROTOCOL,
@@ -276,6 +276,29 @@ class DaemonClient:
         is not the caller's problem. A request that reached the daemon is
         never retried — replaying a send is worse than reporting a failure.
         """
+        raw, status_code, _ = self._exchange(
+            method,
+            path,
+            body=body,
+            params=params,
+            timeout=timeout,
+            idempotent=idempotent,
+            request_id=request_id,
+        )
+        return _decode(raw, status_code)
+
+    def _exchange(
+        self,
+        method: str,
+        path: str,
+        *,
+        body: Any = None,
+        params: dict[str, Any] | None = None,
+        timeout: float | None = None,
+        idempotent: bool | None = None,
+        request_id: str = "",
+    ) -> tuple[bytes, int, str]:
+        """`request()` without the decode: the raw body, status and content type."""
         if idempotent is None:
             idempotent = method.upper() in ("GET", "HEAD")
         target = _with_query(path, params)
@@ -309,7 +332,7 @@ class DaemonClient:
                 raise IPCError(f"the daemon closed the connection mid-reply: {exc}") from exc
             finally:
                 conn.close()
-            return _decode(raw, response.status)
+            return raw, response.status, response.getheader("Content-Type") or ""
         raise IPCError(str(last) if last else "request failed")
 
     def stream(
@@ -460,7 +483,14 @@ class DaemonClient:
         idempotent: bool = False,
         timeout: float | None = None,
     ) -> dict[str, Any]:
-        """`POST /v1/op` — the decoded success envelope, or the daemon's error."""
+        """`POST /v1/op`: the decoded success envelope, or the daemon's error.
+
+        The daemon streams a streaming operation (and any `fetch_all` walk)
+        whether or not the request asked for it, so the answer can be NDJSON.
+        That is folded into one envelope here, exactly as the CLI folds it,
+        instead of failing with "a body that is not JSON": a caller that does
+        not know which operations stream still gets the envelope it asked for.
+        """
         request_id = _request_id()
         body = OpRequest(
             op=op_id,
@@ -475,7 +505,7 @@ class DaemonClient:
             cursor=cursor,
             all=fetch_all,
         )
-        result = self.request(
+        raw, status_code, content_type = self._exchange(
             "POST",
             "/v1/op",
             body=body,
@@ -483,6 +513,9 @@ class DaemonClient:
             idempotent=idempotent,
             request_id=request_id,
         )
+        if status_code < 400 and content_type.startswith("application/x-ndjson"):
+            return _fold_ndjson(raw, op_id)
+        result = _decode(raw, status_code)
         if not isinstance(result, dict):
             raise IPCError("the daemon returned a non-object envelope")
         return result
@@ -787,6 +820,35 @@ def make_stream_dispatcher(base: Path | None = None) -> Any:
         )
 
     return dispatch
+
+
+def _fold_ndjson(raw: bytes, op_id: str) -> dict[str, Any]:
+    """Fold a complete NDJSON body into one envelope (see `DaemonClient.op`).
+
+    The same rule as `DaemonClient.stream`: a body without an `end` frame is
+    `RETRYABLE`, never a short success.
+    """
+    frames = list(iter_frames(raw.splitlines()))
+    if not frames or frames[-1].get("type") != "end":
+        raise RetryableError(
+            "the daemon closed the stream without an end frame; the result is incomplete, retry"
+        )
+    # An operation with its own frame vocabulary (`daemon.logs` writes `log`
+    # frames, `events.watch` writes events) has no `item` frames at all, and
+    # `_collect` would fold it to an empty result: a quiet "nothing" for a
+    # stream that said plenty. Those frames are the result, so keep them.
+    return _collect(
+        (
+            frame if frame.get("type") in _ENVELOPE_FRAMES else {"type": "item", "data": frame}
+            for frame in frames
+            if frame.get("type") != "heartbeat"
+        ),
+        op_id,
+    )
+
+
+#: The frames `_collect` understands; anything else is the operation's own.
+_ENVELOPE_FRAMES = frozenset({"meta", "item", "page", "end"})
 
 
 def _collect(frames: Iterator[dict[str, Any]], op_id: str) -> dict[str, Any]:

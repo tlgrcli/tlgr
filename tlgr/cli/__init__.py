@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Callable, MutableMapping
 
 import click
 
@@ -34,7 +35,37 @@ def _registry_op(cmd_name: str, rest: list[str]) -> str | None:
 
 
 class TlgrGroup(click.Group):
-    """Custom group that handles errors, sandboxing, and output formatting."""
+    """Custom group that handles errors, sandboxing, and output formatting.
+
+    Its subcommands are attached on first use. Building them means importing
+    every operation module, and nothing about `tlgr --version` needs one:
+    Click handles that flag while parsing the root options, before it looks
+    up a subcommand, so a lazily filled `commands` is never read on that path.
+    Every other way in (`--help`, a subcommand, `get_command`, completion,
+    `cli.commands["chat"]`) reads `commands` and so sees the full tree.
+    """
+
+    #: Fills `commands` the first time it is read; `None` once that happened.
+    _load_commands: Callable[[], object] | None = None
+    _commands: MutableMapping[str, click.Command]
+
+    @property
+    def commands(self) -> MutableMapping[str, click.Command]:
+        load = self._load_commands
+        if load is not None:
+            # Cleared before the call: the loader attaches commands through
+            # `add_command`, which reads this property again.
+            self._load_commands = None
+            try:
+                load()
+            except BaseException:
+                self._load_commands = load
+                raise
+        return self._commands
+
+    @commands.setter
+    def commands(self, value: MutableMapping[str, click.Command]) -> None:
+        self._commands = value
 
     def invoke(self, ctx: click.Context) -> None:
         try:
@@ -230,12 +261,6 @@ def cli(
 
 
 # ---------------------------------------------------------------------------
-# Import and register sub-groups
-# ---------------------------------------------------------------------------
-
-from tlgr.cli.gen import build_click_tree  # noqa: E402
-
-# ---------------------------------------------------------------------------
 # The generated tree
 # ---------------------------------------------------------------------------
 
@@ -247,9 +272,14 @@ def build_cli() -> click.Group:
     hand-written group, and with it the merge that let a v1 command and a
     generated one share a name: there is one source for what `tlgr` can do,
     so there is nothing left to reconcile.
+
+    It runs when `cli.commands` is first read rather than at import, and the
+    imports below are local for the same reason: `tlgr.ops` (every operation
+    module) and `tlgr.cli.gen` are most of the CLI's startup cost, and a
+    command that never looks at the tree should not pay it.
     """
     import tlgr.ops  # noqa: F401  — importing it is what populates the registry
-    from tlgr.cli.gen import set_dispatcher
+    from tlgr.cli.gen import build_click_tree, set_dispatcher
     from tlgr.transport import make_dispatcher, make_stream_dispatcher
 
     # Installing the transport here, rather than importing it in `gen.py`, is
@@ -268,4 +298,4 @@ def build_cli() -> click.Group:
     return cli
 
 
-build_cli()
+cli._load_commands = build_cli

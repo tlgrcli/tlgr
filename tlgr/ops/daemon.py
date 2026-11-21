@@ -317,6 +317,13 @@ SPEC_DAEMON_START = OperationSpec(
 )
 
 
+#: How long `daemon stop` waits past the grace before it falls back to SIGTERM.
+#: The daemon's teardown after the drain is bounded (each account's disconnect,
+#: a short grace for job actions and for requests the drain gave up on); this
+#: is that bound with room to spare, not a guess at how slow it usually is.
+STOP_TEARDOWN_S = 15.0
+
+
 class DaemonStopReq(Request):
     timeout: Annotated[
         int,
@@ -341,7 +348,11 @@ async def daemon_stop(ctx: OpContext, req: DaemonStopReq) -> LifecycleResult:
     with contextlib.suppress(Exception):
         _admin("stop", {"drain_s": float(req.timeout)})
 
-    deadline = time.monotonic() + max(1.0, float(req.timeout))
+    # The grace is the drain the daemon was asked for; the disconnects and the
+    # socket teardown come after it. Waiting for the grace alone signalled a
+    # daemon that was still stopping exactly as asked.
+    waited = max(1.0, float(req.timeout)) + STOP_TEARDOWN_S
+    deadline = time.monotonic() + waited
     while time.monotonic() < deadline:
         if read_pid(base) is None:
             return LifecycleResult(stopped=True, pid=pid)
@@ -349,12 +360,14 @@ async def daemon_stop(ctx: OpContext, req: DaemonStopReq) -> LifecycleResult:
 
     from tlgr.core.process import stop_daemon
 
+    # A SIGTERM while a stop is under way makes the daemon exit without
+    # finishing its teardown.
     stop_daemon(base)
     for _ in range(20):
         time.sleep(0.25)
         if read_pid(base) is None:
             return LifecycleResult(stopped=True, pid=pid)
-    raise DaemonError(f"the daemon (pid {pid}) did not stop within {req.timeout}s")
+    raise DaemonError(f"the daemon (pid {pid}) did not stop within {int(waited) + 5}s")
 
 
 SPEC_DAEMON_STOP = OperationSpec(

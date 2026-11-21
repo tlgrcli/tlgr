@@ -29,6 +29,8 @@ class ActivityTracker:
 
     in_flight: int = 0
     event_streams: int = 0
+    #: The part of `in_flight` that is job actions (a gateway read, react, …).
+    job_actions: int = 0
     transfers: int = 0
     pending_logins: int = 0
     webhook_enabled: bool = False
@@ -58,6 +60,14 @@ class ActivityTracker:
         self.event_streams = max(0, self.event_streams - 1)
         self.touch()
 
+    def begin_job_action(self) -> None:
+        self.job_actions += 1
+        self.begin_request()
+
+    def end_job_action(self) -> None:
+        self.job_actions = max(0, self.job_actions - 1)
+        self.end_request()
+
     def begin_transfer(self) -> None:
         self.transfers += 1
         self.touch()
@@ -78,6 +88,17 @@ class ActivityTracker:
             or self.jobs_running
             or self.webhook_enabled
         )
+
+    @property
+    def draining(self) -> int:
+        """The in-flight requests a shutdown drain should wait for.
+
+        Event streams never end on their own (the shutdown closes them), and a
+        job action can be cut short and resumed from `pending.json`. Waiting
+        for either only ever ran the drain to its deadline, which is how a
+        restart came to wait thirty seconds for nothing.
+        """
+        return max(0, self.in_flight - self.event_streams - self.job_actions)
 
     def idle_seconds(self) -> float:
         if self.busy:

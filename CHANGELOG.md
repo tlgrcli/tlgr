@@ -110,6 +110,22 @@ codes documented in `AGENT.md` are the public API.
 
 ### Fixed
 
+- **`tlgr daemon restart` completes, and the stopped daemon exits.** With a
+  `tlgr watch` (or any `events.watch` stream) attached, a stop drained for
+  the config's `drain_seconds` (30s) instead of the `--grace` the client
+  asked for (10s), so the restart reported "did not stop within 10s"; then
+  the IPC server waited aiohttp's 60s, twice, for the stream handler, which
+  never noticed the bus had closed its subscription, and the process stayed
+  up with every account stopped. Now live streams end with an `end` frame
+  (`reason: shutdown`, as ARCHITECTURE §6.11 always said) as soon as the
+  stop begins, the drain waits only for requests that finish on their own
+  and never past the requested `drain_s`, a job action stuck on Telegram
+  gets 2s and goes back to `pending.json`, a request the drain gives up on
+  is answered `RETRYABLE` rather than dropped, and the server cleanup waits
+  2s at most. A signal that arrives while a stop is under way exits at once.
+  `daemon stop` waits the grace plus 15s for the teardown before falling
+  back to SIGTERM.
+
 - **Webhook filters work.** Both halves of `[webhook.filters]` were dead.
   `chats` was checked against a list nothing ever filled, so setting it
   dropped every event that had a chat; `@name` entries are now resolved

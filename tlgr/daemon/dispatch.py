@@ -444,3 +444,18 @@ def in_flight(daemon: Daemon) -> Any:
         yield
     finally:
         daemon.activity.end_request()
+
+
+@contextlib.contextmanager
+def job_action(daemon: Daemon) -> Any:
+    """Count a job action: busy for the idle monitor, but not drained at shutdown.
+
+    The shutdown gives a running action a short grace and then cancels it; the
+    scheduler requeues it and `pending.json` resumes it at the next start, so
+    holding the whole drain for one stuck on Telegram buys nothing.
+    """
+    daemon.activity.begin_job_action()
+    try:
+        yield
+    finally:
+        daemon.activity.end_job_action()

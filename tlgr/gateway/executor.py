@@ -49,8 +49,8 @@ class DaemonOpRunner:
             protocol=PROTOCOL,
             flood_wait_max=JOB_FLOOD_WAIT_MAX,
         )
-        # Counted as a request, so the shutdown drain waits for an action
-        # that is half way through instead of cutting it off.
-        with dispatch.in_flight(self.daemon):
+        # Counted for idle accounting. The shutdown drain does not wait for it:
+        # the scheduler gives it a short grace, then cancels and requeues it.
+        with dispatch.job_action(self.daemon):
             _, _, result = await dispatch.execute(self.daemon, op_request)
         return to_builtins(result) if result is not None else None

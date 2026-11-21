@@ -44,15 +44,34 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 async def run(daemon: Daemon) -> None:
-    """Install signal handlers and run until told to stop."""
+    """Install signal handlers and run until told to stop.
+
+    The first SIGTERM/SIGINT asks for the graceful, bounded teardown. A signal
+    that arrives once a stop is already under way (a second signal, or the
+    SIGTERM `daemon stop` falls back to after its wait) means whoever is
+    waiting has run out of patience: the teardown is cancelled and the process
+    exits now. Before this the second signal set an event that was already
+    set, and the daemon went on waiting for whatever held it.
+    """
     loop = asyncio.get_running_loop()
+    main_task = asyncio.current_task()
+    forced = False
     # A task with no reference can be garbage-collected mid-flight, which is
     # COR-41: a SIGHUP reload that vanished halfway through.
     pending: set[asyncio.Task[None]] = set()
 
     def request_stop() -> None:
-        log.info("shutdown requested")
-        daemon.request_shutdown()
+        nonlocal forced
+        if not daemon.stop_requested:
+            log.info("shutdown requested")
+            daemon.request_shutdown()
+            return
+        if forced:
+            return
+        forced = True
+        log.warning("shutdown requested again; exiting without finishing the teardown")
+        if main_task is not None:
+            main_task.cancel()
 
     def request_reload() -> None:
         log.info("reload requested (SIGHUP)")
@@ -60,13 +79,29 @@ async def run(daemon: Daemon) -> None:
         pending.add(task)
         task.add_done_callback(pending.discard)
 
+    installed: list[signal.Signals] = []
     for sig in (signal.SIGTERM, signal.SIGINT):
         with contextlib.suppress(NotImplementedError):
             loop.add_signal_handler(sig, request_stop)
+            installed.append(sig)
     with contextlib.suppress(NotImplementedError, AttributeError):
         loop.add_signal_handler(signal.SIGHUP, request_reload)
+        installed.append(signal.SIGHUP)
 
-    await daemon.run()
+    try:
+        await daemon.run()
+    except asyncio.CancelledError:
+        if not forced:
+            raise
+        # 3.11+: clear the cancellation we asked for, so `asyncio.run` sees a
+        # task that finished rather than one still being cancelled.
+        uncancel = getattr(main_task, "uncancel", None)
+        if uncancel is not None:
+            uncancel()
+    finally:
+        for sig in installed:
+            with contextlib.suppress(Exception):
+                loop.remove_signal_handler(sig)
 
 
 async def _reload(daemon: Daemon) -> None:

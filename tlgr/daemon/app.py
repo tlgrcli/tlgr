@@ -62,6 +62,22 @@ __all__ = ["Daemon", "build_app"]
 
 _V1_PREFIX = "/v1/"
 
+#: How long the IPC server waits for a request handler that is still running
+#: once everything else has stopped, before cancelling it. aiohttp's default is
+#: 60 seconds, applied twice (wait, then cancel and wait again), and a handler
+#: blocked on something that will never answer kept a stopped daemon alive for
+#: all of it while the restart client had long given up.
+SERVER_SHUTDOWN_GRACE_S = 2.0
+
+#: How long a job action already talking to Telegram may run on at shutdown.
+#: It is cut short after this, not lost: the scheduler puts it back in the
+#: queue and `pending.json` resumes it at the next start.
+JOB_ACTION_GRACE_S = 2.0
+
+#: How long a live stream has to write its `end` frame once the shutdown has
+#: told it to stop.
+STREAM_CLOSE_GRACE_S = 1.0
+
 
 def _stamp(value: float | None) -> str | None:
     if not value:
@@ -120,6 +136,13 @@ class Daemon:
         self.ready = False
         self.shutting_down = asyncio.Event()
         self._shutdown_event = asyncio.Event()
+        #: The drain the stopping client asked for (`daemon stop --grace`), or
+        #: None for the config's `drain_seconds`.
+        self._requested_drain: float | None = None
+        #: The task of every IPC request whose handler is still running, and
+        #: the ones the shutdown cancelled because the drain ran out.
+        self._request_tasks: set[asyncio.Task[Any]] = set()
+        self._abandoned: set[asyncio.Task[Any]] = set()
         self._start_time = time.time()
         self._runner: web.AppRunner | None = None
         self._idle_task: asyncio.Task[None] | None = None
@@ -340,8 +363,23 @@ class Daemon:
             "problems": list(jobs_file.problems),
         }
 
-    def request_shutdown(self) -> None:
+    def request_shutdown(self, drain: float | None = None) -> None:
+        """Ask `run()` to stop, draining for *drain* seconds if given.
+
+        A client that says how long it will wait has to be given at most that
+        long: `daemon stop --grace 10` asked for ten seconds and the daemon used
+        to drain for the config's thirty, so the client gave up and reported a
+        failure while the daemon was still on its way down.
+        """
+        if drain is not None:
+            drain = max(0.0, float(drain))
+            if self._requested_drain is None or drain < self._requested_drain:
+                self._requested_drain = drain
         self._shutdown_event.set()
+
+    @property
+    def stop_requested(self) -> bool:
+        return self._shutdown_event.is_set()
 
     # -- the v2 status -----------------------------------------------------
 
@@ -391,7 +429,7 @@ class Daemon:
     async def bind(self) -> web.AppRunner:
         """Bind the socket and start serving with `ready: false` (ROB-07)."""
         app = build_app(self)
-        runner = web.AppRunner(app, access_log=None)
+        runner = web.AppRunner(app, access_log=None, shutdown_timeout=SERVER_SHUTDOWN_GRACE_S)
         await runner.setup()
         site = web.UnixSite(runner, str(self.paths.socket))
         await site.start()
@@ -431,7 +469,7 @@ class Daemon:
         self._idle_task = asyncio.create_task(self._idle_monitor(), name="tlgr-idle")
         self._jobs_task = asyncio.create_task(self._start_jobs(), name="tlgr-jobs")
         await self._shutdown_event.wait()
-        await self.shutdown()
+        await self.shutdown(drain=self._requested_drain)
 
     async def _start_jobs(self) -> None:
         """Load `jobs.yaml` and start every enabled job, once accounts are up.
@@ -467,7 +505,16 @@ class Daemon:
                 return
 
     async def shutdown(self, *, drain: float | None = None) -> None:
-        """The ordered teardown of §6.11."""
+        """The ordered teardown of §6.11, bounded so a restart can rely on it.
+
+        Setting `shutting_down` first is what ends the live streams
+        (`events.watch`, `job test`, `daemon logs --follow`): each one is
+        racing this event and closes with its `end` frame. They are not
+        drained, because they never finish on their own; neither are job
+        actions, which are cut short after `JOB_ACTION_GRACE_S` and resume from
+        `pending.json`. The drain waits only for client requests that will
+        finish, and never past *drain*.
+        """
         if self.shutting_down.is_set():
             return
         self.shutting_down.set()
@@ -490,8 +537,17 @@ class Daemon:
         # Wait for in-flight requests rather than cancelling them: a ten
         # minute scan that is killed at second 599 has cost the account the
         # requests it already made and produced nothing (COR-11).
-        while self.activity.in_flight > 0 and time.monotonic() < deadline:
+        # Only the requests that end on their own count here: an open event
+        # stream or a job action stuck on Telegram used to hold the drain to
+        # its deadline on every stop.
+        while self.activity.draining > 0 and time.monotonic() < deadline:
             await asyncio.sleep(0.05)
+        # The live streams were told to stop when `shutting_down` was set;
+        # this is only the moment they need to write their `end` frame.
+        streams_by = time.monotonic() + STREAM_CLOSE_GRACE_S
+        while self.activity.event_streams > 0 and time.monotonic() < streams_by:
+            await asyncio.sleep(0.02)
+        await self._cancel_requests()
 
         with contextlib.suppress(Exception):
             await self._job_runner.stop_all()
@@ -501,7 +557,7 @@ class Daemon:
         for scheduler in list(self._schedulers.values()):
             self.bus.remove_handler(scheduler.on_bus)
             with contextlib.suppress(Exception):
-                await scheduler.stop(timeout=min(5.0, max(0.5, deadline - time.monotonic())))
+                await scheduler.stop(timeout=JOB_ACTION_GRACE_S)
         # A half-written download keeps its `.part` file, so the next
         # `media download --resume` continues where the shutdown stopped it.
         with contextlib.suppress(Exception):
@@ -518,6 +574,43 @@ class Daemon:
             with contextlib.suppress(OSError):
                 path.unlink(missing_ok=True)
         log.info("daemon stopped")
+
+    async def _cancel_requests(self) -> None:
+        """Cancel the requests the drain gave up on, so each caller hears why.
+
+        A request waiting on something that will never answer (a flood-wait
+        sleep, an account that is not coming back) otherwise outlives the
+        drain, and the IPC server's cleanup then waits for it while every
+        account already reports stopped. Cancelled here, the caller gets a
+        RETRYABLE answer (see `activity_middleware`) instead of a reset.
+        """
+        left = [task for task in self._request_tasks if not task.done()]
+        if not left:
+            return
+        log.info(
+            "cancelling %d request(s) still running after the drain",
+            len(left),
+            extra={"count": len(left)},
+        )
+        for task in left:
+            self._abandoned.add(task)
+            task.cancel()
+        await asyncio.wait(left, timeout=SERVER_SHUTDOWN_GRACE_S)
+
+    def absorb_shutdown_cancel(self) -> bool:
+        """True when the current request was cancelled by `_cancel_requests`.
+
+        The caller then answers instead of re-raising; the cancellation is
+        cleared so the task can finish writing that answer.
+        """
+        task = asyncio.current_task()
+        if task is None or task not in self._abandoned:
+            return False
+        self._abandoned.discard(task)
+        uncancel = getattr(task, "uncancel", None)
+        if uncancel is not None:
+            uncancel()
+        return True
 
 
 # ---------------------------------------------------------------------------
@@ -673,6 +766,11 @@ async def flood_budget_middleware(request: web.Request, handler: Any) -> web.Str
         return await handler(request)
 
 
+def _stopped_mid_request() -> RetryableError:
+    """What a request cancelled by the shutdown is answered with."""
+    return RetryableError("the daemon stopped before this request finished; retry")
+
+
 @web.middleware
 async def activity_middleware(request: web.Request, handler: Any) -> web.StreamResponse:
     """Count the request, and refuse new work while shutting down (§6.11)."""
@@ -681,10 +779,24 @@ async def activity_middleware(request: web.Request, handler: Any) -> web.StreamR
         return _error_response(
             request, RetryableError("the daemon is shutting down; retry in a moment")
         )
+    task = asyncio.current_task()
     daemon.activity.begin_request()
+    if task is not None:
+        daemon._request_tasks.add(task)
     try:
         return await handler(request)
+    except asyncio.CancelledError:
+        if not daemon.absorb_shutdown_cancel():
+            raise
+        # The shutdown cancelled it after the drain ran out. Answer, rather
+        # than drop the connection: "retry once the daemon is back" is the
+        # truth, and a reset reads as a crash. (A stream answers in its own
+        # framing, in `_handle_op_stream`, before it gets here.)
+        return _error_response(request, _stopped_mid_request())
     finally:
+        if task is not None:
+            daemon._request_tasks.discard(task)
+            daemon._abandoned.discard(task)
         daemon.activity.end_request()
 
 
@@ -729,6 +841,12 @@ async def _handle_op_stream(
         return _error_response(request, exc, op=op_request.op)
     await stream.prepare(op=spec.id, account=op_request.account, request_id=op_request.request_id)
     started = time.monotonic()
+    live = "live-stream" in spec.tags
+    # A live stream is open-ended, so it is counted as a stream rather than as
+    # a request the shutdown drain should wait for.
+    if live:
+        daemon.activity.begin_stream()
+    stopped = False
     try:
         # `spec` is the same object `resolve_spec` returned above; the
         # execute() call is what runs the policy/account/timeout prologue.
@@ -739,11 +857,13 @@ async def _handle_op_stream(
             # frames would make a heartbeat indistinguishable from an event
             # for anybody reading the stream one line at a time.
             count = 0
-            async for frame in result:
+            frames = _until_shutdown(daemon, result) if live else result
+            async for frame in frames:
                 if not isinstance(frame, dict):  # pragma: no cover - impl contract
                     continue
                 await stream.write(frame)
                 count += 1
+            stopped = live and daemon.shutting_down.is_set()
         elif hasattr(result, "__aiter__"):
             # A `--all` walk paces itself against the account's own limiter,
             # inside the daemon: v1 looped in the client and hammered the
@@ -753,11 +873,57 @@ async def _handle_op_stream(
             )
         else:
             count = await _stream_result(stream, result)
+    except asyncio.CancelledError:
+        if not daemon.absorb_shutdown_cancel():
+            raise
+        # The response is already started, so the answer is the stream's own
+        # failing `end` frame rather than an error body.
+        return await stream.fail(_stopped_mid_request(), account=op_request.account)
     except Exception as exc:
         return await stream.fail(exc, account=op_request.account)
-    return await stream.end(
-        ok=True, count=count, elapsed_ms=int((time.monotonic() - started) * 1000)
-    )
+    finally:
+        if live:
+            daemon.activity.end_stream()
+    end: dict[str, Any] = {"ok": True, "count": count}
+    if stopped:
+        # Told apart from the stream ending on its own terms, so a watcher
+        # knows to reconnect (and resume with `--since`) rather than stop.
+        end["reason"] = "shutdown"
+    return await stream.end(**end, elapsed_ms=int((time.monotonic() - started) * 1000))
+
+
+async def _until_shutdown(daemon: Daemon, frames: Any) -> Any:
+    """Yield from *frames* until the daemon starts shutting down.
+
+    `events.watch` waits on its bus subscription with no deadline but its
+    `--follow-for`, and the bus closing that subscription at shutdown does not
+    wake it. Without this race an open `tlgr watch` kept the shutdown drain
+    busy to its deadline and then held the IPC server's cleanup until aiohttp
+    gave up on it, so the daemon reported every account stopped and never
+    exited. Closing the generator runs its own `finally` (the unsubscribe).
+    """
+    iterator = frames.__aiter__()
+    stopping = asyncio.ensure_future(daemon.shutting_down.wait())
+    try:
+        while True:
+            step = asyncio.ensure_future(iterator.__anext__())
+            await asyncio.wait({step, stopping}, return_when=asyncio.FIRST_COMPLETED)
+            if not step.done():
+                step.cancel()
+                with contextlib.suppress(asyncio.CancelledError, StopAsyncIteration, Exception):
+                    await step
+                return
+            try:
+                frame = step.result()
+            except StopAsyncIteration:
+                return
+            yield frame
+    finally:
+        stopping.cancel()
+        aclose = getattr(iterator, "aclose", None)
+        if aclose is not None:
+            with contextlib.suppress(Exception):
+                await aclose()
 
 
 async def _stream_result(stream: NdjsonResponse, result: Any) -> int:
@@ -829,11 +995,8 @@ async def handle_events(request: web.Request) -> web.StreamResponse:
         protocol=PROTOCOL,
         stream=True,
     )
-    daemon.activity.begin_stream()
-    try:
-        return await _handle_op_stream(request, daemon, op_request)
-    finally:
-        daemon.activity.end_stream()
+    # Counted as a stream by `_handle_op_stream`, like any live stream.
+    return await _handle_op_stream(request, daemon, op_request)
 
 
 async def handle_status(request: web.Request) -> web.Response:
@@ -868,8 +1031,9 @@ async def handle_admin(request: web.Request) -> web.Response:
     if action == "stop":
         drain = float(body.get("drain_s", daemon.config.daemon.drain_seconds))
         # Answer first, then stop: a caller that never hears "stopping" cannot
-        # tell a graceful shutdown from a crash.
-        asyncio.get_running_loop().call_later(0.01, daemon.request_shutdown)
+        # tell a graceful shutdown from a crash. The drain is the one the caller
+        # asked for, because the caller is waiting exactly that long.
+        asyncio.get_running_loop().call_later(0.01, daemon.request_shutdown, drain)
         result = {"stopping": True, "drain_s": drain}
     elif action == "reload":
         result = await _reload(daemon, body.get("what") or ["config", "jobs", "policy"])

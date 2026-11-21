@@ -23,8 +23,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import logging
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -198,8 +200,16 @@ def resolve_spec(op_id: str) -> OperationSpec:
     return spec
 
 
-def _peer_ref_fields(request: type[msgspec.Struct]) -> dict[str, bool]:
-    """`{field name: is a list}` for every field typed as a `PeerRef`."""
+@functools.cache
+def _peer_ref_fields(request: type[msgspec.Struct]) -> Mapping[str, bool]:
+    """`{field name: is a list}` for every field typed as a `PeerRef`.
+
+    Cached per request type, because it runs on every `/v1/op` call and the
+    request structs use postponed annotations, so `get_type_hints` would
+    `eval` every annotation string each time. The answer depends on the type
+    alone. It is handed out as a read-only view, since every caller shares
+    the one cached mapping.
+    """
     import types as pytypes
     import typing
 
@@ -223,7 +233,7 @@ def _peer_ref_fields(request: type[msgspec.Struct]) -> dict[str, bool]:
             break
         if node is PeerRef:
             out[name] = repeated
-    return out
+    return pytypes.MappingProxyType(out)
 
 
 def normalise_peer_refs(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, Any]:

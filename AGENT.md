@@ -1391,6 +1391,58 @@ and enforced inside the daemon, so an alias cannot be used to get past it:
 operation exits 6. It is a usability guard, not a sandbox — anything that can
 reach the socket can reach the session. See `SECURITY.md`.
 
+## Python Library
+
+For bulk jobs, call the daemon from Python instead of starting `tlgr` once per
+operation. A CLI invocation costs about a second of Python startup on top of
+the daemon round trip (`meta.elapsed_ms`); a `Client` pays the startup once.
+
+```python
+from tlgr import Client
+from tlgr.client import RateLimitError, SpamFlagError, TlgrError
+
+tg = Client("work", flood_wait_max=0)    # account, never inferred
+env = tg.op("message.send", {"chat": "@alice", "text": "hi"})
+# → {"ok": true, "op": "message.send", "account": "work", "result": {...}, "meta": {...}}
+
+msgs = tg.result("message.list", {"chat": "@alice"}, limit=20)  # = --results-only
+everything = tg.op("chat.list", fetch_all=True)                 # = --all, one envelope
+for frame in tg.stream("message.list", {"chat": "@alice"}, fetch_all=True):
+    if frame["type"] == "item":
+        print(frame["data"]["id"])
+```
+
+- `Client(account=None, *, home=None, timeout=None, flood_wait_max=None,
+  enable_commands=None, auto_start=None, allow_daemon_restart=False,
+  token=None)`.
+- `op(op_id, params=None, *, account=None, dry_run=False, flood_wait_max=None,
+  limit=None, cursor=None, fetch_all=False, timeout=None) -> dict`: the
+  `--json` envelope. Peers are strings, as on the command line.
+- `result(op_id, params=None, **kwargs)`: `op(...)["result"]`.
+- `stream(...)`: the NDJSON frames (`meta`, `item`, `page`, `end`, or an
+  operation's own vocabulary such as `events.watch`). An error `end` frame
+  raises; a stream that drops without `end` raises `RetryableError`.
+- `status()`: `GET /v1/status`.
+
+Errors are the CLI's, raised: `RateLimitError` (exit 7, `.wait_seconds`),
+`SpamFlagError` / `AccountFrozenError` (exit 9: stop all sends from that
+account), `NotFoundError` (5), `AccountRequiredError` (2), `RetryableError`
+(8), `IndeterminateError` (13, unknown, never a no). Each has `.code` and
+`.exit_code`; `TlgrError` is the base. A mutating call is never retried after
+the request was sent.
+
+Guards: the account is required for any operation that needs one, with no
+fallback to `TLGR_ACCOUNT`, the configured default or the active alias (as if
+`require_account` were always on). A `.production` home is refused unless
+`TLGR_ALLOW_PRODUCTION_HOME=1`. `TLGR_ENABLE_COMMANDS` (or
+`enable_commands=`) is checked before the request leaves. Unlike the CLI, a
+daemon speaking an older protocol is not restarted unless
+`allow_daemon_restart=True`.
+
+A `Client` holds no socket between calls and is safe to share between
+threads. The default `timeout` (930 s) outlasts every operation's own
+`timeout_s`, which the daemon enforces; pass `timeout=` for a live stream.
+
 ## Self-Discovery
 
 Run `tlgr schema --json` for the full machine-readable CLI schema with

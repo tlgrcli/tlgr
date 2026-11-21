@@ -783,6 +783,41 @@ answer any other way:
 `--select` projects fields by dot path. Paginated operations return
 `{items, has_more, next_cursor, total}` with an opaque signed cursor.
 
+### Python library for bulk jobs
+
+Every `tlgr --json ...` invocation starts Python and imports the CLI before it
+reaches the daemon: about a second, against a round trip of a fifth of that.
+A script that loops over thousands of operations through the CLI spends most
+of its time starting Python. `tlgr.Client` pays that once:
+
+```python
+import time
+
+from tlgr import Client
+from tlgr.client import RateLimitError, SpamFlagError
+
+tg = Client("work")  # the account is required: it is never guessed
+
+for chat, text in rows:
+    try:
+        envelope = tg.op("message.send", {"chat": chat, "text": text})
+    except RateLimitError as exc:  # exit 7 on the CLI
+        time.sleep(exc.wait_seconds)
+    except SpamFlagError:  # exit 9: stop sending from this account
+        break
+```
+
+`op(op_id, params)` takes any operation id (the ones `tlgr schema` lists)
+and the request fields as a dict, and returns the envelope `--json` prints.
+`result()` returns only `result`, `op(..., fetch_all=True)` walks every page,
+and `stream()` yields the NDJSON frames of a streaming operation. Failures
+raise the daemon's classified error (`RateLimitError.wait_seconds`,
+`SpamFlagError`, `NotFoundError`, ...), each carrying the `code` and
+`exit_code` the CLI would exit with. It keeps the CLI's guards: a
+`.production` home is refused, `TLGR_ENABLE_COMMANDS` is honoured, and there
+is no default-account fallback at all. Importing it does not import the CLI,
+the operation registry or Telethon. See [AGENT.md](AGENT.md#python-library).
+
 ### Stable exit codes
 
 ```bash

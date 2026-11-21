@@ -66,6 +66,12 @@ class TlgrGroup(click.Group):
         if enabled and cmd_name and _registry_op(cmd_name, rest) is not None:
             return cmd_name, cmd, rest
 
+        # `batch` is not an operation, only a way to run many of them, so it
+        # has nothing of its own to allow: it checks every line against the
+        # allowlist by canonical id, through the same `run_op` as above.
+        if enabled and cmd_name == "batch":
+            return cmd_name, cmd, rest
+
         if enabled and cmd_name:
             allow = {p.strip().lower() for p in enabled.split(",") if p.strip()}
             if allow and "*" not in allow and "all" not in allow:
@@ -253,6 +259,12 @@ def build_cli() -> click.Group:
 
     for name, command in build_click_tree().items():
         cli.add_command(command, name)
+
+    # The one command that is not an operation: it runs operations, one per
+    # line of input, through the same `run_op` every generated command uses.
+    from tlgr.cli.batch import batch_command
+
+    cli.add_command(batch_command, "batch")
     return cli
 
 

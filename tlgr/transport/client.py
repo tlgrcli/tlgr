@@ -35,7 +35,7 @@ from tlgr.core.errors import (
     TlgrError,
     UsageError,
 )
-from tlgr.core.paths import TlgrPaths
+from tlgr.core.paths import TlgrPaths, default_base
 from tlgr.models.envelope import OpRequest
 from tlgr.transport import autostart
 from tlgr.transport.ndjson import parse_frame
@@ -707,14 +707,29 @@ def make_dispatcher(base: Path | None = None) -> Any:
     by canonical id and short-circuited `--dry-run`; all that is left is the
     round trip. Keeping it that thin is what makes the CLI testable without a
     daemon and the daemon testable without a CLI.
+
+    The client is built once and reused. A single CLI call makes one request
+    and never notices; `tlgr batch` makes thousands from one process, and a
+    fresh client per call would re-read the config and re-probe
+    `/v1/status` before every one of them. The client still holds no socket
+    between calls, and it forgets that the daemon was ready the moment a
+    connection fails, so reuse changes nothing about recovery. The timeout
+    is passed per call because it is the operation's, not the client's.
     """
+    clients: dict[tuple[Path, bool], DaemonClient] = {}
+
+    def client_for(state: Any) -> DaemonClient:
+        # Keyed by the home as well: with `base=None` it is `$TLGR_HOME`, read
+        # now, so a process that moves it (a test suite) never reuses a client
+        # that points at the previous home.
+        key = (Path(base) if base is not None else default_base(), bool(state.no_daemon_restart))
+        if key not in clients:
+            clients[key] = DaemonClient(key[0], no_restart=key[1])
+        return clients[key]
 
     def dispatch(spec: Any, request: Any, state: Any) -> dict[str, Any]:
-        client = DaemonClient(
-            base,
-            timeout=float(state.timeout) if state.timeout else float(spec.timeout_s),
-            no_restart=bool(state.no_daemon_restart),
-        )
+        client = client_for(state)
+        timeout = float(state.timeout) if state.timeout else float(spec.timeout_s)
         common: dict[str, Any] = {
             "account": state.account or "",
             "dry_run": bool(state.dry_run),
@@ -725,7 +740,7 @@ def make_dispatcher(base: Path | None = None) -> Any:
         }
         if spec.stream or common["fetch_all"]:
             return _collect(client.op_stream(spec.id, request, **common), spec.id)
-        return client.op(spec.id, request, idempotent=spec.idempotent, **common)
+        return client.op(spec.id, request, idempotent=spec.idempotent, timeout=timeout, **common)
 
     return dispatch
 

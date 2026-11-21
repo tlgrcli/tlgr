@@ -46,8 +46,10 @@ _PROBE = textwrap.dedent(
         for command in group.commands.values():
             if isinstance(command, click.Group):
                 count += built(command)
-            else:
-                count += not getattr(command, "_params_pending", False)
+            elif hasattr(command, "_params_pending"):
+                # Generated operation commands only: a hand-written command
+                # such as `batch` has a few static options and no lazy build.
+                count += not command._params_pending
         return count
 
     print(json.dumps({

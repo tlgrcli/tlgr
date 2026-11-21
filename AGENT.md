@@ -1354,6 +1354,78 @@ silence. `--results-only` prints v1's line shape
 `--since <seq>` replays the daemon's ring buffer first; `seq` is per account,
 monotonic and persisted, so it survives a daemon restart.
 
+### Batch
+
+```
+tlgr batch [FILE] [-a ALIAS] [--stop-on-error] [--yes] [--dry-run]
+           [--select FIELDS] [--flood-wait-max N] [--timeout S]
+→ newline-delimited JSON to stdout, one record per non-blank input line
+```
+
+Runs many operations from one process. Every `tlgr` call pays for a Python
+start-up (most of a second); a loop that sends 2,000 messages one call at a
+time is bounded by that, not by Telegram. `batch` reads JSONL from FILE or
+stdin and runs the lines **in order, one at a time**, over the same transport
+as every other command, writing each result as soon as it has it.
+
+One input line:
+
+```json
+{"op": "message.send", "params": {"chat": "@alice", "text": "hi"}, "account": "work", "id": "m1"}
+```
+
+| Key | Meaning |
+|---|---|
+| `op` | Operation id or alias: the command path joined by dots (`message send` is `message.send`; `send` and `msg.send` work too) |
+| `params` | Request fields by name, as `tlgr schema <op>` and `docs/reference/` list them: positionals by their name (`chat`, `msg_id`), flags with `-` as `_` (`reply_to`; `reply-to` is accepted) |
+| `account` | Account for this line; defaults to `-a` / `TLGR_ACCOUNT` |
+| `id` | Any JSON value, echoed on the result line |
+| `dry_run`, `yes` | Per-line `--dry-run` / `--yes` |
+| `limit`, `cursor`, `all`, `flood_wait_max` | As the flags of the same name |
+
+A string parameter is parsed exactly as its flag would parse it (`"@alice"`,
+`"-90m"`, a message link), and a bad one is the same USAGE error naming the
+same field. Secrets are never accepted inline, only `<name>_env` /
+`<name>_file`; `-` (stdin/stdout) is refused for path and JSON fields.
+`watch`-style live streams cannot run inside a batch. An unknown key on a line
+is a USAGE error, so a typo does not silently drop parameters.
+
+One output line is the operation's `--json` envelope plus three keys:
+
+```json
+{"line": 1, "id": "m1", "ok": true, "op": "message.send", "account": "work",
+ "result": {"id": 123, ...}, "meta": {"request_id": "...", "flood_wait_slept": 0}, "exit_code": 0}
+{"line": 2, "id": "m2", "ok": false, "op": "message.send", "account": "work",
+ "error": {"code": "PEER_FLOOD", "exit_code": 9, ...}, "exit_code": 9, "aborted": true}
+```
+
+`line` is the 1-based input line (blank lines are skipped but still counted),
+and `exit_code` is what that single command would have exited with, so `3`
+(empty) and `13` (indeterminate) appear on `ok: true` lines too. A summary
+line goes to stderr; stdout carries records only.
+
+Error policy:
+
+- A failing line is reported and the batch **continues**, unless
+  `--stop-on-error` is given.
+- A **spam flag** (`PEER_FLOOD`, `ACCOUNT_FROZEN`, exit 9) or an
+  **unreachable daemon** (exit 11) always stops the batch: the failing line
+  carries `"aborted": true` and the rest of the input is not read.
+- Rate limits behave as they do for one command: waits within
+  `--flood-wait-max` are slept in the daemon and reported as
+  `meta.flood_wait_slept`; a longer one is that line's `RATE_LIMITED` error
+  with `wait_seconds`.
+
+Exit code: the abort's code if the batch was aborted; else the first failed
+line's code; else the first non-zero success (3 or 13); else 0.
+
+Nothing is bypassed: each line goes through the same path as the single
+command, so `--enable-commands` (per line, by canonical id), the daemon's
+policy, `--dry-run`, account resolution and the production-home guard all
+apply. A destructive operation needs `--yes` on the batch or `"yes": true` on
+its line; it never prompts, because stdin is the input. With
+`require_account` on, every line needs an explicit account (its own, or `-a`).
+
 ## Error Response Shape
 
 ```json

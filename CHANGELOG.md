@@ -9,6 +9,17 @@ codes documented in `AGENT.md` are the public API.
 
 ### Added
 
+- **`tlgr batch`: many operations from one process.** Reads JSONL
+  (`{"op": "message.send", "params": {...}, "account": "...", "id": ...}`)
+  from stdin or a file, runs the lines in order over the existing transport,
+  and streams one result per line: the `--json` envelope plus `line`, the
+  echoed `id` and the `exit_code` the single command would have had. It
+  removes the per-call Python start-up that bounded bulk scripts. Failures
+  continue by default (`--stop-on-error` to stop); a spam flag or an
+  unreachable daemon always stops the batch. Every guard of the single
+  command applies per line (`--enable-commands`, daemon policy, `--dry-run`,
+  `--yes` for destructive operations, `require_account`, the production-home
+  guard). See `AGENT.md`, "Batch".
 - **`tlgr.Client`, a Python library for bulk jobs.** `from tlgr import
   Client`, then `Client("work").op("message.send", {...})` as many times as
   you like: Python and the CLI are loaded once instead of once per

@@ -14,7 +14,7 @@ import asyncio
 import types
 import typing
 import uuid
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -50,6 +50,7 @@ __all__ = [
     "LocalContext",
     "build_click_tree",
     "build_command",
+    "request_from_params",
     "run_live",
     "run_op",
     "set_dispatcher",
@@ -481,6 +482,75 @@ def _build_request(spec: OperationSpec, fields: list[_Field], values: dict[str, 
         if " - at `$." in message:
             field = message.split(" - at `$.", 1)[1].rstrip("`")
         raise UsageError(message, field=field) from exc
+
+
+def request_from_params(spec: OperationSpec, params: Mapping[str, Any]) -> Any:
+    """Build *spec*'s request from a JSON-style mapping, parsed as the CLI parses.
+
+    Keys are request field names (`reply_to`; `reply-to` is accepted too), the
+    same names `tlgr schema` and the reference docs show. A string value goes
+    through the Click type its flag would use, so `"@alice"`, `"-90m"` and a
+    `t.me/…/42` link mean what they mean on the command line, and a bad one
+    is the same USAGE error naming the same field. Structured values (numbers,
+    booleans, objects) are handed to msgspec as they are.
+
+    A secret is never accepted inline: only `<name>_env` and `<name>_file`,
+    as on the command line. `-` (stdin or stdout) is refused for path and JSON
+    fields, because the caller of this function is reading stdin itself.
+    """
+    fields = _fields(spec.request)
+    by_name = {f.name: f for f in fields}
+    secrets = {f.name for f in fields if f.cli.get("secret")}
+    values: dict[str, Any] = {}
+    for key, value in params.items():
+        name = str(key).replace("-", "_")
+        if name in secrets:
+            raise UsageError(
+                f"{name} is a secret and is never accepted inline; "
+                f"pass {name}_env or {name}_file instead",
+                field=name,
+            )
+        if any(name in (f"{s}_env", f"{s}_file") for s in secrets):
+            values[name] = value
+            continue
+        if any(name == f"{s}_stdin" for s in secrets):
+            raise UsageError(f"{name} reads stdin, which is not available here", field=name)
+        found = by_name.get(name)
+        if found is None:
+            known = ", ".join(sorted(by_name)) or "none"
+            raise UsageError(
+                f"{spec.id} has no parameter {key!r} (known: {known})",
+                field=str(key),
+            )
+        values[name] = _coerce_param(found, value)
+    return _build_request(spec, fields, values)
+
+
+def _coerce_param(f: _Field, value: Any) -> Any:
+    """One mapping value as the Click parameter for *f* would have produced it."""
+    if value is None:
+        return None
+    kind = str(f.cli.get("kind", ""))
+    click_type = _click_type(f.base, kind, f.cli.get("choices") or ())
+
+    def one(item: Any) -> Any:
+        if kind in ("path", "json") and item == "-":
+            raise UsageError(
+                f"{f.name}: '-' means stdin/stdout, which is not available here",
+                field=f.name,
+            )
+        if kind == "json" and not isinstance(item, str):
+            return msgspec.json.encode(item).decode()
+        if isinstance(item, (dict, list)) or (f.base is bool and isinstance(item, bool)):
+            return item
+        try:
+            return click_type.convert(item, None, None)
+        except click.BadParameter as exc:
+            raise UsageError(f"{f.name}: {exc.format_message()}", field=f.name) from exc
+
+    if f.container in (list, tuple, set):
+        return [one(item) for item in (value if isinstance(value, list) else [value])]
+    return one(value)
 
 
 def _parameters(spec: OperationSpec, fields: list[_Field]) -> list[click.Parameter]:

@@ -245,6 +245,17 @@ _CATALOGUE: tuple[tuple[ConfigKey, tuple[str, str]], ...] = (
         50,
         "Messages re-read per channel after a differenceTooLong.",
     ),
+    _key(
+        "daemon.catch_up_interval",
+        "daemon",
+        "catch_up_interval",
+        "int",
+        0,
+        "Seconds between forced catch-ups (one getDifference each) while an "
+        "account is online; 0 is off. Values below 30 are raised to 30. Bounds "
+        "how late an update missed on a flaky network can arrive.",
+        restart=True,
+    ),
     # -- flood -------------------------------------------------------------
     _key(
         "flood.sleep_threshold",

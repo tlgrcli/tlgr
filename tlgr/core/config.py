@@ -90,6 +90,9 @@ class DaemonConfig(_Section):
     event_workers: int = 8
     resync_depth: int = 50
     state_save_interval: int = 60
+    #: Seconds between forced catch-ups (one `getDifference` each); 0 is off.
+    #: Positive values below 30 are raised to 30.
+    catch_up_interval: int = 0
 
 
 class IdentityConfig(_Section):

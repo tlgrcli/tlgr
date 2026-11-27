@@ -9,9 +9,13 @@ as present and healthy. That is COR-13 and it is the reason this file exists.
 
 The rules it enforces:
 
-* **the supervisor owns backoff**, not Telethon (`connection_retries=None`),
-  so a drop is a state transition rather than an exception thrown at whoever
-  happened to be making a request;
+* **the supervisor owns backoff**, not Telethon. Telethon gets one quick
+  retry (`connection_retries=1`) to ride out a reset connection, then
+  gives up and resolves `disconnected`, and the supervisor's jittered backoff
+  takes over, so a drop is a state transition rather than an exception thrown
+  at whoever happened to be making a request. `None` is not "off": Telethon
+  reads it as retry forever, once a second, which hid every drop from the
+  supervisor and left an account that started offline in `starting` for good;
 * **`catch_up()` runs after every reconnect**, not only at construction.
   Telethon's own reconnect handler calls `get_me()` and nothing else, so an
   account that was down for ten minutes silently misses everything that
@@ -49,7 +53,13 @@ from tlgr.daemon.singleton import FileLock, LockBusy
 
 log = logging.getLogger("tlgr.daemon.session")
 
-__all__ = ["AccountSession", "SessionState", "backoff_delays"]
+__all__ = [
+    "MIN_CATCH_UP_INTERVAL",
+    "AccountSession",
+    "SessionState",
+    "backoff_delays",
+    "normalise_catch_up_interval",
+]
 
 #: 1, 2, 4, 8, 16, 32, 60, 60… with ±20 % jitter, capped at a minute (§6.3).
 _BACKOFF_CAP = 60.0
@@ -62,6 +72,17 @@ _CLOCK_TICK_SECONDS = 30.0
 
 #: The belt-and-braces resync interval for an account that has heard nothing.
 _SILENCE_CATCHUP_SECONDS = 900.0
+
+#: How many times Telethon itself retries a dropped or failed connection before
+#: it gives up and the supervisor's backoff takes over. Small and finite on
+#: purpose: `None` means retry forever inside Telethon. Telethon nests the
+#: count: a reconnect makes `retries` rounds of `retries + 1` connection
+#: attempts, so 1 means two attempts for a first connect and for a reconnect.
+_TELETHON_CONNECTION_RETRIES = 1
+
+#: The floor for `[daemon] catch_up_interval`. Each catch-up is one
+#: `updates.getDifference`; more often than this is load without benefit.
+MIN_CATCH_UP_INTERVAL = 30
 
 
 class SessionState:
@@ -85,6 +106,19 @@ def backoff_delays(attempt: int, *, cap: float = _BACKOFF_CAP) -> float:
     return base * (1.0 + random.uniform(-_JITTER, _JITTER))
 
 
+def normalise_catch_up_interval(seconds: float | None) -> int:
+    """`[daemon] catch_up_interval` as the supervisor uses it.
+
+    Zero or less (or unset) is off. A positive value below
+    `MIN_CATCH_UP_INTERVAL` is raised to it, so a typo cannot turn the timer
+    into a stream of `getDifference` calls.
+    """
+    value = int(seconds or 0)
+    if value <= 0:
+        return 0
+    return max(MIN_CATCH_UP_INTERVAL, value)
+
+
 @dataclass
 class ClientOptions:
     """Everything `TelegramClient(...)` needs that is not the session path."""
@@ -93,6 +127,7 @@ class ClientOptions:
     api_hash: str
     entity_cache_limit: int = 20000
     request_retries: int = 5
+    connection_retries: int = _TELETHON_CONNECTION_RETRIES
     connect_timeout: int = 10
     flood_sleep_threshold: int = 120
     device_model: str = ""
@@ -109,9 +144,12 @@ class ClientOptions:
 def build_client(session_path: Path, options: ClientOptions) -> Any:
     """Construct the Telethon client tlgr wants (§6.2).
 
-    `connection_retries=None` is the load-bearing argument: it means "retry
-    forever inside Telethon" is *off*, and the supervisor below decides what a
-    disconnection means.
+    `connection_retries` is the load-bearing argument. It must be a small
+    finite number: Telethon treats `None` (and any negative value) as retry
+    forever at a fixed one-second delay, so `disconnected` never resolves, the
+    supervisor below never sees the drop, and `connect()` on a machine with no
+    network never returns. With a finite count Telethon absorbs a reset
+    connection and then hands the outage to the supervisor.
     """
     from telethon import TelegramClient
 
@@ -120,7 +158,7 @@ def build_client(session_path: Path, options: ClientOptions) -> Any:
         "sequential_updates": True,
         "raise_last_call_error": True,
         "entity_cache_limit": int(options.entity_cache_limit),
-        "connection_retries": None,
+        "connection_retries": max(0, int(options.connection_retries)),
         "retry_delay": 1,
         "request_retries": int(options.request_retries),
         "auto_reconnect": True,
@@ -159,6 +197,7 @@ class AccountSession:
         resync_depth: int = 50,
         peers_path: Path | None = None,
         dialog_scan_max: int = 5000,
+        catch_up_interval: int = 0,
     ) -> None:
         self.alias = alias
         self.session_path = session_path
@@ -173,6 +212,7 @@ class AccountSession:
         self.resync_depth = resync_depth
         self.peers_path = peers_path
         self.dialog_scan_max = dialog_scan_max
+        self.catch_up_interval = normalise_catch_up_interval(catch_up_interval)
         self._resolver: Any = None
 
         self.client: Any = None
@@ -191,6 +231,8 @@ class AccountSession:
         self._ready = asyncio.Event()
         self._supervisor: asyncio.Task[None] | None = None
         self._tickers: list[asyncio.Task[None]] = []
+        self._warmup: asyncio.Task[None] | None = None
+        self._warmed = False
         self._job_client: Any = None
         self._flood_budgets: list[int] = []
 
@@ -251,6 +293,11 @@ class AccountSession:
         for task in self._tickers:
             task.cancel()
         self._tickers = []
+        if self._warmup is not None:
+            self._warmup.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._warmup
+            self._warmup = None
         if self._supervisor is not None:
             self._supervisor.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
@@ -311,6 +358,8 @@ class AccountSession:
             self.client = self._factory(self.session_path, self.options)
             await self._client_built()
             self._install_hooks()
+        elif self.connected_since is not None and not self.client.is_connected():
+            await self._discard_dead_connection()
 
         await self.client.connect()
         if not await self.client.is_user_authorized():
@@ -323,23 +372,76 @@ class AccountSession:
         await self._after_connect()
         self._set_state(SessionState.ONLINE)
         self._start_tickers()
+        self._start_warmup()
 
         disconnected = getattr(self.client, "disconnected", None)
         if disconnected is None:
             return
-        await disconnected
+        try:
+            await disconnected
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # Telethon ran out of its own reconnect attempts and resolved the
+            # future with the last error. That is a dropped connection, the
+            # same as a clean resolve, unless the error says the session is
+            # gone for good.
+            if is_fatal_auth(exc):
+                raise
+            log.warning(
+                "account %s lost its connection: %s: %s",
+                self.alias,
+                type(exc).__name__,
+                exc,
+                extra={"account": self.alias},
+            )
+
+    async def _discard_dead_connection(self) -> None:
+        """Tear down what is left of a connection Telethon gave up on.
+
+        When Telethon's own reconnect attempts run out it closes the sender,
+        but the client's update loop can stay parked on the update queue for
+        up to fifteen minutes. A `connect()` on top of that would start a
+        second update loop next to the stale one, and both would apply the
+        same differences. A full `disconnect()` cancels both loops and saves
+        the update state (the box was loaded by the earlier connect, so that
+        write is correct); the session file reopens on the next `connect()`.
+        """
+        with contextlib.suppress(Exception):
+            await self.client.disconnect()
 
     async def _after_connect(self) -> None:
-        """Warm the entity cache, then catch up (§6.3).
+        """Catch up, then announce presence (§6.3).
 
-        The warm-up is not an optimisation: `catch_up()` skips channels whose
-        `pts` it has never seen, so without one `iter_dialogs` pass a fresh
-        session silently gets no channel updates at all.
+        The dialog warm-up used to run here, before the account went online,
+        so a large account was unusable for minutes after every restart. It
+        now runs in the background once the account is online
+        (`_start_warmup`). Catch-up does not depend on it: channels whose
+        `pts` the session already holds are caught up from that state, and a
+        channel the session has never seen has no `pts` to catch up from
+        whichever runs first.
         """
-        await self._warm_entity_cache()
         await self.catch_up()
         if self.presence == "online":
             await self._set_presence(offline=False)
+
+    def _start_warmup(self) -> None:
+        """Run the dialog sweep in the background, once per session.
+
+        One `iter_dialogs` pass seeds access hashes into Telethon's session and
+        `pts` for channels the update state has never seen, so their later
+        gaps can be fetched. Nothing waits for it: a request for a peer the
+        sweep has not reached yet resolves it the way it always could (session
+        cache, then the network, then the resolver's own dialog scan). The
+        client and its caches survive reconnects, so a sweep that finished is
+        not repeated; one that failed or was cut off by a drop runs again on
+        the next connect.
+        """
+        if self._warmed or (self._warmup is not None and not self._warmup.done()):
+            return
+        self._warmup = asyncio.create_task(
+            self._warm_entity_cache(), name=f"tlgr-warmup-{self.alias}"
+        )
 
     async def _warm_entity_cache(self) -> None:
         iterator = getattr(self.client, "iter_dialogs", None)
@@ -354,6 +456,7 @@ class AccountSession:
         except Exception as exc:
             log.debug("entity cache warm-up failed for %s: %s", self.alias, exc)
         else:
+            self._warmed = True
             log.debug("warmed %d dialogs for %s", count, self.alias)
 
     async def catch_up(self) -> None:
@@ -399,6 +502,7 @@ class AccountSession:
             )
 
     def _install_hooks(self) -> None:
+        compat.install_state_guard(self.client)
         compat.install_reconnect_hook(self.client, self._on_reconnect)
         compat.install_too_long_hook(self.client, self._on_too_long)
 
@@ -431,6 +535,10 @@ class AccountSession:
             asyncio.create_task(self._state_saver(), name=f"tlgr-state-{self.alias}"),
             asyncio.create_task(self._clock_watcher(), name=f"tlgr-clock-{self.alias}"),
         ]
+        if self.catch_up_interval:
+            self._tickers.append(
+                asyncio.create_task(self._periodic_catch_up(), name=f"tlgr-catchup-{self.alias}")
+            )
 
     async def _state_saver(self) -> None:
         while not self._stopping:
@@ -470,6 +578,19 @@ class AccountSession:
             ):
                 await self.catch_up()
                 quiet_since = time.monotonic()
+
+    async def _periodic_catch_up(self) -> None:
+        """`[daemon] catch_up_interval`: ask for missed updates on a timer.
+
+        Off by default. Telethon fetches a difference on its own only after
+        fifteen minutes without updates; on a flaky network this bounds how
+        late a missed update can reach `watch`, webhooks and jobs. When nothing
+        was missed the server answers with an empty difference.
+        """
+        while not self._stopping:
+            await asyncio.sleep(self.catch_up_interval)
+            if self.connected and self.state == SessionState.ONLINE:
+                await self.catch_up()
 
     async def _set_presence(self, *, offline: bool) -> None:
         """`account.updateStatus`. Telethon never sends it, so tlgr reads as offline."""

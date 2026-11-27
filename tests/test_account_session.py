@@ -327,3 +327,320 @@ class TestSessionManager:
             assert results["broken"].startswith("error:")
         finally:
             await manager.stop_all()
+
+
+def _refused_connection():
+    """A Telethon connection class whose every connect is refused, instantly.
+
+    What a laptop with no network looks like to Telethon: `_try_connect`
+    catches the `OSError`, sleeps `retry_delay` and tries again.
+    """
+    from telethon.network.connection import ConnectionTcpFull
+
+    class Refused(ConnectionTcpFull):
+        async def _connect(self, timeout=None, ssl=None):
+            raise ConnectionRefusedError("network is unreachable (test)")
+
+    return Refused
+
+
+def _seed_update_state(path: Path, pts: int) -> None:
+    import datetime
+
+    from telethon.sessions import SQLiteSession
+    from telethon.tl import types
+
+    session = SQLiteSession(str(path))
+    stamp = datetime.datetime(2026, 11, 1, tzinfo=datetime.timezone.utc)
+    session.set_update_state(0, types.updates.State(pts, 7, stamp, 3, 0))
+    session.save()
+    session.close()
+
+
+def _saved_pts(path: Path) -> int:
+    from telethon.sessions import SQLiteSession
+
+    session = SQLiteSession(str(path))
+    try:
+        state = session.get_update_state(0)
+        return int(state.pts) if state is not None else -1
+    finally:
+        session.close()
+
+
+class TestReconnect:
+    """tlgrcli/tlgr#60: catch-up after reconnect, and who owns the backoff."""
+
+    def test_telethon_gets_a_finite_retry_count(self, tlgr_home):
+        """`None` is Telethon's "retry forever", not "off"."""
+        from tlgr.daemon.session import build_client
+
+        client = build_client(tlgr_home / "work", ClientOptions(api_id=1, api_hash="x"))
+        try:
+            retries = client._sender._retries
+            assert isinstance(retries, int) and 0 <= retries <= 5
+        finally:
+            client.session.close()
+
+    async def test_starting_offline_degrades_instead_of_hanging(self, tlgr_home):
+        """A real Telethon client with every connect refused.
+
+        With `connection_retries=None` `client.connect()` never returned and
+        the account sat in `starting` for as long as the network was down.
+        """
+        from tlgr.daemon.session import build_client
+
+        session = AccountSession(
+            "work",
+            session_path=tlgr_home / "work",
+            lock_path=tlgr_home / "session.lock",
+            options=ClientOptions(api_id=1, api_hash="x", connection=_refused_connection()),
+            client_factory=build_client,
+        )
+        await session.start()
+        try:
+            await _wait_for(lambda: session.state == SessionState.DEGRADED, timeout=15.0)
+            assert "ConnectionError" in session.reason
+        finally:
+            await session.stop()
+
+    async def test_stopping_before_the_first_connect_keeps_the_saved_update_state(self, tlgr_home):
+        """Telethon would store its empty `MessageBox` as `pts=0`.
+
+        The next start would then begin from "now" and drop everything that
+        arrived while the daemon was down.
+        """
+        from tlgr.daemon.session import build_client
+
+        path = tlgr_home / "work"
+        _seed_update_state(path, 4242)
+        session = AccountSession(
+            "work",
+            session_path=path,
+            lock_path=tlgr_home / "session.lock",
+            options=ClientOptions(
+                api_id=1, api_hash="x", connection=_refused_connection(), connection_retries=0
+            ),
+            client_factory=build_client,
+        )
+        await session.start()
+        await asyncio.sleep(0.5)
+        await session.stop()
+
+        assert _saved_pts(path) == 4242
+
+    async def test_telethons_automatic_reconnect_triggers_a_catch_up(self, tlgr_home, world):
+        """The hook must sit where `MTProtoSender` calls it, not on the client."""
+        from types import SimpleNamespace
+
+        def factory(path, options):
+            client = FakeTelegramClient(world, session=path)
+            client._sender = SimpleNamespace(_auto_reconnect_callback=None)
+            return client
+
+        session = AccountSession(
+            "work",
+            session_path=tlgr_home / "session",
+            lock_path=tlgr_home / "session.lock",
+            options=ClientOptions(api_id=1, api_hash="x"),
+            client_factory=factory,
+        )
+        await session.start()
+        try:
+            await _wait_for(lambda: session.state == SessionState.ONLINE)
+            before = world.catch_ups
+            # What `MTProtoSender._reconnect` does after it reconnects.
+            await session.client._sender._auto_reconnect_callback()
+            assert world.catch_ups == before + 1
+            assert session.reconnects == 1
+        finally:
+            await session.stop()
+
+    async def test_telethon_giving_up_is_a_drop_and_is_caught_up(self, tlgr_home, world):
+        """Telethon resolves `disconnected` with the last error when its retries run out."""
+        session = _session(tlgr_home, world)
+        await session.start()
+        try:
+            await _wait_for(lambda: session.state == SessionState.ONLINE)
+            first = world.catch_ups
+            client = session.client
+            client._connected = False
+            client.disconnected.set_exception(ConnectionError("Connection to Telegram failed"))
+            await _wait_for(lambda: session.state == SessionState.ONLINE and world.connects >= 2)
+            assert session.reconnects == 1
+            assert world.catch_ups > first
+        finally:
+            await session.stop()
+
+    async def test_the_dead_connection_is_torn_down_before_reconnecting(self, tlgr_home, world):
+        """Otherwise Telethon's stale update loop would run next to a new one."""
+        session = _session(tlgr_home, world)
+        await session.start()
+        try:
+            await _wait_for(lambda: session.state == SessionState.ONLINE)
+            client = session.client
+            order: list[str] = []
+            real_disconnect, real_connect = client.disconnect, client.connect
+
+            async def disconnect():
+                order.append("disconnect")
+                await real_disconnect()
+
+            async def connect():
+                order.append("connect")
+                return await real_connect()
+
+            client.disconnect, client.connect = disconnect, connect
+            client.drop()
+            await _wait_for(lambda: session.state == SessionState.ONLINE and world.connects >= 2)
+            assert order[:2] == ["disconnect", "connect"]
+        finally:
+            await session.stop()
+
+
+class _BlockingDialogs:
+    """An `iter_dialogs` that does not finish until the test says so."""
+
+    def __init__(self) -> None:
+        self.release = asyncio.Event()
+        self.started = 0
+        self.fail = False
+
+    def __call__(self, limit=None, **_):
+        self.started += 1
+        return self._iterate()
+
+    async def _iterate(self):
+        await self.release.wait()
+        if self.fail:
+            raise ConnectionError("dropped mid-sweep")
+        yield object()
+
+
+class TestDialogWarmup:
+    """tlgrcli/tlgr#60: the dialog sweep must not gate `online`."""
+
+    def _session(self, tmp: Path, world: World, dialogs: _BlockingDialogs) -> AccountSession:
+        def factory(path, options):
+            client = FakeTelegramClient(world, session=path)
+            client.iter_dialogs = dialogs
+            return client
+
+        return AccountSession(
+            "work",
+            session_path=tmp / "session",
+            lock_path=tmp / "session.lock",
+            options=ClientOptions(api_id=1, api_hash="x"),
+            client_factory=factory,
+        )
+
+    async def test_the_account_is_online_while_the_sweep_runs(self, tlgr_home, world):
+        dialogs = _BlockingDialogs()
+        session = self._session(tlgr_home, world, dialogs)
+        await session.start()
+        try:
+            await _wait_for(lambda: session.state == SessionState.ONLINE)
+            assert world.catch_ups >= 1
+            await _wait_for(lambda: dialogs.started == 1)
+            assert await session.acquire(timeout=0.1) is session.client
+            dialogs.release.set()
+            await _wait_for(lambda: session._warmed)
+        finally:
+            await session.stop()
+
+    async def test_a_finished_sweep_is_not_repeated_after_a_reconnect(self, tlgr_home, world):
+        dialogs = _BlockingDialogs()
+        dialogs.release.set()
+        session = self._session(tlgr_home, world, dialogs)
+        await session.start()
+        try:
+            await _wait_for(lambda: session._warmed)
+            session.client.drop()
+            await _wait_for(lambda: session.state == SessionState.ONLINE and world.connects >= 2)
+            assert dialogs.started == 1
+        finally:
+            await session.stop()
+
+    async def test_a_failed_sweep_runs_again_on_the_next_connect(self, tlgr_home, world):
+        dialogs = _BlockingDialogs()
+        dialogs.fail = True
+        dialogs.release.set()
+        session = self._session(tlgr_home, world, dialogs)
+        await session.start()
+        try:
+            await _wait_for(lambda: session._warmup is not None and session._warmup.done())
+            assert not session._warmed
+            dialogs.fail = False
+            session.client.drop()
+            await _wait_for(lambda: session._warmed)
+            assert dialogs.started == 2
+        finally:
+            await session.stop()
+
+    async def test_stop_cancels_a_running_sweep(self, tlgr_home, world):
+        dialogs = _BlockingDialogs()
+        session = self._session(tlgr_home, world, dialogs)
+        await session.start()
+        await _wait_for(lambda: session._warmup is not None)
+        task = session._warmup
+        await session.stop()
+        assert task is not None and task.cancelled()
+
+
+class TestPeriodicCatchUp:
+    """`[daemon] catch_up_interval`, off by default, floored at 30 s."""
+
+    def test_the_interval_is_off_by_default_and_floored(self):
+        from tlgr.core.config import DaemonConfig
+        from tlgr.daemon.session import MIN_CATCH_UP_INTERVAL, normalise_catch_up_interval
+
+        assert DaemonConfig().catch_up_interval == 0
+        assert MIN_CATCH_UP_INTERVAL == 30
+        assert normalise_catch_up_interval(0) == 0
+        assert normalise_catch_up_interval(-5) == 0
+        assert normalise_catch_up_interval(None) == 0
+        assert normalise_catch_up_interval(1) == 30
+        assert normalise_catch_up_interval(45) == 45
+
+    async def test_no_timer_runs_when_it_is_off(self, tlgr_home, world):
+        session = _session(tlgr_home, world)
+        await session.start()
+        try:
+            await _wait_for(lambda: session.state == SessionState.ONLINE)
+            names = {task.get_name() for task in session._tickers}
+            assert names
+            assert "tlgr-catchup-work" not in names
+        finally:
+            await session.stop()
+
+    async def test_the_timer_catches_up_while_online(self, tlgr_home, world):
+        session = _session(tlgr_home, world, catch_up_interval=45)
+        assert session.catch_up_interval == 45
+        # The floor protects Telegram, not the test: shorten it after construction.
+        session.catch_up_interval = 0.02
+        await session.start()
+        try:
+            await _wait_for(lambda: session.state == SessionState.ONLINE)
+            first = world.catch_ups
+            await _wait_for(lambda: world.catch_ups >= first + 2)
+        finally:
+            await session.stop()
+
+    async def test_the_session_manager_passes_the_config_through(self, tlgr_home, stub_account):
+        from fake_telethon import fake_client_factory
+
+        from tlgr.core.config import load_app_config
+        from tlgr.core.paths import TlgrPaths
+        from tlgr.daemon.sessions import SessionManager
+
+        (tlgr_home / "config.toml").write_text("[daemon]\ncatch_up_interval = 10\n")
+        manager = SessionManager(
+            TlgrPaths(tlgr_home),
+            load_app_config(tlgr_home),
+            client_factory=fake_client_factory(World()),
+        )
+        try:
+            session = await manager.ensure(stub_account)
+            assert session.catch_up_interval == 30
+        finally:
+            await manager.stop_all()

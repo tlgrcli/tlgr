@@ -1225,7 +1225,9 @@ SPEC_CODE_LIST = OperationSpec(
     example={"codes": ["12345"], "messages": ["Login code: 12345. Do not give this code…"]},
     example_args="auth code list",
     covers=("auth.login-codes-from-service-chat", "privacy.invalidate-sign-in-codes"),
-    tags=frozenset({"agent-safe", "mutating-checked"}),
+    # A login code is a credential: whoever reads it can sign in as this
+    # account, so the op is outside `*:read` (see `tlgr.policy`).
+    tags=frozenset({"mutating-checked", "bearer-credential"}),
 )
 
 
@@ -1279,4 +1281,5 @@ SPEC_AUTOLOGIN_URL_GET = OperationSpec(
     example={"url": "https://telegram.org/faq?autologin_token=…", "domain_allowed": True},
     example_args="auth autologin-url get https://telegram.org/faq",
     covers=("auth.autologin-token",),
+    tags=frozenset({"bearer-credential"}),
 )

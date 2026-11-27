@@ -123,7 +123,8 @@ SPEC_WEBHOOK_GET = OperationSpec(
     example_args="webhook get",
     covers_partial=("updates.stream-webhook-delivery",),
     coverage_note="reports the configuration; delivering is the pusher's job.",
-    tags=frozenset({"agent-safe"}),
+    # `--show-secret` prints the signing key, so the op is outside `*:read`.
+    tags=frozenset({"bearer-credential"}),
 )
 
 

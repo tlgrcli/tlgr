@@ -522,17 +522,15 @@ async def _resolve_many(
 def _lines(path: str) -> list[str]:
     """One peer per line from a file, or from stdin when the path is `-`."""
     import sys
-    from pathlib import Path
 
     if path == "-":
         if sys.stdin is None or sys.stdin.isatty():
             raise UsageError("--from-file - was given but stdin is a terminal", field="from-file")
         text = sys.stdin.read()
     else:
-        try:
-            text = Path(path).expanduser().read_text(encoding="utf-8")
-        except OSError as exc:
-            raise UsageError(f"--from-file: {exc.strerror or exc}", field="from-file") from exc
+        from tlgr.core.paths import read_outbound_text
+
+        text = read_outbound_text(path, field="from-file")
     return [line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#")]
 
 
@@ -4047,7 +4045,9 @@ async def import_history(ctx: OpContext, req: ImportReq) -> ImportState:
     peer = await _send.resolve(ctx, req.chat)
     chat_id = _send.peer_id_of(peer)
 
-    path = Path(req.export).expanduser()
+    from tlgr.core.paths import guard_outbound_file
+
+    path = guard_outbound_file(req.export)
     if not path.exists():
         raise UsageError(f"{req.export} does not exist", field="export")
     head = path.read_text(encoding="utf-8", errors="replace")[:1024]

@@ -28,6 +28,7 @@ from tlgr.core.errors import ConfigurationError
 from tlgr.core.paths import TlgrPaths, require_safe_permissions
 from tlgr.core.process import daemonize, setup_logging, write_pid
 from tlgr.daemon.app import Daemon
+from tlgr.daemon.policy import Policy
 from tlgr.daemon.singleton import FileLock, LockBusy
 
 log = logging.getLogger("tlgr.daemon")
@@ -145,6 +146,10 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         config = load_app_config(paths.base)
+        # Checked here, before the fork, so the message reaches the terminal
+        # that ran `daemon start`: a `[policy]` entry that matches no
+        # operation would otherwise be a deny list that denies nothing.
+        Policy.from_config(config.policy.allow, config.policy.deny)
     except ConfigurationError as exc:
         print(f"tlgr daemon: {exc}", file=sys.stderr)
         return 10

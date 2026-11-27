@@ -320,8 +320,9 @@ async def _non_file_media(ctx: OpContext, req: SendReq) -> Any:
         last = req.contact_last or ""
         vcard = ""
         if req.vcard:
-            with open(req.vcard, encoding="utf-8") as handle:
-                vcard = handle.read()
+            from tlgr.core.paths import read_outbound_text
+
+            vcard = read_outbound_text(req.vcard, field="vcard")
         if req.contact is not None:
             peer = await _send.resolve(ctx, req.contact)
             user = await _client(ctx).get_entity(peer)

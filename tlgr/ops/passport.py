@@ -185,9 +185,9 @@ async def form_get(ctx: OpContext, req: FormGetReq) -> PassportForm:
             "reading a form needs the bot, --scope and --public-key from the service's link",
             field="bot",
         )
-    from pathlib import Path
-
     from telethon.tl.functions import account as fn
+
+    from tlgr.core.paths import read_outbound_text
 
     entity = await _send.resolve(ctx, req.bot)
     bot_id = int(getattr(entity, "user_id", 0) or 0)
@@ -195,7 +195,7 @@ async def form_get(ctx: OpContext, req: FormGetReq) -> PassportForm:
         fn.GetAuthorizationFormRequest(
             bot_id=bot_id,
             scope=req.scope,
-            public_key=Path(req.public_key).read_text(encoding="utf-8"),
+            public_key=read_outbound_text(req.public_key, field="public-key"),
         )
     )
     return PassportForm(

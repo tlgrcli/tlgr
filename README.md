@@ -848,16 +848,21 @@ Restrict which commands an agent can run:
 
 ```bash
 tlgr --enable-commands="message,chat,schema" send @user "hi"    # allowed
-tlgr --enable-commands="message,chat,schema" account remove foo  # blocked (exit 2)
+tlgr --enable-commands="message,chat,schema" account remove foo  # blocked (exit 6)
+tlgr --enable-commands="*:read" message list @user               # reads only
 ```
 
 Or via environment: `TLGR_ENABLE_COMMANDS=message,chat,schema`.
 
-For generated commands the allowlist is matched by canonical operation id and
-enforced **inside the daemon**, so an alias cannot be used to get past it
-(`--enable-commands message.list` permits `tlgr msg list`), and a blocked
-operation exits 6. It is a usability guard, not a sandbox: anything that can
-reach the socket can reach the session. See [SECURITY.md](SECURITY.md).
+The allowlist is matched by canonical operation id, so an alias cannot be used
+to get past it (`--enable-commands message.list` permits `tlgr msg list`), and
+a blocked operation exits 6. The flag is checked by the CLI; for a restriction
+the daemon enforces on every request, set `[policy] allow` / `deny` in
+`config.toml`, where an entry that matches no operation stops the daemon from
+starting. `*:read` never includes operations that reveal credentials
+(`account export`, `auth code list`, ...). It is a usability guard, not a
+sandbox: anything that can reach the socket can reach the session. See
+[SECURITY.md](SECURITY.md).
 
 ### JSON transforms
 

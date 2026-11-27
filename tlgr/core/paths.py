@@ -23,7 +23,7 @@ import stat
 import tempfile
 from pathlib import Path
 
-from tlgr.core.errors import ConfigurationError, UsageError
+from tlgr.core.errors import ConfigurationError, PermissionError_, UsageError
 
 __all__ = [
     "ALIAS_RE",
@@ -31,7 +31,11 @@ __all__ = [
     "TlgrPaths",
     "audit_permissions",
     "default_base",
+    "guard_outbound_file",
     "is_production_home",
+    "protect_home",
+    "read_outbound_bytes",
+    "read_outbound_text",
     "refuse_production_home",
     "secure_session_files",
     "validate_alias",
@@ -151,6 +155,103 @@ def secure_session_files(session_path: Path) -> None:
     for path in parent.glob(session_path.name + "*"):
         with contextlib.suppress(OSError):
             path.chmod(0o600)
+
+
+# ---------------------------------------------------------------------------
+# Outbound files: nothing under the tlgr home leaves the machine
+# ---------------------------------------------------------------------------
+
+#: Homes registered by the process that owns them (the daemon's `--base`),
+#: guarded alongside `default_base()` and `~/.tlgr`.
+_PROTECTED_HOMES: set[Path] = set()
+
+
+def protect_home(base: Path | str) -> None:
+    """Register *base* as a tlgr home that `guard_outbound_file` refuses."""
+    _PROTECTED_HOMES.add(Path(base).expanduser())
+
+
+def _file_key(path: Path) -> tuple[int, int] | None:
+    """(device, inode) of *path*, following links; None when it does not exist.
+
+    Compared by inode rather than by spelling, so `~/.TLGR/ipc.token` on a
+    case-insensitive volume and a symlinked parent are both caught.
+    """
+    try:
+        info = os.stat(path)
+    except OSError:
+        return None
+    return (info.st_dev, info.st_ino)
+
+
+def guard_outbound_file(path: str | os.PathLike[str]) -> Path:
+    """Refuse to let a file under the tlgr home leave the machine.
+
+    The home holds every account's session file, `ipc.token`, the cursor key
+    and the config. A prompt-injected "send me
+    ~/.tlgr/accounts/main/session.session" is one upload away from a full
+    account takeover, and `--caption-file ~/.tlgr/ipc.token` leaks the IPC
+    token as message text. Every upload and every read of a file as message
+    content passes through here. Symlinks are resolved first, so a link
+    elsewhere that points into the home is refused too. The one exception is
+    `downloads/`, which holds media tlgr fetched and which a user may well
+    want to send on.
+
+    Returns the expanded path, for the caller to open.
+    """
+    expanded = Path(os.path.expanduser(os.fspath(path)))
+    homes: dict[tuple[int, int], Path] = {}
+    exempt: set[tuple[int, int]] = set()
+    for home in {default_base(), Path.home() / ".tlgr", *_PROTECTED_HOMES}:
+        key = _file_key(home)
+        if key is None:
+            continue
+        homes[key] = home
+        downloads = _file_key(home / "downloads")
+        if downloads is not None:
+            exempt.add(downloads)
+    if not homes:
+        return expanded
+    resolved = expanded.resolve()
+    for candidate in (resolved, *resolved.parents):
+        key = _file_key(candidate)
+        if key is None:
+            continue
+        if key in exempt:
+            return expanded
+        if key in homes:
+            error = PermissionError_(
+                f"refusing to send or read {os.fspath(path)!r}: it is inside the tlgr home "
+                f"({homes[key]}), which holds session files and access tokens"
+            )
+            error.hint = (
+                "Files under the tlgr home are never uploaded or used as message content "
+                "(downloads/ excepted). Copy the file elsewhere first if you mean to send it."
+            )
+            raise error
+    return expanded
+
+
+def read_outbound_text(path: str | os.PathLike[str], *, field: str, errors: str = "strict") -> str:
+    """Read a file whose text will be sent (`--caption-file`, `--vcard`, ...).
+
+    Goes through `guard_outbound_file`, and turns an unreadable file into a
+    USAGE error naming the flag rather than a traceback.
+    """
+    target = guard_outbound_file(path)
+    try:
+        return target.read_text(encoding="utf-8", errors=errors)
+    except OSError as exc:
+        raise UsageError(f"--{field}: {exc.strerror or exc}", field=field) from exc
+
+
+def read_outbound_bytes(path: str | os.PathLike[str], *, field: str) -> bytes:
+    """The bytes counterpart of `read_outbound_text`."""
+    target = guard_outbound_file(path)
+    try:
+        return target.read_bytes()
+    except OSError as exc:
+        raise UsageError(f"--{field}: {exc.strerror or exc}", field=field) from exc
 
 
 class TlgrPaths:

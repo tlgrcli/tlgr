@@ -30,6 +30,7 @@ __all__ = [
     "MAX_COLUMN",
     "format_cell",
     "get_path",
+    "printable",
     "project",
     "render",
     "render_human",
@@ -42,6 +43,40 @@ __all__ = [
 MAX_COLUMN = 48
 
 _RFC3339 = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$")
+
+#: A whole terminal escape sequence, payload included, in its 7-bit (ESC) and
+#: 8-bit (C1) spellings: OSC, DCS, SOS, PM and APC strings up to their
+#: terminator (BEL or ST), CSI sequences up to their final byte, and the
+#: two-character ESC forms. Removing the payload as well as the introducer is
+#: the point: `ESC ] 52 ; c ; <base64>` with only ESC dropped would still
+#: print the clipboard payload as junk.
+_ESCAPE_SEQUENCE = re.compile(
+    r"(?:\x1b[\]PX^_]|[\x90\x98\x9d\x9e\x9f])[^\x07\x1b\x9c]*(?:\x07|\x1b\\|\x9c)?"
+    r"|(?:\x1b\[|\x9b)[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]?"
+    r"|\x1b[\x20-\x2f]*[\x30-\x7e]?"
+)
+
+#: What is left after the sequences: C0 controls except TAB, LF and CR (the
+#: renderers below handle those three), DEL, C1 controls, and the bidi
+#: embedding, override and isolate controls that reorder a line on screen
+#: ("Trojan Source"). LRM, RLM and ZWNJ stay: Persian text uses them.
+_UNPRINTABLE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f‪-‮⁦-⁩]")
+
+
+def printable(text: str) -> str:
+    """*text* with terminal control and escape sequences removed.
+
+    Human and `--plain` output go to a terminal, and the text in them (a
+    message, a name, a chat title, a file name) was written by somebody else.
+    Without this, a received message carrying `ESC ] 52` writes the user's
+    clipboard on terminals that honour it, `ESC [2J` clears the screen, and
+    cursor movement overwrites earlier rows with forged ones. JSON output
+    escapes control characters itself and never passes through here, so an
+    agent still sees the text Telegram delivered.
+    """
+    if text.isprintable():
+        return text
+    return _UNPRINTABLE.sub("", _ESCAPE_SEQUENCE.sub("", text))
 
 
 def use_color(stream: Any = None) -> bool:
@@ -168,7 +203,7 @@ def format_cell(value: Any, *, wide: bool = False, width: int = MAX_COLUMN) -> s
     else:
         text = str(value)
 
-    text = text.replace("\n", "⏎").replace("\r", "")
+    text = printable(text).replace("\n", "⏎").replace("\r", "")
     if not wide and len(text) > width:
         text = text[: width - 1] + "…"
     return text
@@ -215,7 +250,7 @@ def _tsv(value: Any) -> str:
         text = json.dumps(value, ensure_ascii=False, default=str)
     else:
         text = str(value)
-    return text.replace("\t", " ").replace("\n", " ").replace("\r", " ")
+    return printable(text).replace("\t", " ").replace("\n", " ").replace("\r", " ")
 
 
 def render_plain(
@@ -227,7 +262,7 @@ def render_plain(
 ) -> None:
     out = stream or sys.stdout
     if not no_header:
-        out.write("\t".join(columns) + "\n")
+        out.write("\t".join(_tsv(c) for c in columns) + "\n")
     for row in _rows(data):
         out.write("\t".join(_tsv(get_path(row, c)[0]) for c in columns) + "\n")
     out.flush()
@@ -258,7 +293,7 @@ def render_human(
     if not rows:
         return
 
-    titles = list(headers) if headers else [c.upper() for c in columns]
+    titles = [format_cell(t, wide=True) for t in (headers or [c.upper() for c in columns])]
     cells = [[format_cell(get_path(row, c)[0], wide=wide) for c in columns] for row in rows]
     widths = [len(t) for t in titles]
     for row_cells in cells:
@@ -285,9 +320,12 @@ def _render_object(data: dict[str, Any], *, wide: bool, stream: Any) -> None:
     """
     scalars = {k: v for k, v in data.items() if not _is_record_map(v)}
     if scalars:
-        width = max(len(k) for k in scalars)
+        # Keys can be data too (a map keyed by name), so they are cleaned
+        # like values.
+        keys = {key: format_cell(key, wide=True) for key in scalars}
+        width = max(len(k) for k in keys.values())
         for key, value in scalars.items():
-            stream.write(f"{key.ljust(width)}  {format_cell(value, wide=wide)}\n")
+            stream.write(f"{keys[key].ljust(width)}  {format_cell(value, wide=wide)}\n")
 
     for key, value in data.items():
         if not _is_record_map(value):
@@ -296,7 +334,7 @@ def _render_object(data: dict[str, Any], *, wide: bool, stream: Any) -> None:
         rows = [{"name": name, **record} for name, record in value.items()]
         if scalars:
             stream.write("\n")
-        stream.write(f"{key}:\n")
+        stream.write(f"{format_cell(key, wide=True)}:\n")
         render_human(rows, ["name", *inner_columns], wide=wide, stream=stream)
     stream.flush()
 
@@ -394,7 +432,8 @@ def render_stream(
 
             body = frame.get("error") or {}
             exit_code = int(body.get("exit_code", EXIT_RETRYABLE))
-            click.echo(f"Error: {body.get('message') or 'the stream ended'}", err=True)
+            message = printable(str(body.get("message") or "the stream ended"))
+            click.echo(f"Error: {message}", err=True)
             continue
         if results_only:
             if kind in CONTROL_FRAMES:

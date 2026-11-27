@@ -2766,19 +2766,15 @@ async def stream_send(ctx: OpContext, req: StreamSendReq) -> StreamProgress:
 
 
 def _stream_chunks(req: StreamSendReq) -> list[str]:
-    import os
-    from pathlib import Path
 
     if req.text:
         return [req.text]
     source = req.rich_file or req.file
     if not source:
         return []
-    path = Path(os.path.expanduser(source))
-    try:
-        body = path.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise UsageError(f"--file: {exc.strerror or exc}", field="file") from exc
+    from tlgr.core.paths import read_outbound_text
+
+    body = read_outbound_text(source, field="file")
     if req.rich_file:
         return [body]
     return [line for line in body.splitlines() if line.strip()]
@@ -3143,6 +3139,7 @@ SPEC_TOKEN_EXPORT = OperationSpec(
     example={"bot_id": 5000001, "revoked": False},
     example_args="bot token export @my_helper_bot --out ./token",
     covers=("bots.managed-bot-token",),
+    tags=frozenset({"bearer-credential"}),
 )
 
 

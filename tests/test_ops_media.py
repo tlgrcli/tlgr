@@ -816,6 +816,55 @@ class TestStorage:
         _ = asyncio
 
 
+class TestTheHomeIsNeverUploaded:
+    """A session file or token under the tlgr home never leaves the machine."""
+
+    async def test_uploading_a_session_file_is_refused(
+        self, live_daemon, client, in_thread, peers, tlgr_home
+    ):
+        session = tlgr_home / "accounts" / "work" / "session.session"
+        session.parent.mkdir(parents=True, exist_ok=True)
+        session.write_bytes(b"auth key")
+        with pytest.raises(Exception) as excinfo:
+            await result(
+                client, in_thread, "media.upload", {"chat": "@alice", "path": [str(session)]}
+            )
+        assert _error(excinfo).exit_code == EXIT_PERMISSION
+        assert not peers.called("UploadMediaRequest")
+        assert not peers.called("SaveFilePartRequest")
+
+    async def test_a_symlink_to_the_token_is_refused(
+        self, live_daemon, client, in_thread, peers, tlgr_home, tmp_path
+    ):
+        (tlgr_home / "ipc.token").write_text("secret")
+        link = tmp_path / "cat.jpg"
+        link.symlink_to(tlgr_home / "ipc.token")
+        with pytest.raises(Exception) as excinfo:
+            await result(client, in_thread, "media.upload", {"chat": "@alice", "path": [str(link)]})
+        assert _error(excinfo).exit_code == EXIT_PERMISSION
+        assert not peers.called("SaveFilePartRequest")
+
+    async def test_a_caption_file_in_the_home_is_refused(
+        self, live_daemon, client, in_thread, peers, tlgr_home, tmp_path
+    ):
+        (tlgr_home / "ipc.token").write_text("secret")
+        photo = tmp_path / "cat.jpg"
+        photo.write_bytes(b"\xff\xd8" + b"x" * 64)
+        with pytest.raises(Exception) as excinfo:
+            await result(
+                client,
+                in_thread,
+                "media.upload",
+                {
+                    "chat": "@alice",
+                    "path": [str(photo)],
+                    "caption_file": str(tlgr_home / "ipc.token"),
+                },
+            )
+        assert _error(excinfo).exit_code == EXIT_PERMISSION
+        assert not peers.called("SendMediaRequest")
+
+
 class _LocalCtx:
     """The `OpContext` a `Surface.LOCAL` operation runs against."""
 

@@ -2075,7 +2075,9 @@ def _caption_for(req: UploadReq, index: int) -> tuple[str, list[Any]]:
     """The caption for item *index*, parsed once."""
     raw = ""
     if req.caption_file:
-        raw = Path(os.path.expanduser(req.caption_file)).read_text(encoding="utf-8")
+        from tlgr.core.paths import read_outbound_text
+
+        raw = read_outbound_text(req.caption_file, field="caption-file")
     elif req.caption:
         raw = (
             req.caption[index] if index < len(req.caption) else req.caption[0] if index == 0 else ""
@@ -2165,16 +2167,27 @@ def _action_for(req: UploadReq, sources: list[Path]) -> str:
 
 @contextlib.asynccontextmanager
 async def _typing(ctx: OpContext, peer: Any, action: str | None) -> Any:
-    """Broadcast `sending a photo…` for the duration of the upload."""
+    """Broadcast `sending a photo…` for the duration of the upload.
+
+    Only a failure of the broadcast itself is ignored. An error from the
+    upload inside the block propagates: catching it here and yielding again
+    turned every upload failure into "generator didn't stop after athrow()",
+    a GENERIC exit 1 in place of the real error and its exit code.
+    """
     if action is None:
         yield
         return
-    client = _client(ctx)
     try:
-        async with client.action(peer, action):
-            yield
+        broadcast = _client(ctx).action(peer, action)
+        await broadcast.__aenter__()
     except Exception:
         yield
+        return
+    try:
+        yield
+    finally:
+        with contextlib.suppress(Exception):
+            await broadcast.__aexit__(None, None, None)
 
 
 async def _upload_only(

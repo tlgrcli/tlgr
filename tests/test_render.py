@@ -277,3 +277,67 @@ class TestRenderEntryPoint:
             stream=buffer,
         )
         assert long_text in buffer.getvalue()
+
+
+class TestTerminalEscapesAreStripped:
+    """Text from other people never drives the terminal (human and plain only).
+
+    A message carrying `ESC ] 52` writes the clipboard on terminals that
+    honour it, `ESC [2J` clears the screen, and cursor movement forges rows.
+    """
+
+    HOSTILE = (
+        "hi\x1b]52;c;ZWNobyBwd25lZA==\x07 there"  # OSC 52 clipboard write
+        "\x1b]8;;https://evil.example\x1b\\link\x1b]8;;\x1b\\"  # OSC 8 hyperlink
+        "\x1b[2J\x1b[1;1H"  # clear screen, cursor home
+        "\x9b31m"  # C1 CSI
+        "\x07\x08\x7f"  # BEL, BS, DEL
+        "‮gnp.exe"  # RLO override
+    )
+
+    def test_printable_removes_sequences_and_their_payloads(self):
+        from tlgr.cli.render import printable
+
+        cleaned = printable(self.HOSTILE)
+        assert cleaned == "hi therelinkgnp.exe"
+
+    def test_persian_text_and_its_joiners_survive(self):
+        from tlgr.cli.render import printable
+
+        text = "می‌خواهم ‏سلام‎"
+        assert printable(text) == text
+
+    def test_tabs_and_newlines_are_left_to_the_renderers(self):
+        from tlgr.cli.render import printable
+
+        assert printable("a\tb\nc\r") == "a\tb\nc\r"
+
+    def test_a_human_table_cell_is_cleaned(self):
+        buffer = out()
+        render_human([{"text": self.HOSTILE}], ["text"], wide=True, stream=buffer)
+        for char in ("\x1b", "\x9b", "‮", "\x07"):
+            assert char not in buffer.getvalue()
+
+    def test_a_human_object_and_its_keys_are_cleaned(self):
+        buffer = out()
+        data = {"na\x1b[2Jme": self.HOSTILE, "map": {"\x1b]0;x\x07a": {"k": 1}}}
+        render_human(data, (), stream=buffer)
+        assert "\x1b" not in buffer.getvalue()
+
+    def test_plain_output_is_cleaned(self):
+        buffer = out()
+        render_plain([{"text": self.HOSTILE}], ["text"], stream=buffer)
+        assert "\x1b" not in buffer.getvalue()
+        assert "\x9b" not in buffer.getvalue()
+
+    def test_json_keeps_the_text_exactly(self):
+        buffer = out()
+        render_json({"ok": True, "result": {"text": self.HOSTILE}}, stream=buffer)
+        assert json.loads(buffer.getvalue())["result"]["text"] == self.HOSTILE
+
+    def test_the_error_line_is_cleaned(self, capsys):
+        from tlgr.cli.errors import emit
+        from tlgr.core.errors import NotFoundError
+
+        emit(NotFoundError("no chat named \x1b]52;c;eA==\x07x"))
+        assert "\x1b" not in capsys.readouterr().err

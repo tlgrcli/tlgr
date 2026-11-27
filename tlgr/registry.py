@@ -247,6 +247,22 @@ _MUTATING_CALLS = frozenset(
 )
 
 
+#: Lint L17: source that mints or reveals a credential. An op whose
+#: implementation contains one of these must carry the `bearer-credential`
+#: tag, which takes it out of the `*:read` policy class (`tlgr.policy`).
+_CREDENTIAL_MARKERS = frozenset(
+    {
+        "StringSession.save(",  # the session itself
+        "ExportBotTokenRequest",  # a bot's API token
+        "ExportContactTokenRequest",  # a t.me/contact/<token> link
+        "GetTmpPasswordRequest",  # a temporary payment password
+        "autologin_token",  # a signed-in telegram.org URL
+        "SERVICE_CHAT",  # login codes from the 777000 chat
+        "show_secret",  # the webhook signing key
+    }
+)
+
+
 def register(spec: OperationSpec) -> OperationSpec:
     """Add *spec* to the registry. Returns it so a module can assign the result."""
     if spec.id in REGISTRY:
@@ -424,6 +440,17 @@ def _lint_spec(spec: OperationSpec, problems: list[str]) -> None:
             if f".{call}(" in source:
                 bad(f"declares mutating=False but calls {call}()")
 
+    # L17: an op that mints or reveals a credential says so, so that
+    # `allow = ["*:read"]` cannot hand an agent the session.
+    if "bearer-credential" not in spec.tags:
+        try:
+            source = inspect.getsource(spec.impl)
+        except (OSError, TypeError):
+            source = ""
+        for marker in sorted(_CREDENTIAL_MARKERS):
+            if marker in source:
+                bad(f"handles a credential ({marker}) but is not tagged bearer-credential")
+
     # L8 — destructive implies mutating.
     if spec.destructive and not spec.mutating:
         bad("destructive ops must also be mutating")
@@ -502,21 +529,19 @@ def lint() -> list[str]:
 def policy_allows(allowlist: str, op_id: str) -> bool:
     """Is *op_id* permitted by an `--enable-commands` / `[policy] allow` list?
 
-    Entries are canonicalised before comparison, so an allowlist written
-    against ids cannot be side-stepped by invoking an alias, and a bare group
-    name (`message`) allows every operation in it. This is SEC-04's fix, and
-    it lives in the registry because the CLI and the daemon must reach the
-    same verdict from the same data.
+    A thin wrapper over `tlgr.policy.Policy`, the matcher the daemon enforces
+    `[policy]` with: entries are canonicalised before comparison, so an
+    allowlist written against ids cannot be side-stepped by invoking an alias,
+    a bare group name (`message`) or `message.*` allows every operation in it,
+    and a class entry (`*:read`) is matched against the op's behaviour class.
+    The CLI and the daemon must reach the same verdict from the same data,
+    which is why there is one implementation (SEC-04).
     """
-    entries = {e.strip().lower() for e in allowlist.replace(" ", ",").split(",") if e.strip()}
-    if not entries or "*" in entries or "all" in entries:
-        return True
-    canonical_id = ALIASES.get(op_id, op_id).lower()
-    for entry in entries:
-        resolved = ALIASES.get(entry.replace(" ", "."), entry)
-        if resolved == canonical_id or canonical_id.startswith(f"{resolved}."):
-            return True
-    return False
+    from tlgr.policy import Policy
+
+    key = op_id.strip().lower().replace(" ", ".")
+    spec = REGISTRY.get(ALIASES.get(key, key))
+    return Policy.parse(allowlist).check(op_id, spec).allowed
 
 
 def lint_or_raise() -> None:

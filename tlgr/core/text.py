@@ -17,21 +17,27 @@ are lifted out here, before and after the parser runs.
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any
 
 from tlgr.core.errors import UsageError
 from tlgr.models.message import MessageEntity
 
 __all__ = [
+    "DATE_FLAGS",
     "PARSE_MODES",
     "default_parse_mode",
     "entities_from_json",
     "entities_to_json",
+    "entity_from_tl",
     "parse_text",
     "utf16_len",
 ]
 
 PARSE_MODES = ("md", "html", "none")
+
+#: The display flags of `messageEntityFormattedDate`, in TL order.
+DATE_FLAGS = ("relative", "short_time", "long_time", "short_date", "long_date", "day_of_week")
 
 #: Private-use sentinels: the parsers pass them through untouched, so a
 #: spoiler's boundaries survive markdown/HTML parsing and can be converted to
@@ -119,16 +125,13 @@ def _extract_spoilers(text: str, entities: list[MessageEntity]) -> tuple[str, li
                 total = cumulative
         return offset - total
 
+    import msgspec
+
     moved = [
-        MessageEntity(
-            type=entity.type,
+        msgspec.structs.replace(
+            entity,
             offset=shift(entity.offset),
             length=shift(entity.offset + entity.length) - shift(entity.offset),
-            url=entity.url,
-            user_id=entity.user_id,
-            language=entity.language,
-            document_id=entity.document_id,
-            collapsed=entity.collapsed,
         )
         for entity in entities
     ]
@@ -152,7 +155,17 @@ def _tl_entity_type(obj: Any) -> str:
     return "".join(result)
 
 
-def _from_tl(obj: Any) -> MessageEntity:
+def entity_from_tl(obj: Any) -> MessageEntity:
+    """A Telethon `MessageEntity*` as the model, every field it carries kept.
+
+    `formatted_date` is the one with a payload beyond offsets: its date and
+    display flags are what make it a date chip, and dropping them turns a
+    received chip into plain text that cannot be sent back.
+    """
+    from tlgr.core.timefmt import fmt_dt, to_unix
+
+    date = getattr(obj, "date", None)
+    flags = {name: (getattr(obj, name, None) or None) for name in DATE_FLAGS}
     return MessageEntity(
         type=_tl_entity_type(obj),
         offset=int(getattr(obj, "offset", 0)),
@@ -162,6 +175,9 @@ def _from_tl(obj: Any) -> MessageEntity:
         language=getattr(obj, "language", None),
         document_id=getattr(obj, "document_id", None),
         collapsed=getattr(obj, "collapsed", None),
+        date=fmt_dt(date) if isinstance(date, datetime) else None,
+        date_unix=to_unix(date) if isinstance(date, datetime) else None,
+        **flags,
     )
 
 
@@ -184,7 +200,7 @@ def parse_text(text: str, mode: str = "none") -> tuple[str, list[MessageEntity]]
 
     parser = tl_markdown if mode == "md" else tl_html
     parsed, raw_entities = parser.parse(marked)
-    entities = [_from_tl(entity) for entity in raw_entities or []]
+    entities = [entity_from_tl(entity) for entity in raw_entities or []]
     return _extract_spoilers(parsed, entities)
 
 

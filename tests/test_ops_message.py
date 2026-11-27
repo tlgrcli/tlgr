@@ -82,6 +82,91 @@ class TestSend:
         bold = [e for e in request.entities if type(e).__name__ == "MessageEntityBold"]
         assert bold and bold[0].offset == 3, "the emoji must count as two units"
 
+    async def test_a_formatted_date_entity_is_sent_with_its_date(
+        self, live_daemon, client, in_thread, peers
+    ):
+        """The constructor needs `date`; without it the entity was silently dropped."""
+        import json
+        from datetime import datetime, timezone
+
+        entities = [
+            {
+                "type": "formatted_date",
+                "offset": 8,
+                "length": 11,
+                "date": "2026-09-13T17:00:00Z",
+                "short_date": True,
+                "short_time": True,
+            }
+        ]
+        sent = await result(
+            client,
+            in_thread,
+            "message.send",
+            {"chat": "@alice", "text": "meet on 13/09 17:00", "entities": json.dumps(entities)},
+        )
+        request = peers.called("SendMessageRequest")[0]
+        [chip] = request.entities
+        assert type(chip).__name__ == "MessageEntityFormattedDate"
+        assert chip.date == datetime(2026, 9, 13, 17, 0, tzinfo=timezone.utc)
+        assert (chip.short_date, chip.short_time, chip.long_date) == (True, True, None)
+        assert bytes(chip), "the entity must serialise as a real TL object"
+        assert sent["entities"] == [
+            {
+                "type": "formatted_date",
+                "offset": 8,
+                "length": 11,
+                "date": "2026-09-13T17:00:00Z",
+                "date_unix": 1789318800,
+                "short_time": True,
+                "short_date": True,
+            }
+        ]
+
+    async def test_a_formatted_date_entity_without_a_date_is_a_usage_error(
+        self, live_daemon, client, in_thread, peers
+    ):
+        import json
+
+        entities = [{"type": "formatted_date", "offset": 0, "length": 5}]
+        with pytest.raises(Exception) as caught:
+            await result(
+                client,
+                in_thread,
+                "message.send",
+                {"chat": "@alice", "text": "13/09", "entities": json.dumps(entities)},
+            )
+        assert classify(caught.value).exit_code == EXIT_USAGE
+        assert not peers.called("SendMessageRequest")
+
+    async def test_a_received_date_chip_keeps_its_date(self, live_daemon, client, in_thread, peers):
+        from datetime import datetime, timezone
+
+        from telethon.tl import types
+
+        message = peers.add_message(ALICE, "see you Monday", message_id=900)
+        message.entities = [
+            types.MessageEntityFormattedDate(
+                offset=8,
+                length=6,
+                date=datetime(2026, 9, 14, 9, 30, tzinfo=timezone.utc),
+                day_of_week=True,
+                relative=False,
+            )
+        ]
+        got = await result(client, in_thread, "message.get", {"chat": "@alice", "msg_id": 900})
+        row = got[0] if isinstance(got, list) else got
+        assert row["entities"] == [
+            {
+                "type": "formatted_date",
+                "offset": 8,
+                "length": 6,
+                "date": "2026-09-14T09:30:00Z",
+                "date_unix": 1789378200,
+                "day_of_week": True,
+            }
+        ]
+
     async def test_the_default_parse_mode_is_none(self, live_daemon, client, in_thread, peers):
         """COR-21: v1 silently ate underscores and asterisks."""
         sent = await result(

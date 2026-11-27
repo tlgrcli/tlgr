@@ -2448,6 +2448,8 @@ async def entity_list(ctx: OpContext, req: EntityListReq) -> EntityReport:
 
 def _recount(text: str, entity: MessageEntity, units: str) -> MessageEntity:
     """Re-express a UTF-16 offset in code points or bytes."""
+    import msgspec
+
     raw = text.encode("utf-16-le")
     prefix = raw[: entity.offset * 2].decode("utf-16-le", "ignore")
     body = raw[entity.offset * 2 : (entity.offset + entity.length) * 2].decode(
@@ -2457,16 +2459,7 @@ def _recount(text: str, entity: MessageEntity, units: str) -> MessageEntity:
         offset, length = len(prefix), len(body)
     else:
         offset, length = len(prefix.encode()), len(body.encode())
-    return MessageEntity(
-        type=entity.type,
-        offset=offset,
-        length=length,
-        url=entity.url,
-        user_id=entity.user_id,
-        language=entity.language,
-        document_id=entity.document_id,
-        collapsed=entity.collapsed,
-    )
+    return msgspec.structs.replace(entity, offset=offset, length=length)
 
 
 SPEC_ENTITY_LIST = OperationSpec(

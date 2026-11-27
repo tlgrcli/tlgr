@@ -243,12 +243,12 @@ def _guard_two_paths(name: str, func: Callable[..., Any]) -> Callable[..., Any]:
         dst_dir_fd: int | None = None,
         **kwargs: Any,
     ) -> Any:
-        target = _check(name, src, dir_fd=src_dir_fd)
+        _check(name, src, dir_fd=src_dir_fd)
         _check(name, dst, dir_fd=dst_dir_fd)
-        result = func(src, dst, *args, src_dir_fd=src_dir_fd, dst_dir_fd=dst_dir_fd, **kwargs)
-        if target is not None:
-            _forget_removed(target)
-        return result
+        # A rename does not forget a temporary root: the owner may still
+        # clean up the old name (pytest renames its cache dir into place,
+        # then calls rmtree on the old name).
+        return func(src, dst, *args, src_dir_fd=src_dir_fd, dst_dir_fd=dst_dir_fd, **kwargs)
 
     return guarded
 
@@ -280,8 +280,8 @@ def _guard_path_method(name: str, func: Callable[..., Any], *, two: bool) -> Cal
         elif two and "target" in kwargs:
             _check(name, kwargs["target"])
         result = func(self, *args, **kwargs)
-        if target is not None:
-            _forget_removed(target)
+        if not two and target is not None:
+            _forget_removed(target)  # see `_guard_two_paths` for renames
         return result
 
     return guarded

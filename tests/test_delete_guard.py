@@ -159,6 +159,18 @@ def test_a_removed_temp_dir_is_no_longer_allowed() -> None:
         delete_guard.original("rmdir")(scratch)
 
 
+def test_pytests_cache_dir_pattern_is_allowed(tmp_path: Path) -> None:
+    """mkdtemp, rename into place, then rmtree the old name: what pytest does."""
+    with delete_guard.expect_refusals() as seen:
+        staging = Path(tempfile.mkdtemp(prefix="tlgr-guard-cache-"))
+        (staging / "README.md").write_text("x")
+        staging.rename(tmp_path / "cache")
+        shutil.rmtree(staging, ignore_errors=True)
+    assert seen == []
+    assert (tmp_path / "cache" / "README.md").exists()
+    assert staging.resolve() not in delete_guard.roots()
+
+
 def test_a_failed_removal_keeps_the_root(tmp_path: Path) -> None:
     scratch = Path(tempfile.mkdtemp(prefix="tlgr-guard-kept-")).resolve()
     (scratch / "sub").mkdir()

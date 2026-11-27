@@ -585,3 +585,62 @@ class TestDialogWarmup:
         task = session._warmup
         await session.stop()
         assert task is not None and task.cancelled()
+
+
+class TestPeriodicCatchUp:
+    """`[daemon] catch_up_interval`, off by default, floored at 30 s."""
+
+    def test_the_interval_is_off_by_default_and_floored(self):
+        from tlgr.core.config import DaemonConfig
+        from tlgr.daemon.session import MIN_CATCH_UP_INTERVAL, normalise_catch_up_interval
+
+        assert DaemonConfig().catch_up_interval == 0
+        assert MIN_CATCH_UP_INTERVAL == 30
+        assert normalise_catch_up_interval(0) == 0
+        assert normalise_catch_up_interval(-5) == 0
+        assert normalise_catch_up_interval(None) == 0
+        assert normalise_catch_up_interval(1) == 30
+        assert normalise_catch_up_interval(45) == 45
+
+    async def test_no_timer_runs_when_it_is_off(self, tlgr_home, world):
+        session = _session(tlgr_home, world)
+        await session.start()
+        try:
+            await _wait_for(lambda: session.state == SessionState.ONLINE)
+            names = {task.get_name() for task in session._tickers}
+            assert names
+            assert "tlgr-catchup-work" not in names
+        finally:
+            await session.stop()
+
+    async def test_the_timer_catches_up_while_online(self, tlgr_home, world):
+        session = _session(tlgr_home, world, catch_up_interval=45)
+        assert session.catch_up_interval == 45
+        # The floor protects Telegram, not the test: shorten it after construction.
+        session.catch_up_interval = 0.02
+        await session.start()
+        try:
+            await _wait_for(lambda: session.state == SessionState.ONLINE)
+            first = world.catch_ups
+            await _wait_for(lambda: world.catch_ups >= first + 2)
+        finally:
+            await session.stop()
+
+    async def test_the_session_manager_passes_the_config_through(self, tlgr_home, stub_account):
+        from fake_telethon import fake_client_factory
+
+        from tlgr.core.config import load_app_config
+        from tlgr.core.paths import TlgrPaths
+        from tlgr.daemon.sessions import SessionManager
+
+        (tlgr_home / "config.toml").write_text("[daemon]\ncatch_up_interval = 10\n")
+        manager = SessionManager(
+            TlgrPaths(tlgr_home),
+            load_app_config(tlgr_home),
+            client_factory=fake_client_factory(World()),
+        )
+        try:
+            session = await manager.ensure(stub_account)
+            assert session.catch_up_interval == 30
+        finally:
+            await manager.stop_all()

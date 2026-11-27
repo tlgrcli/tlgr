@@ -135,6 +135,7 @@ class SessionManager:
             on_state=on_state,
             on_client=self._on_client,
             state_save_interval=self.config.daemon.state_save_interval,
+            catch_up_interval=self.config.daemon.catch_up_interval,
             presence=self.config.presence.mode,
             resync_depth=self.config.daemon.resync_depth,
             peers_path=self.paths.peers_db(alias),

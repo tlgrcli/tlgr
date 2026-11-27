@@ -53,7 +53,13 @@ from tlgr.daemon.singleton import FileLock, LockBusy
 
 log = logging.getLogger("tlgr.daemon.session")
 
-__all__ = ["AccountSession", "SessionState", "backoff_delays"]
+__all__ = [
+    "MIN_CATCH_UP_INTERVAL",
+    "AccountSession",
+    "SessionState",
+    "backoff_delays",
+    "normalise_catch_up_interval",
+]
 
 #: 1, 2, 4, 8, 16, 32, 60, 60… with ±20 % jitter, capped at a minute (§6.3).
 _BACKOFF_CAP = 60.0
@@ -73,6 +79,10 @@ _SILENCE_CATCHUP_SECONDS = 900.0
 #: count: a reconnect makes `retries` rounds of `retries + 1` connection
 #: attempts, so 1 means two attempts for a first connect and for a reconnect.
 _TELETHON_CONNECTION_RETRIES = 1
+
+#: The floor for `[daemon] catch_up_interval`. Each catch-up is one
+#: `updates.getDifference`; more often than this is load without benefit.
+MIN_CATCH_UP_INTERVAL = 30
 
 
 class SessionState:
@@ -94,6 +104,19 @@ def backoff_delays(attempt: int, *, cap: float = _BACKOFF_CAP) -> float:
     """
     base = min(cap, 2.0**attempt)
     return base * (1.0 + random.uniform(-_JITTER, _JITTER))
+
+
+def normalise_catch_up_interval(seconds: float | None) -> int:
+    """`[daemon] catch_up_interval` as the supervisor uses it.
+
+    Zero or less (or unset) is off. A positive value below
+    `MIN_CATCH_UP_INTERVAL` is raised to it, so a typo cannot turn the timer
+    into a stream of `getDifference` calls.
+    """
+    value = int(seconds or 0)
+    if value <= 0:
+        return 0
+    return max(MIN_CATCH_UP_INTERVAL, value)
 
 
 @dataclass
@@ -174,6 +197,7 @@ class AccountSession:
         resync_depth: int = 50,
         peers_path: Path | None = None,
         dialog_scan_max: int = 5000,
+        catch_up_interval: int = 0,
     ) -> None:
         self.alias = alias
         self.session_path = session_path
@@ -188,6 +212,7 @@ class AccountSession:
         self.resync_depth = resync_depth
         self.peers_path = peers_path
         self.dialog_scan_max = dialog_scan_max
+        self.catch_up_interval = normalise_catch_up_interval(catch_up_interval)
         self._resolver: Any = None
 
         self.client: Any = None
@@ -510,6 +535,10 @@ class AccountSession:
             asyncio.create_task(self._state_saver(), name=f"tlgr-state-{self.alias}"),
             asyncio.create_task(self._clock_watcher(), name=f"tlgr-clock-{self.alias}"),
         ]
+        if self.catch_up_interval:
+            self._tickers.append(
+                asyncio.create_task(self._periodic_catch_up(), name=f"tlgr-catchup-{self.alias}")
+            )
 
     async def _state_saver(self) -> None:
         while not self._stopping:
@@ -549,6 +578,19 @@ class AccountSession:
             ):
                 await self.catch_up()
                 quiet_since = time.monotonic()
+
+    async def _periodic_catch_up(self) -> None:
+        """`[daemon] catch_up_interval`: ask for missed updates on a timer.
+
+        Off by default. Telethon fetches a difference on its own only after
+        fifteen minutes without updates; on a flaky network this bounds how
+        late a missed update can reach `watch`, webhooks and jobs. When nothing
+        was missed the server answers with an empty difference.
+        """
+        while not self._stopping:
+            await asyncio.sleep(self.catch_up_interval)
+            if self.connected and self.state == SessionState.ONLINE:
+                await self.catch_up()
 
     async def _set_presence(self, *, offline: bool) -> None:
         """`account.updateStatus`. Telethon never sends it, so tlgr reads as offline."""

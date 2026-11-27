@@ -496,3 +496,92 @@ class TestReconnect:
             assert order[:2] == ["disconnect", "connect"]
         finally:
             await session.stop()
+
+
+class _BlockingDialogs:
+    """An `iter_dialogs` that does not finish until the test says so."""
+
+    def __init__(self) -> None:
+        self.release = asyncio.Event()
+        self.started = 0
+        self.fail = False
+
+    def __call__(self, limit=None, **_):
+        self.started += 1
+        return self._iterate()
+
+    async def _iterate(self):
+        await self.release.wait()
+        if self.fail:
+            raise ConnectionError("dropped mid-sweep")
+        yield object()
+
+
+class TestDialogWarmup:
+    """tlgrcli/tlgr#60: the dialog sweep must not gate `online`."""
+
+    def _session(self, tmp: Path, world: World, dialogs: _BlockingDialogs) -> AccountSession:
+        def factory(path, options):
+            client = FakeTelegramClient(world, session=path)
+            client.iter_dialogs = dialogs
+            return client
+
+        return AccountSession(
+            "work",
+            session_path=tmp / "session",
+            lock_path=tmp / "session.lock",
+            options=ClientOptions(api_id=1, api_hash="x"),
+            client_factory=factory,
+        )
+
+    async def test_the_account_is_online_while_the_sweep_runs(self, tlgr_home, world):
+        dialogs = _BlockingDialogs()
+        session = self._session(tlgr_home, world, dialogs)
+        await session.start()
+        try:
+            await _wait_for(lambda: session.state == SessionState.ONLINE)
+            assert world.catch_ups >= 1
+            await _wait_for(lambda: dialogs.started == 1)
+            assert await session.acquire(timeout=0.1) is session.client
+            dialogs.release.set()
+            await _wait_for(lambda: session._warmed)
+        finally:
+            await session.stop()
+
+    async def test_a_finished_sweep_is_not_repeated_after_a_reconnect(self, tlgr_home, world):
+        dialogs = _BlockingDialogs()
+        dialogs.release.set()
+        session = self._session(tlgr_home, world, dialogs)
+        await session.start()
+        try:
+            await _wait_for(lambda: session._warmed)
+            session.client.drop()
+            await _wait_for(lambda: session.state == SessionState.ONLINE and world.connects >= 2)
+            assert dialogs.started == 1
+        finally:
+            await session.stop()
+
+    async def test_a_failed_sweep_runs_again_on_the_next_connect(self, tlgr_home, world):
+        dialogs = _BlockingDialogs()
+        dialogs.fail = True
+        dialogs.release.set()
+        session = self._session(tlgr_home, world, dialogs)
+        await session.start()
+        try:
+            await _wait_for(lambda: session._warmup is not None and session._warmup.done())
+            assert not session._warmed
+            dialogs.fail = False
+            session.client.drop()
+            await _wait_for(lambda: session._warmed)
+            assert dialogs.started == 2
+        finally:
+            await session.stop()
+
+    async def test_stop_cancels_a_running_sweep(self, tlgr_home, world):
+        dialogs = _BlockingDialogs()
+        session = self._session(tlgr_home, world, dialogs)
+        await session.start()
+        await _wait_for(lambda: session._warmup is not None)
+        task = session._warmup
+        await session.stop()
+        assert task is not None and task.cancelled()

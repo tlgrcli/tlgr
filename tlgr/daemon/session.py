@@ -206,6 +206,8 @@ class AccountSession:
         self._ready = asyncio.Event()
         self._supervisor: asyncio.Task[None] | None = None
         self._tickers: list[asyncio.Task[None]] = []
+        self._warmup: asyncio.Task[None] | None = None
+        self._warmed = False
         self._job_client: Any = None
         self._flood_budgets: list[int] = []
 
@@ -266,6 +268,11 @@ class AccountSession:
         for task in self._tickers:
             task.cancel()
         self._tickers = []
+        if self._warmup is not None:
+            self._warmup.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._warmup
+            self._warmup = None
         if self._supervisor is not None:
             self._supervisor.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
@@ -340,6 +347,7 @@ class AccountSession:
         await self._after_connect()
         self._set_state(SessionState.ONLINE)
         self._start_tickers()
+        self._start_warmup()
 
         disconnected = getattr(self.client, "disconnected", None)
         if disconnected is None:
@@ -378,16 +386,37 @@ class AccountSession:
             await self.client.disconnect()
 
     async def _after_connect(self) -> None:
-        """Warm the entity cache, then catch up (§6.3).
+        """Catch up, then announce presence (§6.3).
 
-        The warm-up is not an optimisation: `catch_up()` skips channels whose
-        `pts` it has never seen, so without one `iter_dialogs` pass a fresh
-        session silently gets no channel updates at all.
+        The dialog warm-up used to run here, before the account went online,
+        so a large account was unusable for minutes after every restart. It
+        now runs in the background once the account is online
+        (`_start_warmup`). Catch-up does not depend on it: channels whose
+        `pts` the session already holds are caught up from that state, and a
+        channel the session has never seen has no `pts` to catch up from
+        whichever runs first.
         """
-        await self._warm_entity_cache()
         await self.catch_up()
         if self.presence == "online":
             await self._set_presence(offline=False)
+
+    def _start_warmup(self) -> None:
+        """Run the dialog sweep in the background, once per session.
+
+        One `iter_dialogs` pass seeds access hashes into Telethon's session and
+        `pts` for channels the update state has never seen, so their later
+        gaps can be fetched. Nothing waits for it: a request for a peer the
+        sweep has not reached yet resolves it the way it always could (session
+        cache, then the network, then the resolver's own dialog scan). The
+        client and its caches survive reconnects, so a sweep that finished is
+        not repeated; one that failed or was cut off by a drop runs again on
+        the next connect.
+        """
+        if self._warmed or (self._warmup is not None and not self._warmup.done()):
+            return
+        self._warmup = asyncio.create_task(
+            self._warm_entity_cache(), name=f"tlgr-warmup-{self.alias}"
+        )
 
     async def _warm_entity_cache(self) -> None:
         iterator = getattr(self.client, "iter_dialogs", None)
@@ -402,6 +431,7 @@ class AccountSession:
         except Exception as exc:
             log.debug("entity cache warm-up failed for %s: %s", self.alias, exc)
         else:
+            self._warmed = True
             log.debug("warmed %d dialogs for %s", count, self.alias)
 
     async def catch_up(self) -> None:

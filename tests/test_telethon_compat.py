@@ -98,3 +98,68 @@ class TestReconnectHook:
             pass
 
         assert compat.install_reconnect_hook(Bare(), lambda: None) is False
+
+
+class TestStateGuard:
+    """Telethon writes an empty `MessageBox` over the session's update state."""
+
+    @staticmethod
+    def _seed(path) -> None:
+        import datetime
+
+        from telethon.sessions import SQLiteSession
+
+        session = SQLiteSession(str(path))
+        stamp = datetime.datetime(2026, 11, 1, tzinfo=datetime.timezone.utc)
+        session.set_update_state(0, types.updates.State(100, 7, stamp, 3, 0))
+        session.save()
+        session.close()
+
+    @staticmethod
+    def _pts(path) -> int:
+        from telethon.sessions import SQLiteSession
+
+        session = SQLiteSession(str(path))
+        try:
+            state = session.get_update_state(0)
+            return int(state.pts) if state is not None else -1
+        finally:
+            session.close()
+
+    async def test_disconnecting_a_never_connected_client_keeps_the_saved_pts(self, tmp_path):
+        path = tmp_path / "work"
+        self._seed(path)
+        client = _real_client(str(path))
+        assert compat.install_state_guard(client)
+        assert not compat.update_state_loaded(client)
+
+        await client.disconnect()
+
+        assert self._pts(path) == 100
+
+    async def test_save_state_skips_an_empty_box(self, tmp_path):
+        path = tmp_path / "work"
+        self._seed(path)
+        client = _real_client(str(path))
+
+        assert await compat.save_state(client) is False
+        client.session.close()
+
+        assert self._pts(path) == 100
+
+    async def test_a_loaded_box_is_saved(self, tmp_path):
+        """The guard must not stop the real periodic save."""
+        from telethon._updates.session import SessionState
+
+        path = tmp_path / "work"
+        self._seed(path)
+        client = _real_client(str(path))
+        compat.install_state_guard(client)
+        client._message_box.load(SessionState(0, 0, False, 250, 7, 1_790_000_000, 3, None), [])
+        assert compat.update_state_loaded(client)
+
+        await client._save_states_and_entities()
+        client.session.save()
+        client.session.close()
+
+        assert self._pts(path) == 250

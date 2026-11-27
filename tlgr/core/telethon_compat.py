@@ -28,12 +28,14 @@ __all__ = [
     "TOO_LONG_GLOBAL",
     "entity_count",
     "install_reconnect_hook",
+    "install_state_guard",
     "install_too_long_hook",
     "probe",
     "save_state",
     "session_state",
     "set_session_state",
     "telethon_version",
+    "update_state_loaded",
 ]
 
 TOO_LONG_GLOBAL = "global"
@@ -79,10 +81,19 @@ async def save_state(client: Any) -> bool:
     the session file last held — in v1, from the last clean shutdown, which
     could be days. Called every `[daemon] state_save_interval` seconds and on
     every shutdown path.
+
+    Nothing is written while the client's `MessageBox` is still empty, which
+    is the case until the first successful connect loads it from the session.
+    Telethon would write that empty box as `pts=0`, overwriting the state the
+    session held, and the next start would begin from "now" and drop every
+    update missed while down. An account that starts offline and is stopped
+    before it ever connects must leave its session's update state alone.
     """
     ok = True
     saver = getattr(client, "_save_states_and_entities", None)
-    if callable(saver):
+    if not update_state_loaded(client):
+        ok = False
+    elif callable(saver):
         try:
             result = saver()
             if hasattr(result, "__await__"):
@@ -103,6 +114,57 @@ async def save_state(client: Any) -> bool:
             log.debug("session save failed: %s", exc)
             ok = False
     return ok
+
+
+def update_state_loaded(client: Any) -> bool:
+    """Has this client's `MessageBox` been loaded with an update state yet?
+
+    False only when the box exists and says it is empty, which is the case
+    until the first successful connect. When the box cannot be inspected the
+    answer is True, so callers keep Telethon's own behaviour.
+    """
+    box = getattr(client, "_message_box", None)
+    is_empty = getattr(box, "is_empty", None)
+    if not callable(is_empty):
+        return True
+    try:
+        return not is_empty()
+    except Exception:  # pragma: no cover - defensive
+        return True
+
+
+def install_state_guard(client: Any) -> bool:
+    """Stop Telethon from writing an empty update state over the session's.
+
+    `TelegramClient.disconnect()` and its keepalive loop both call
+    `_save_states_and_entities()` unconditionally. Before the first successful
+    connect the `MessageBox` is empty, and that call stores it as `pts=0`,
+    erasing the state the session held. The next start then begins from "now"
+    and every update missed while the daemon was down is lost. An account that
+    starts while the network is down and is stopped (or restarted) before it
+    ever connected hits exactly that. The guard makes the save a no-op until
+    the box has been loaded.
+    """
+    saver = getattr(client, "_save_states_and_entities", None)
+    if not callable(saver):
+        _warn_once("_save_states_and_entities")
+        return False
+
+    async def guarded() -> Any:
+        if not update_state_loaded(client):
+            log.debug("skipping update state save: nothing loaded yet")
+            return None
+        result = saver()
+        if hasattr(result, "__await__"):
+            result = await result
+        return result
+
+    try:
+        client._save_states_and_entities = guarded
+    except AttributeError:  # pragma: no cover - TelegramClient has no slots
+        _warn_once("_save_states_and_entities assignment")
+        return False
+    return True
 
 
 def install_reconnect_hook(client: Any, callback: Callable[[], Any]) -> bool:

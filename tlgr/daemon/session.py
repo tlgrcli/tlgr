@@ -9,9 +9,13 @@ as present and healthy. That is COR-13 and it is the reason this file exists.
 
 The rules it enforces:
 
-* **the supervisor owns backoff**, not Telethon (`connection_retries=None`),
-  so a drop is a state transition rather than an exception thrown at whoever
-  happened to be making a request;
+* **the supervisor owns backoff**, not Telethon. Telethon gets one quick
+  retry (`connection_retries=1`) to ride out a reset connection, then
+  gives up and resolves `disconnected`, and the supervisor's jittered backoff
+  takes over, so a drop is a state transition rather than an exception thrown
+  at whoever happened to be making a request. `None` is not "off": Telethon
+  reads it as retry forever, once a second, which hid every drop from the
+  supervisor and left an account that started offline in `starting` for good;
 * **`catch_up()` runs after every reconnect**, not only at construction.
   Telethon's own reconnect handler calls `get_me()` and nothing else, so an
   account that was down for ten minutes silently misses everything that
@@ -63,6 +67,13 @@ _CLOCK_TICK_SECONDS = 30.0
 #: The belt-and-braces resync interval for an account that has heard nothing.
 _SILENCE_CATCHUP_SECONDS = 900.0
 
+#: How many times Telethon itself retries a dropped or failed connection before
+#: it gives up and the supervisor's backoff takes over. Small and finite on
+#: purpose: `None` means retry forever inside Telethon. Telethon nests the
+#: count: a reconnect makes `retries` rounds of `retries + 1` connection
+#: attempts, so 1 means two attempts for a first connect and for a reconnect.
+_TELETHON_CONNECTION_RETRIES = 1
+
 
 class SessionState:
     STARTING = "starting"
@@ -93,6 +104,7 @@ class ClientOptions:
     api_hash: str
     entity_cache_limit: int = 20000
     request_retries: int = 5
+    connection_retries: int = _TELETHON_CONNECTION_RETRIES
     connect_timeout: int = 10
     flood_sleep_threshold: int = 120
     device_model: str = ""
@@ -109,9 +121,12 @@ class ClientOptions:
 def build_client(session_path: Path, options: ClientOptions) -> Any:
     """Construct the Telethon client tlgr wants (§6.2).
 
-    `connection_retries=None` is the load-bearing argument: it means "retry
-    forever inside Telethon" is *off*, and the supervisor below decides what a
-    disconnection means.
+    `connection_retries` is the load-bearing argument. It must be a small
+    finite number: Telethon treats `None` (and any negative value) as retry
+    forever at a fixed one-second delay, so `disconnected` never resolves, the
+    supervisor below never sees the drop, and `connect()` on a machine with no
+    network never returns. With a finite count Telethon absorbs a reset
+    connection and then hands the outage to the supervisor.
     """
     from telethon import TelegramClient
 
@@ -120,7 +135,7 @@ def build_client(session_path: Path, options: ClientOptions) -> Any:
         "sequential_updates": True,
         "raise_last_call_error": True,
         "entity_cache_limit": int(options.entity_cache_limit),
-        "connection_retries": None,
+        "connection_retries": max(0, int(options.connection_retries)),
         "retry_delay": 1,
         "request_retries": int(options.request_retries),
         "auto_reconnect": True,
@@ -311,6 +326,8 @@ class AccountSession:
             self.client = self._factory(self.session_path, self.options)
             await self._client_built()
             self._install_hooks()
+        elif self.connected_since is not None and not self.client.is_connected():
+            await self._discard_dead_connection()
 
         await self.client.connect()
         if not await self.client.is_user_authorized():
@@ -327,7 +344,38 @@ class AccountSession:
         disconnected = getattr(self.client, "disconnected", None)
         if disconnected is None:
             return
-        await disconnected
+        try:
+            await disconnected
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # Telethon ran out of its own reconnect attempts and resolved the
+            # future with the last error. That is a dropped connection, the
+            # same as a clean resolve, unless the error says the session is
+            # gone for good.
+            if is_fatal_auth(exc):
+                raise
+            log.warning(
+                "account %s lost its connection: %s: %s",
+                self.alias,
+                type(exc).__name__,
+                exc,
+                extra={"account": self.alias},
+            )
+
+    async def _discard_dead_connection(self) -> None:
+        """Tear down what is left of a connection Telethon gave up on.
+
+        When Telethon's own reconnect attempts run out it closes the sender,
+        but the client's update loop can stay parked on the update queue for
+        up to fifteen minutes. A `connect()` on top of that would start a
+        second update loop next to the stale one, and both would apply the
+        same differences. A full `disconnect()` cancels both loops and saves
+        the update state (the box was loaded by the earlier connect, so that
+        write is correct); the session file reopens on the next `connect()`.
+        """
+        with contextlib.suppress(Exception):
+            await self.client.disconnect()
 
     async def _after_connect(self) -> None:
         """Warm the entity cache, then catch up (§6.3).
@@ -399,6 +447,7 @@ class AccountSession:
             )
 
     def _install_hooks(self) -> None:
+        compat.install_state_guard(self.client)
         compat.install_reconnect_hook(self.client, self._on_reconnect)
         compat.install_too_long_hook(self.client, self._on_too_long)
 

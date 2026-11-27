@@ -50,6 +50,7 @@ __all__ = [
     "PhoneShared",
     "PhotoResult",
     "ProfilePhoto",
+    "RejectedPhone",
     "SavedPhoneContact",
     "SignUp",
     "SuggestedBirthday",
@@ -180,6 +181,20 @@ class ImportedPhone(ContactModel):
     retry: bool = False
 
 
+class RejectedPhone(ContactModel):
+    """A phonebook row that was not imported because its number is not E.164.
+
+    A number without a `+` and a country code is refused rather than guessed
+    at: prefixing `+` to local digits picks a country by accident and imports
+    a stranger. The row is reported so it can be fixed and imported again.
+    """
+
+    line: int = 0
+    value: str = ""
+    name: str = ""
+    reason: str = ""
+
+
 class ContactImport(ContactModel):
     """`contact import`, reporting the retry list rather than swallowing it.
 
@@ -194,6 +209,7 @@ class ContactImport(ContactModel):
     batches: int = 0
     flood_waits: int = 0
     dry_run: bool = False
+    rejected: list[RejectedPhone] = []
 
 
 class ContactSync(ContactModel):
@@ -204,6 +220,7 @@ class ContactSync(ContactModel):
     applied: bool = False
     imported: int = 0
     deleted: int = 0
+    rejected: list[RejectedPhone] = []
 
 
 class SavedPhoneContact(ContactModel):

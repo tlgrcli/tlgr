@@ -170,6 +170,53 @@ class TestPeerRef:
     def test_user_ref_accepts_a_user(self):
         assert parse_user_ref("+989120000000").kind == "phone"
 
+    def test_a_phone_ref_with_a_zero_country_code_is_refused(self):
+        with pytest.raises(ValueError, match="never starts with 0"):
+            parse_peer_ref("+0912 345 6789")
+
+
+class TestParseE164:
+    """Typed phones: international form only, never a guessed country code."""
+
+    @pytest.mark.parametrize(
+        ("text", "value"),
+        [
+            ("+98 912 345 6789", "+989123456789"),
+            ("+1 (212) 555-1234", "+12125551234"),
+            ("+44.20.7946.0018", "+442079460018"),
+            ("  +7 916 123-45-67 ", "+79161234567"),
+            ("+۹۸ ۹۱۲ ۳۴۵ ۶۷۸۹", "+989123456789"),
+            ("‎+98 912 345 6789‏", "+989123456789"),
+            ("+683 4002", "+6834002"),
+        ],
+    )
+    def test_accepts_international_numbers(self, text, value):
+        from tlgr.models.peer import parse_e164
+
+        assert parse_e164(text) == value
+
+    @pytest.mark.parametrize(
+        ("text", "why"),
+        [
+            # The issue's two misdirections: +91 India and +212 Morocco.
+            ("9123456789", "no country code"),
+            ("2125551234", "no country code"),
+            ("8 999 000-11-22", "no country code"),
+            ("0912 345 6789", "local number"),
+            ("0098 912 345 6789", r"\+98 ?912"),
+            ("+0912 345 6789", "never starts with 0"),
+            ("+12345", "7 to 15"),
+            ("+1234567890123456", "7 to 15"),
+            ("+98 912 abc", "not a phone number"),
+            ("", "required"),
+        ],
+    )
+    def test_refuses_local_and_malformed_forms(self, text, why):
+        from tlgr.models.peer import PhoneNumberError, parse_e164
+
+        with pytest.raises(PhoneNumberError, match=why):
+            parse_e164(text)
+
     def test_peer_ref_is_a_wire_shape(self):
         ref = parse_peer_ref("@alice")
         assert json.loads(encode(ref)) == {"raw": "@alice", "kind": "username", "value": "alice"}

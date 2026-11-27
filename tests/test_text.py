@@ -104,3 +104,19 @@ class TestEntityJson:
     def test_rejects_a_malformed_entity(self):
         with pytest.raises(UsageError, match="entities"):
             entities_from_json('[{"type":"bold","offset":"zero","length":4}]')
+
+    def test_a_date_chip_survives_json_and_splits(self):
+        """Every copy of an entity must carry the date, not only the old fields."""
+        from tlgr.ops._send import split_text
+
+        chip = MessageEntity(
+            type="formatted_date",
+            offset=4,
+            length=5,
+            date_unix=1789318800,
+            short_date=True,
+        )
+        assert entities_from_json(entities_to_json([chip])) == [chip]
+        parts = split_text("a" * 10 + " 13/09 17:00", [chip], limit=8)
+        carried = [e for _, ents in parts for e in ents if e.type == "formatted_date"]
+        assert carried and all(e.date_unix == 1789318800 and e.short_date for e in carried)

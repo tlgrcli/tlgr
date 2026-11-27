@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from tlgr.core.errors import UsageError
+from tlgr.core.errors import NotFoundError, UsageError
 from tlgr.core.pagination import PageKind, decode_cursor
 from tlgr.ops._spec import OpContext
 
@@ -23,8 +23,11 @@ __all__ = [
     "already",
     "client",
     "ids",
+    "ids_outside_chat",
     "input_channel",
     "is_not_modified",
+    "is_range",
+    "not_in_chat",
     "only",
     "random_id",
     "window",
@@ -65,7 +68,7 @@ def ids(values: tuple[int, ...] | tuple[str, ...] | list[str] | None) -> list[in
     out: list[int] = []
     for value in values or ():
         text = str(value)
-        if "-" in text[1:]:
+        if is_range(text):
             head, _, tail = text.partition("-")
             try:
                 start, end = int(head), int(tail)
@@ -80,6 +83,60 @@ def ids(values: tuple[int, ...] | tuple[str, ...] | list[str] | None) -> list[in
             except ValueError as exc:
                 raise UsageError(f"{text!r} is not a message id", field="msg_id") from exc
     return out
+
+
+def is_range(value: object) -> bool:
+    """`100-120` rather than `100` or `-5`: the shape `ids` expands."""
+    return "-" in str(value)[1:]
+
+
+async def ids_outside_chat(ctx: OpContext, peer: Any, wanted: list[int]) -> list[int]:
+    """The ids in *wanted* that are not messages of *peer*, in order.
+
+    Private chats and basic groups share one message-id counter per account,
+    and `messages.deleteMessages` takes bare ids with no peer at all: Telethon
+    drops the peer it was given. Deleting `[105]` "in @alice" therefore deletes
+    message 105 wherever it lives, in some other chat, for both sides. So the
+    ids are fetched back through the peer first (`get_messages` with a peer
+    returns None for an id from another chat), and only the ones that come
+    back may be deleted. Channels and supergroups number their own messages
+    and `channels.deleteMessages` honours the channel, so they are not checked.
+
+    A deleted message also comes back None: from here "already gone" and
+    "belongs to someone else" look the same, and both mean "do not send it".
+    """
+    from telethon.tl import types
+
+    if not wanted or isinstance(
+        peer, (types.InputPeerChannel, types.InputPeerChannelFromMessage, types.InputChannel)
+    ):
+        return []
+    handle = client(ctx)
+    present: set[int] = set()
+    for start in range(0, len(wanted), 100):
+        if start:
+            limiter = getattr(ctx, "limiter", None)
+            if limiter is not None:
+                await limiter.acquire("bulk")
+        found = await handle.get_messages(peer, ids=wanted[start : start + 100])
+        if found is not None and not isinstance(found, list):
+            found = [found]
+        present.update(int(m.id) for m in found or [] if m is not None)
+    return [i for i in wanted if i not in present]
+
+
+def not_in_chat(chat: str, refused: list[int]) -> NotFoundError:
+    """The refusal for ids `ids_outside_chat` found, raised before any delete."""
+    listed = ", ".join(str(i) for i in refused[:20])
+    if len(refused) > 20:
+        listed += f" and {len(refused) - 20} more"
+    error = NotFoundError(
+        f"message id(s) {listed} are not in {chat}: deleted already, or they belong to "
+        "another chat. In private chats and basic groups Telegram deletes by bare id "
+        "across the whole account, so nothing was deleted."
+    )
+    error.hint = f"Check the ids with: tlgr message list {chat}"
+    return error
 
 
 def is_not_modified(exc: BaseException) -> bool:

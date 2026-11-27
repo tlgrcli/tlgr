@@ -1617,7 +1617,7 @@ Partial: `groups-channels-admin.admin-list`
 
 Remove (kick) a member; they can rejoin.
 
-A kick is `editBanned(view_messages)` followed by an empty mask, so the person may come back. Use `chat member ban` to keep them out. `--purge` drains `messages.affectedHistory` until the server stops handing back an offset.
+A kick is `editBanned(view_messages)` followed by an empty mask, so the person may come back. Use `chat member ban` to keep them out. In a channel or supergroup the member is looked up first: someone already banned stays banned and someone not in the chat is left alone (`already: true`). Naming this account is refused (use `chat leave`), and if the unban step fails the error says they are now banned. `--purge` drains `messages.affectedHistory` until the server stops handing back an offset.
 
 ```
 tlgr chat member remove <CHAT> [USER]... [OPTIONS]

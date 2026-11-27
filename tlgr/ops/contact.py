@@ -51,6 +51,7 @@ from tlgr.models.contact import (
     FoundPeer,
     ImportedPhone,
     PhoneShared,
+    RejectedPhone,
     SavedPhoneContact,
     SignUp,
     TopPeer,
@@ -58,7 +59,7 @@ from tlgr.models.contact import (
     UserStatus,
 )
 from tlgr.models.page import Page
-from tlgr.models.peer import Peer, PeerRef
+from tlgr.models.peer import Peer, PeerRef, PhoneNumberError, parse_e164
 from tlgr.ops import _send
 from tlgr.ops._params import arg, choice, opt
 from tlgr.ops._serialize import entity_to_peer, peer_id_of
@@ -131,10 +132,24 @@ def mark_already(ctx: OpContext) -> None:
 
 
 def e164(phone: str) -> str:
-    """`(555) 000-1111` → `+15550001111`. Format only; nothing is looked up."""
+    """A phone the *server* returned (`15550001111`) as `+15550001111`.
+
+    Lenient on purpose: Telegram hands back international numbers without the
+    `+`, so prefixing one is correct here. It is wrong for anything a person
+    typed, where the digits may be a local number; that goes through
+    `typed_phone`. Format only; nothing is looked up.
+    """
     cleaned = _PHONE_CHARS.sub("", (phone or "").strip())
     digits = cleaned.lstrip("+")
     return f"+{digits}" if digits else ""
+
+
+def typed_phone(text: str, field: str = "phone") -> str:
+    """A phone number from the caller, strictly E.164, or a USAGE error."""
+    try:
+        return parse_e164(text)
+    except PhoneNumberError as exc:
+        raise UsageError(str(exc), field=field) from exc
 
 
 async def input_user(
@@ -374,31 +389,42 @@ def _read_file(source: str, field: str) -> str:
         raise UsageError(f"{source}: {exc.strerror or exc}", field=field) from exc
 
 
-def parse_phonebook(text: str) -> list[ImportedPhone]:
-    """vCard, CSV or one-number-per-line, into the same list.
+def parse_phonebook(text: str) -> tuple[list[ImportedPhone], list[RejectedPhone]]:
+    """vCard, CSV or one-number-per-line, into `(entries, rejected rows)`.
 
-    Deliberately forgiving about the input and strict about the output: every
-    entry ends up with an E.164 number and a first name, because
-    `importContacts` rejects an empty name with `CONTACT_NAME_EMPTY` and a
-    whole batch fails for one bad row.
+    Forgiving about the layout and strict about the numbers: every entry ends
+    up with an E.164 number and a first name, because `importContacts`
+    rejects an empty name with `CONTACT_NAME_EMPTY` and a whole batch fails
+    for one bad row. A number without a `+` and country code is not guessed
+    at (see `parse_e164`); its row comes back in the second list instead, so
+    one local number does not abort the rest of the file.
     """
     body = text.strip()
     if not body:
-        return []
+        return [], []
     if "BEGIN:VCARD" in body.upper():
         return _parse_vcard(body)
     return _parse_csv(body)
 
 
-def _parse_vcard(text: str) -> list[ImportedPhone]:
+def _tel_value(value: str) -> str:
+    """The number in a vCard TEL value; vCard 4 spells it `tel:+1-555-...`."""
+    value = value.strip()
+    return value[4:] if value.lower().startswith("tel:") else value
+
+
+def _parse_vcard(text: str) -> tuple[list[ImportedPhone], list[RejectedPhone]]:
     out: list[ImportedPhone] = []
+    rejected: list[RejectedPhone] = []
     first = last = ""
     phone = ""
-    for raw_line in text.splitlines():
+    refused: RejectedPhone | None = None
+    for number, raw_line in enumerate(text.splitlines(), start=1):
         line = raw_line.strip()
         upper = line.upper()
         if upper.startswith("BEGIN:VCARD"):
             first = last = phone = ""
+            refused = None
         elif upper.startswith("N:"):
             parts = line.split(":", 1)[1].split(";")
             last = parts[0].strip() if parts else ""
@@ -408,24 +434,48 @@ def _parse_vcard(text: str) -> list[ImportedPhone]:
             first = words[0] if words else ""
             last = words[1] if len(words) > 1 else last
         elif upper.startswith("TEL") and ":" in line:
-            phone = e164(line.split(":", 1)[1])
-        elif upper.startswith("END:VCARD") and phone:
-            out.append(ImportedPhone(phone=phone, first_name=first or phone, last_name=last))
-    return out
+            value = _tel_value(line.split(":", 1)[1])
+            try:
+                phone = parse_e164(value)
+            except PhoneNumberError as exc:
+                refused = RejectedPhone(line=number, value=value, reason=str(exc))
+        elif upper.startswith("END:VCARD"):
+            if phone:
+                out.append(ImportedPhone(phone=phone, first_name=first or phone, last_name=last))
+            elif refused is not None:
+                # Reported only when the card has no usable number at all: a
+                # card with an international mobile and a local landline
+                # imports the mobile, as it did before.
+                refused.name = " ".join(part for part in (first, last) if part)
+                rejected.append(refused)
+    return out, rejected
 
 
-def _parse_csv(text: str) -> list[ImportedPhone]:
+def _parse_csv(text: str) -> tuple[list[ImportedPhone], list[RejectedPhone]]:
     import csv
     import io
 
     out: list[ImportedPhone] = []
-    for row in csv.reader(io.StringIO(text)):
+    rejected: list[RejectedPhone] = []
+    reader = csv.reader(io.StringIO(text))
+    for row in reader:
         cells = [cell.strip() for cell in row if cell.strip()]
         if not cells:
             continue
-        phone = e164(cells[0])
-        if not phone or not phone.lstrip("+").isdigit():
+        if not any(char.isdigit() for char in cells[0]):
             # A header row, or a comment. Skipping beats importing "phone".
+            continue
+        try:
+            phone = parse_e164(cells[0])
+        except PhoneNumberError as exc:
+            rejected.append(
+                RejectedPhone(
+                    line=reader.line_num,
+                    value=cells[0],
+                    name=" ".join(cells[1:3]),
+                    reason=str(exc),
+                )
+            )
             continue
         out.append(
             ImportedPhone(
@@ -434,7 +484,7 @@ def _parse_csv(text: str) -> list[ImportedPhone]:
                 last_name=cells[2] if len(cells) > 2 else "",
             )
         )
-    return out
+    return out, rejected
 
 
 def render_export(contacts: list[Contact], fmt: str) -> str:
@@ -773,7 +823,7 @@ async def add(ctx: OpContext, req: AddReq) -> ContactAdded:
     first, last = _split_name(req.name)
     first = req.first_name if req.first_name is not None else first
     last = req.last_name if req.last_name is not None else last
-    phone = e164(req.phone or "")
+    phone = typed_phone(req.phone) if req.phone else ""
 
     if req.from_message:
         card_phone, card_first, card_last, user_id = await _card_from_message(ctx, req.from_message)
@@ -939,6 +989,10 @@ async def remove(ctx: OpContext, req: RemoveReq) -> ContactRemoved:
     if not req.user and not req.phone:
         raise UsageError("give at least one user or --phone", field="user")
 
+    # Every number is checked before anything is deleted: deleteByPhones is
+    # irreversible, and a guessed country code deletes somebody else's entry.
+    phones = [typed_phone(p) for p in req.phone if p.strip()]
+
     user_ids: list[int] = []
     if req.user:
         targets = [await input_user(ctx, ref) for ref in req.user]
@@ -947,7 +1001,6 @@ async def remove(ctx: OpContext, req: RemoveReq) -> ContactRemoved:
             int(u.id) for u in (getattr(result, "users", None) or []) if hasattr(u, "id")
         ] or [int(getattr(t, "user_id", 0) or 0) for t in targets]
 
-    phones = [e164(p) for p in req.phone if e164(p)]
     if phones:
         await client_of(ctx)(fn.DeleteByPhonesRequest(phones=phones))
 
@@ -2153,9 +2206,12 @@ async def contact_import(ctx: OpContext, req: ImportReq) -> ContactImport:
     from telethon.tl import types
     from telethon.tl.functions import contacts as fn
 
-    entries = parse_phonebook(_read_file(req.file, "file"))
+    entries, rejected = parse_phonebook(_read_file(req.file, "file"))
     if not entries:
-        raise UsageError(f"{req.file} has no usable phone numbers in it", field="file")
+        detail = f"; {_rejected_summary(rejected)}" if rejected else ""
+        raise UsageError(f"{req.file} has no usable phone numbers in it{detail}", field="file")
+    if rejected:
+        ctx.warn(_rejected_summary(rejected))
 
     imported: list[ImportedPhone] = []
     retry: list[ImportedPhone] = []
@@ -2226,6 +2282,17 @@ async def contact_import(ctx: OpContext, req: ImportReq) -> ContactImport:
         popular_invites=popular,
         batches=batches,
         flood_waits=int(getattr(ctx, "flood_wait_slept", 0) or 0),
+        rejected=rejected,
+    )
+
+
+def _rejected_summary(rejected: list[RejectedPhone]) -> str:
+    """One line naming the rows that were left out, for a warning or an error."""
+    shown = ", ".join(f"line {row.line} ({row.value})" for row in rejected[:5])
+    more = f" and {len(rejected) - 5} more" if len(rejected) > 5 else ""
+    return (
+        f"{len(rejected)} row(s) skipped because the number is not in international "
+        f"form (+ and country code): {shown}{more}; see `rejected` for the reasons"
     )
 
 
@@ -2238,7 +2305,9 @@ SPEC_IMPORT = OperationSpec(
     description=(
         "Heavily flood-limited, so imports are chunked (`--batch-size`, 200 "
         "by default) and paced by the session limiter. `popular_invites` "
-        "says how many other people already imported that number."
+        "says how many other people already imported that number. Numbers "
+        "must be international (+ and country code): a row that is not is "
+        "skipped and listed in `rejected`, never guessed at."
     ),
     mutating=True,
     rate_class="bulk",
@@ -2270,7 +2339,7 @@ async def sync(ctx: OpContext, req: SyncReq) -> ContactSync:
     from telethon.tl import types
     from telethon.tl.functions import contacts as fn
 
-    entries = parse_phonebook(_read_file(req.file, "file"))
+    entries, rejected = parse_phonebook(_read_file(req.file, "file"))
     _, users, _ = await load_contacts(ctx)
     server = {e164(getattr(u, "phone", "") or ""): u for u in users if getattr(u, "phone", None)}
     local = {entry.phone: entry for entry in entries}
@@ -2278,8 +2347,22 @@ async def sync(ctx: OpContext, req: SyncReq) -> ContactSync:
     to_import = [entry for phone, entry in local.items() if phone not in server]
     to_delete = [phone for phone in server if phone not in local] if req.delete_missing else []
 
+    if rejected:
+        ctx.warn(_rejected_summary(rejected))
     if not req.apply:
-        return ContactSync(to_import=to_import, to_delete=to_delete, applied=False)
+        return ContactSync(
+            to_import=to_import, to_delete=to_delete, applied=False, rejected=rejected
+        )
+    if rejected and to_delete:
+        # A row we could not read may be one of the numbers in to_delete
+        # (`0912...` in the file, `+98912...` on the server), and
+        # deleteByPhones cannot be undone. Importing alone would be safe, but
+        # half-applying a sync the caller asked for whole is not.
+        raise UsageError(
+            f"refusing --delete-missing: {_rejected_summary(rejected)}. A skipped row "
+            "may be one of the contacts it would delete. Fix those rows and run again.",
+            field="file",
+        )
 
     imported = 0
     if to_import:
@@ -2306,6 +2389,7 @@ async def sync(ctx: OpContext, req: SyncReq) -> ContactSync:
         applied=True,
         imported=imported,
         deleted=len(to_delete),
+        rejected=rejected,
     )
 
 
@@ -2317,7 +2401,10 @@ SPEC_SYNC = OperationSpec(
     summary="Two-way sync of a local phonebook file with the server contact list",
     description=(
         "Prints the diff and changes nothing unless `--apply` is given, "
-        "because `contacts.deleteByPhones` is irreversible server-side."
+        "because `contacts.deleteByPhones` is irreversible server-side. Rows "
+        "whose number is not international (+ and country code) are listed "
+        "in `rejected`; with --delete-missing they make --apply refuse, since "
+        "a skipped row may be a contact the diff would delete."
     ),
     mutating=True,
     destructive=True,

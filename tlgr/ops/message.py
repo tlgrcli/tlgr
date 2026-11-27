@@ -70,8 +70,11 @@ from tlgr.ops._common import affected_loop as _affected_loop
 from tlgr.ops._common import already as _already
 from tlgr.ops._common import client as _client
 from tlgr.ops._common import ids as _ids
+from tlgr.ops._common import ids_outside_chat as _ids_outside_chat
 from tlgr.ops._common import input_channel as _input_channel
 from tlgr.ops._common import is_not_modified as _is_not_modified
+from tlgr.ops._common import is_range as _is_range
+from tlgr.ops._common import not_in_chat as _not_in_chat
 from tlgr.ops._common import only as _only
 from tlgr.ops._common import random_id as _random_id
 from tlgr.ops._common import window as _window
@@ -1633,11 +1636,34 @@ async def delete(ctx: OpContext, req: DeleteReq) -> DeleteResult:
         await client(fn.DeleteScheduledMessagesRequest(peer=peer, id=ids))
         return DeleteResult(chat_id=chat_id, deleted=len(ids), ids=ids, scheduled=True)
 
+    skipped: list[int] = []
+    outside = await _ids_outside_chat(ctx, peer, ids)
+    if outside:
+        # An id the caller typed by hand is refused outright: it may be a
+        # message in another chat. Ids that only came from a range are
+        # skipped instead, because in a private chat a range interleaves with
+        # every other private chat's messages and most of it is foreign.
+        typed = set(_ids(tuple(v for v in req.msg_id if not _is_range(v))))
+        refused = [i for i in outside if i in typed]
+        if refused:
+            raise _not_in_chat(req.chat.raw, refused)
+        skipped = sorted(set(outside))
+        ids = [i for i in ids if i not in set(skipped)]
+        ctx.warn(f"skipped {len(skipped)} id(s) in the range that are not messages of this chat")
+        if not ids:
+            return DeleteResult(chat_id=chat_id, deleted=0, skipped=skipped)
+
     revoke = not req.for_me and req.for_everyone
     result = await client.delete_messages(peer, ids, revoke=revoke)
     affected = sum(int(getattr(item, "pts_count", 0) or 0) for item in (result or []))
     ctx.emit("message_delete", {"chat_id": chat_id, "ids": ids})
-    return DeleteResult(chat_id=chat_id, deleted=affected or len(ids), ids=ids, affected=affected)
+    return DeleteResult(
+        chat_id=chat_id,
+        deleted=affected or len(ids),
+        ids=ids,
+        affected=affected,
+        skipped=skipped,
+    )
 
 
 SPEC_DELETE = OperationSpec(
@@ -1647,9 +1673,13 @@ SPEC_DELETE = OperationSpec(
     impl=delete,
     summary="Delete messages for me or for everyone",
     description=(
-        "In a channel or supergroup a delete is always for everyone — "
-        "`channels.deleteMessages` has no revoke flag — so --for-me is only "
-        "meaningful in private chats and basic groups."
+        "In a channel or supergroup a delete is always for everyone "
+        "(`channels.deleteMessages` has no revoke flag), so --for-me is only "
+        "meaningful in private chats and basic groups. There, Telegram deletes "
+        "by bare id across the whole account, so each id is first checked to be "
+        "a message of CHAT: a typed id that is not is refused and nothing is "
+        "deleted; ids from a range that are not are skipped and listed in "
+        "`skipped`."
     ),
     aliases=("msg.delete", "message.rm"),
     legacy_paths=("message delete", "msg delete"),
@@ -2418,6 +2448,8 @@ async def entity_list(ctx: OpContext, req: EntityListReq) -> EntityReport:
 
 def _recount(text: str, entity: MessageEntity, units: str) -> MessageEntity:
     """Re-express a UTF-16 offset in code points or bytes."""
+    import msgspec
+
     raw = text.encode("utf-16-le")
     prefix = raw[: entity.offset * 2].decode("utf-16-le", "ignore")
     body = raw[entity.offset * 2 : (entity.offset + entity.length) * 2].decode(
@@ -2427,16 +2459,7 @@ def _recount(text: str, entity: MessageEntity, units: str) -> MessageEntity:
         offset, length = len(prefix), len(body)
     else:
         offset, length = len(prefix.encode()), len(body.encode())
-    return MessageEntity(
-        type=entity.type,
-        offset=offset,
-        length=length,
-        url=entity.url,
-        user_id=entity.user_id,
-        language=entity.language,
-        document_id=entity.document_id,
-        collapsed=entity.collapsed,
-    )
+    return msgspec.structs.replace(entity, offset=offset, length=length)
 
 
 SPEC_ENTITY_LIST = OperationSpec(

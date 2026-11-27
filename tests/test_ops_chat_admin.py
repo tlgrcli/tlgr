@@ -31,6 +31,7 @@ from tlgr.core.errors import (
     EXIT_INDETERMINATE,
     EXIT_NOT_FOUND,
     EXIT_PERMISSION,
+    EXIT_RATE_LIMITED,
     EXIT_USAGE,
     classify,
 )
@@ -245,6 +246,86 @@ class TestMemberWrite:
         assert sent[0].banned_rights.view_messages is True
         assert sent[1].banned_rights.view_messages is False
         assert admin_world.banned.get(GROUP_ID, {}) == {}
+
+    async def test_kicking_an_already_banned_user_does_not_unban_them(
+        self, live_daemon, client, in_thread, admin_world
+    ):
+        """The kick's second editBanned would otherwise lift the ban."""
+        await result(
+            client, in_thread, "chat.member.ban", {"chat": str(GROUP_ID), "user": [str(BOB)]}
+        )
+        bans = len(admin_world.called("EditBannedRequest"))
+        out = await result(
+            client, in_thread, "chat.member.remove", {"chat": str(GROUP_ID), "user": [str(BOB)]}
+        )
+        assert out == [
+            {"chat_id": GROUP_ID, "user_id": BOB, "removed": False, "banned": True, "already": True}
+        ]
+        assert len(admin_world.called("EditBannedRequest")) == bans
+        assert admin_world.banned[GROUP_ID][BOB].view_messages is True
+
+    async def test_kicking_a_non_member_changes_nothing(
+        self, live_daemon, client, in_thread, admin_world
+    ):
+        out = await result(
+            client, in_thread, "chat.member.remove", {"chat": str(GROUP_ID), "user": [str(CAROL)]}
+        )
+        assert out[0]["already"] is True and out[0]["removed"] is False
+        assert not admin_world.called("EditBannedRequest")
+
+    async def test_kicking_yourself_is_refused_before_anyone_is_removed(
+        self, live_daemon, client, in_thread, admin_world
+    ):
+        with pytest.raises(Exception) as caught:
+            await call(
+                client,
+                in_thread,
+                "chat.member.remove",
+                {"chat": str(GROUP_ID), "user": [str(BOB), "me"]},
+            )
+        error = classify(caught.value)
+        assert error.exit_code == EXIT_USAGE
+        assert "chat leave" in error.message
+        assert not admin_world.called("EditBannedRequest")
+        assert BOB in admin_world.members[GROUP_ID]
+
+    async def test_kicking_yourself_by_username_is_refused_too(
+        self, live_daemon, client, in_thread, admin_world
+    ):
+        admin_world.me.username = "myself"
+        admin_world.add_user(admin_world.me)
+        code = await fails(
+            client, in_thread, "chat.member.remove", {"chat": str(GROUP_ID), "user": ["@myself"]}
+        )
+        assert code == EXIT_USAGE
+        assert not admin_world.called("EditBannedRequest")
+
+    async def test_a_failed_unban_says_the_user_is_now_banned(
+        self, live_daemon, client, in_thread, admin_world
+    ):
+        from telethon.errors import FloodWaitError
+        from telethon.tl import types
+
+        def ban_then_flood(request):
+            if request.banned_rights.view_messages:
+                admin_world.banned.setdefault(GROUP_ID, {})[BOB] = request.banned_rights
+                return types.Updates(updates=[], users=[], chats=[], date=None, seq=0)
+            raise FloodWaitError(request, capture=30)
+
+        admin_world.raw["EditBannedRequest"] = ban_then_flood
+        with pytest.raises(Exception) as caught:
+            await call(
+                client,
+                in_thread,
+                "chat.member.remove",
+                {"chat": str(GROUP_ID), "user": [str(BOB)]},
+                flood_wait_max=0,
+            )
+        error = classify(caught.value)
+        assert error.exit_code == EXIT_RATE_LIMITED
+        assert "BANNED" in error.message
+        assert f"chat member unban {GROUP_ID} {BOB}" in (error.hint or "")
+        assert error.wait_seconds == 30
 
     async def test_a_ban_leaves_the_mask_in_place(
         self, live_daemon, client, in_thread, admin_world

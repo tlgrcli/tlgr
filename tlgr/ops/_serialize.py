@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 from typing import Any
 
+from tlgr.core.text import entity_from_tl
 from tlgr.core.timefmt import fmt_dt, to_unix
 from tlgr.models.dialog import ActionBar, ChatTheme, ChatWallpaper, NotifySettings
 from tlgr.models.message import (
@@ -341,22 +342,7 @@ def reactions_summary(message: Any) -> ReactionSummary | None:
 
 def message_entities(message: Any) -> list[MessageEntity]:
     """Formatting runs, with their UTF-16 offsets untouched."""
-    out: list[MessageEntity] = []
-    for entity in getattr(message, "entities", None) or []:
-        user_id = getattr(entity, "user_id", None)
-        out.append(
-            MessageEntity(
-                type=tl_snake(type(entity).__name__, "MessageEntity"),
-                offset=int(getattr(entity, "offset", 0)),
-                length=int(getattr(entity, "length", 0)),
-                url=getattr(entity, "url", None),
-                user_id=getattr(user_id, "user_id", user_id),
-                language=getattr(entity, "language", None),
-                document_id=getattr(entity, "document_id", None),
-                collapsed=getattr(entity, "collapsed", None),
-            )
-        )
-    return out
+    return [entity_from_tl(entity) for entity in getattr(message, "entities", None) or []]
 
 
 def service_action(action: Any) -> ServiceAction | None:

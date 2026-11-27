@@ -22,7 +22,13 @@ from pathlib import Path
 from typing import Annotated, Any
 
 from tlgr.core.errors import NotSupportedError, UsageError
-from tlgr.core.text import default_parse_mode, entities_from_json, parse_text, utf16_len
+from tlgr.core.text import (
+    DATE_FLAGS,
+    default_parse_mode,
+    entities_from_json,
+    parse_text,
+    utf16_len,
+)
 from tlgr.core.timefmt import parse_dt
 from tlgr.models.base import Request
 from tlgr.models.message import Message, MessageEntity
@@ -212,11 +218,40 @@ def tl_entities(entities: list[MessageEntity]) -> list[Any] | None:
             kwargs["collapsed"] = entity.collapsed
         if entity.user_id is not None and name == "MessageEntityMentionName":
             kwargs["user_id"] = entity.user_id
+        if name == "MessageEntityFormattedDate":
+            kwargs.update(_date_kwargs(entity))
         try:
             out.append(klass(**kwargs))
         except TypeError:
             continue
     return out or None
+
+
+def _date_kwargs(entity: MessageEntity) -> dict[str, Any]:
+    """The date and flags of a `formatted_date` run, or a USAGE error.
+
+    `date` is a required field of the constructor, so an entity without one
+    is not something to drop quietly like an unknown type: the caller named a
+    date chip and would get plain text instead.
+    """
+    if entity.date_unix is not None:
+        when = datetime.fromtimestamp(int(entity.date_unix), tz=timezone.utc)
+    elif entity.date:
+        parsed = parse_dt(entity.date)
+        if parsed is None:  # pragma: no cover - a non-empty string parses or raises
+            raise UsageError("a formatted_date entity needs a date", field="entities")
+        when = parsed
+    else:
+        raise UsageError(
+            "a formatted_date entity needs a date (RFC-3339 or a unix timestamp) in "
+            "`date` or `date_unix`",
+            field="entities",
+        )
+    out: dict[str, Any] = {"date": when}
+    for flag in DATE_FLAGS:
+        if getattr(entity, flag):
+            out[flag] = True
+    return out
 
 
 def split_text(
@@ -230,6 +265,8 @@ def split_text(
     """
     if utf16_len(text) <= limit:
         return [(text, entities)]
+
+    import msgspec
 
     parts: list[tuple[str, list[MessageEntity]]] = []
     start = 0  # in UTF-16 units
@@ -253,15 +290,10 @@ def split_text(
         width = utf16_len(chunk)
         end = start + width
         sliced = [
-            MessageEntity(
-                type=e.type,
+            msgspec.structs.replace(
+                e,
                 offset=max(0, e.offset - start),
                 length=min(e.offset + e.length, end) - max(e.offset, start),
-                url=e.url,
-                user_id=e.user_id,
-                language=e.language,
-                document_id=e.document_id,
-                collapsed=e.collapsed,
             )
             for e in entities
             if e.offset < end and e.offset + e.length > start

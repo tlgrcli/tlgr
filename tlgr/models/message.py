@@ -139,6 +139,20 @@ class MessageEntity(Model):
     language: str | None = None
     document_id: int | None = None
     collapsed: bool | None = None
+    #: `formatted_date` only: the moment the run shows in each reader's own
+    #: locale and zone. On input `date` takes RFC-3339, a unix timestamp or
+    #: anything `--schedule` takes; `date_unix` is accepted too.
+    date: str | None = None
+    date_unix: int | None = None
+    #: `formatted_date` display flags, as in `messageEntityFormattedDate`:
+    #: `relative` shows the time relative to now, the others pick which parts
+    #: of the date and time a client renders.
+    relative: bool | None = None
+    short_time: bool | None = None
+    long_time: bool | None = None
+    short_date: bool | None = None
+    long_date: bool | None = None
+    day_of_week: bool | None = None
 
 
 class Button(Model):
@@ -253,6 +267,9 @@ class DeleteResult(Model):
     #: reported as affected across every round trip.
     affected: int | None = None
     scheduled: bool = False
+    #: Ids from a range that are not messages of this chat (in a private chat
+    #: or basic group they belong to other chats), so they were not deleted.
+    skipped: list[int] = []
 
 
 class EditResult(Model):

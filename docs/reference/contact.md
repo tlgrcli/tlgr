@@ -215,7 +215,7 @@ Full: `contacts-users.close-friends-set`, `stories.close-friends-set`
 
 Bulk-import a phonebook from vCard or CSV.
 
-Heavily flood-limited, so imports are chunked (`--batch-size`, 200 by default) and paced by the session limiter. `popular_invites` says how many other people already imported that number.
+Heavily flood-limited, so imports are chunked (`--batch-size`, 200 by default) and paced by the session limiter. `popular_invites` says how many other people already imported that number. Numbers must be international (+ and country code): a row that is not is skipped and listed in `rejected`, never guessed at.
 
 ```
 tlgr contact import <FILE> [OPTIONS]
@@ -560,7 +560,7 @@ Full: `contacts-users.contacts-statuses`, `dialogs.presence-watch`
 
 Two-way sync of a local phonebook file with the server contact list.
 
-Prints the diff and changes nothing unless `--apply` is given, because `contacts.deleteByPhones` is irreversible server-side.
+Prints the diff and changes nothing unless `--apply` is given, because `contacts.deleteByPhones` is irreversible server-side. Rows whose number is not international (+ and country code) are listed in `rejected`; with --delete-missing they make --apply refuse, since a skipped row may be a contact the diff would delete.
 
 ```
 tlgr contact sync <FILE> [OPTIONS]

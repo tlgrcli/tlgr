@@ -51,6 +51,7 @@ from tlgr.models.call import (
 from tlgr.models.page import Page
 from tlgr.models.peer import Peer, PeerRef
 from tlgr.ops import _calls, _send
+from tlgr.ops._common import ids_outside_chat, not_in_chat
 from tlgr.ops._params import arg, choice, opt
 from tlgr.ops._serialize import entity_to_peer
 from tlgr.ops._spec import OpContext, OperationSpec
@@ -1585,9 +1586,20 @@ async def log_delete(ctx: OpContext, req: LogDeleteReq) -> CallLogDeleted:
             raise UsageError(f"{token!r} is not CHAT:MSG_ID", field="id")
         grouped.setdefault(chat, []).append(int(tail))
 
-    deleted = 0
+    # Every chat is checked before anything is deleted: a row naming a
+    # message of another private chat would otherwise delete that message
+    # (`messages.deleteMessages` takes bare ids), and a refusal half way
+    # through would leave the earlier chats already changed.
+    resolved: list[tuple[Any, list[int]]] = []
     for chat, ids in grouped.items():
         peer = await _send.resolve(ctx, parse_peer_ref(chat))
+        outside = await ids_outside_chat(ctx, peer, ids)
+        if outside:
+            raise not_in_chat(chat, outside)
+        resolved.append((peer, ids))
+
+    deleted = 0
+    for peer, ids in resolved:
         await client.delete_messages(peer, ids, revoke=req.revoke)
         deleted += len(ids)
     ctx.emit("call_log_deleted", {"count": deleted})

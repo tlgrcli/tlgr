@@ -26,6 +26,8 @@ from tlgr.core.errors import (
 )
 
 ALICE = 4242
+BOB = 4343
+BASIC = 320
 CHANNEL = 5150
 CHANNEL_ID = -1000000000000 - CHANNEL
 
@@ -79,6 +81,91 @@ class TestSend:
         assert request.message == "🎉 loud"
         bold = [e for e in request.entities if type(e).__name__ == "MessageEntityBold"]
         assert bold and bold[0].offset == 3, "the emoji must count as two units"
+
+    async def test_a_formatted_date_entity_is_sent_with_its_date(
+        self, live_daemon, client, in_thread, peers
+    ):
+        """The constructor needs `date`; without it the entity was silently dropped."""
+        import json
+        from datetime import datetime, timezone
+
+        entities = [
+            {
+                "type": "formatted_date",
+                "offset": 8,
+                "length": 11,
+                "date": "2026-09-13T17:00:00Z",
+                "short_date": True,
+                "short_time": True,
+            }
+        ]
+        sent = await result(
+            client,
+            in_thread,
+            "message.send",
+            {"chat": "@alice", "text": "meet on 13/09 17:00", "entities": json.dumps(entities)},
+        )
+        request = peers.called("SendMessageRequest")[0]
+        [chip] = request.entities
+        assert type(chip).__name__ == "MessageEntityFormattedDate"
+        assert chip.date == datetime(2026, 9, 13, 17, 0, tzinfo=timezone.utc)
+        assert (chip.short_date, chip.short_time, chip.long_date) == (True, True, None)
+        assert bytes(chip), "the entity must serialise as a real TL object"
+        assert sent["entities"] == [
+            {
+                "type": "formatted_date",
+                "offset": 8,
+                "length": 11,
+                "date": "2026-09-13T17:00:00Z",
+                "date_unix": 1789318800,
+                "short_time": True,
+                "short_date": True,
+            }
+        ]
+
+    async def test_a_formatted_date_entity_without_a_date_is_a_usage_error(
+        self, live_daemon, client, in_thread, peers
+    ):
+        import json
+
+        entities = [{"type": "formatted_date", "offset": 0, "length": 5}]
+        with pytest.raises(Exception) as caught:
+            await result(
+                client,
+                in_thread,
+                "message.send",
+                {"chat": "@alice", "text": "13/09", "entities": json.dumps(entities)},
+            )
+        assert classify(caught.value).exit_code == EXIT_USAGE
+        assert not peers.called("SendMessageRequest")
+
+    async def test_a_received_date_chip_keeps_its_date(self, live_daemon, client, in_thread, peers):
+        from datetime import datetime, timezone
+
+        from telethon.tl import types
+
+        message = peers.add_message(ALICE, "see you Monday", message_id=900)
+        message.entities = [
+            types.MessageEntityFormattedDate(
+                offset=8,
+                length=6,
+                date=datetime(2026, 9, 14, 9, 30, tzinfo=timezone.utc),
+                day_of_week=True,
+                relative=False,
+            )
+        ]
+        got = await result(client, in_thread, "message.get", {"chat": "@alice", "msg_id": 900})
+        row = got[0] if isinstance(got, list) else got
+        assert row["entities"] == [
+            {
+                "type": "formatted_date",
+                "offset": 8,
+                "length": 6,
+                "date": "2026-09-14T09:30:00Z",
+                "date_unix": 1789378200,
+                "day_of_week": True,
+            }
+        ]
 
     async def test_the_default_parse_mode_is_none(self, live_daemon, client, in_thread, peers):
         """COR-21: v1 silently ate underscores and asterisks."""
@@ -347,6 +434,80 @@ class TestEditDeleteForward:
         )
         assert deleted["ids"] == [102, 103]
         assert history.find(ALICE, 102) is None
+
+    async def test_delete_refuses_an_id_from_another_private_chat(
+        self, live_daemon, client, in_thread, history
+    ):
+        """DMs share one id counter: 201 "in @alice" would delete Bob's message."""
+        from fake_telethon import make_user
+
+        history.add_user(make_user(BOB, username="bobby"))
+        history.add_message(BOB, "bob's message", message_id=201)
+        with pytest.raises(Exception) as caught:
+            await result(
+                client, in_thread, "message.delete", {"chat": "@alice", "msg_id": ["102", "201"]}
+            )
+        error = classify(caught.value)
+        assert error.exit_code == EXIT_NOT_FOUND
+        assert "201" in error.message and "102" not in error.message
+        assert history.find(BOB, 201) is not None
+        assert history.find(ALICE, 102) is not None
+        assert not history.called("delete_messages")
+
+    async def test_delete_in_a_basic_group_checks_ids_too(
+        self, live_daemon, client, in_thread, history
+    ):
+        from datetime import datetime, timezone
+
+        from telethon.tl import types
+
+        history.chats[BASIC] = types.Chat(
+            id=BASIC,
+            title="Old crew",
+            photo=types.ChatPhotoEmpty(),
+            participants_count=3,
+            date=datetime.now(timezone.utc),
+            version=1,
+        )
+        history.add_message(-BASIC, "group message", message_id=301)
+        with pytest.raises(Exception) as caught:
+            await result(
+                client, in_thread, "message.delete", {"chat": str(-BASIC), "msg_id": ["104"]}
+            )
+        assert classify(caught.value).exit_code == EXIT_NOT_FOUND
+        assert history.find(ALICE, 104) is not None
+        deleted = await result(
+            client, in_thread, "message.delete", {"chat": str(-BASIC), "msg_id": ["301"]}
+        )
+        assert deleted["ids"] == [301]
+        assert history.find(-BASIC, 301) is None
+
+    async def test_a_range_skips_ids_that_belong_to_other_chats(
+        self, live_daemon, client, in_thread, history
+    ):
+        from fake_telethon import make_user
+
+        # 104 is Bob's: the account-wide counter interleaves the two DMs.
+        history.add_user(make_user(BOB, username="bobby"))
+        history.messages[ALICE] = [m for m in history.history(ALICE) if m.id != 104]
+        history.add_message(BOB, "bob's message", message_id=104)
+        envelope = await call(
+            client, in_thread, "message.delete", {"chat": "@alice", "msg_id": ["102-105"]}
+        )
+        assert envelope["result"]["ids"] == [102, 103, 105]
+        assert envelope["result"]["skipped"] == [104]
+        assert any("skipped" in w for w in envelope["meta"]["warnings"])
+        assert history.find(BOB, 104) is not None
+        assert history.find(ALICE, 103) is None
+
+    async def test_a_channel_delete_is_not_checked(self, live_daemon, client, in_thread, history):
+        """Channels number their own messages; the peer is honoured there."""
+        history.add_message(CHANNEL_ID, "post", message_id=7)
+        await result(
+            client, in_thread, "message.delete", {"chat": str(CHANNEL_ID), "msg_id": ["7", "8"]}
+        )
+        assert history.find(CHANNEL_ID, 7) is None
+        assert history.called("delete_messages")[0]["ids"] == [7, 8]
 
     async def test_delete_needs_ids_or_a_sender(self, live_daemon, client, in_thread, history):
         with pytest.raises(Exception) as caught:

@@ -265,6 +265,19 @@ class TestContactAdd:
             await result(client, in_thread, "contact.add", {"first_name": "Nobody"})
         assert classify(caught.value).exit_code == EXIT_USAGE
 
+    async def test_a_phone_without_a_country_code_is_refused_not_guessed(
+        self, live_daemon, client, in_thread, book
+    ):
+        """`2125551234` must not become +212 (Morocco) and import a stranger."""
+        with pytest.raises(Exception) as caught:
+            await result(
+                client, in_thread, "contact.add", {"phone": "2125551234", "first_name": "Al"}
+            )
+        error = classify(caught.value)
+        assert error.exit_code == EXIT_USAGE
+        assert "country code" in error.message
+        assert not book.called("ImportContactsRequest")
+
 
 class TestContactRename:
     async def test_it_writes_only_our_view_of_the_name(self, live_daemon, client, in_thread, book):
@@ -316,6 +329,21 @@ class TestContactRemove:
         answer = await result(client, in_thread, "contact.remove", {"phone": ["+1 555 000 3333"]})
         assert answer["phones"] == ["+15550003333"]
         assert book.saved_contacts == []
+
+    async def test_a_local_phone_is_refused_before_anything_is_deleted(
+        self, live_daemon, client, in_thread, book
+    ):
+        with pytest.raises(Exception) as caught:
+            await result(
+                client,
+                in_thread,
+                "contact.remove",
+                {"user": ["@alice"], "phone": ["0912 345 6789"]},
+            )
+        assert classify(caught.value).exit_code == EXIT_USAGE
+        assert not book.called("DeleteByPhonesRequest")
+        assert not book.called("DeleteContactsRequest")
+        assert ALICE in book.contacts
 
     async def test_nothing_to_remove_is_a_usage_error(self, live_daemon, client, in_thread, book):
         with pytest.raises(Exception) as caught:
@@ -703,6 +731,75 @@ class TestPhonebook:
             client, in_thread, "contact.import", {"file": str(path), "batch_size": 2}
         )
         assert answer["batches"] == 3
+
+    async def test_a_local_number_is_reported_and_the_rest_imported(
+        self, live_daemon, client, in_thread, book, tmp_path
+    ):
+        """`9123456789` (an Iranian mobile without its 0) is not +91 India."""
+        path = tmp_path / "mixed.csv"
+        path.write_text("phone,first,last\n+15550009999,Carol,\n9123456789,Reza,Ahmadi\n")
+        envelope = await call(client, in_thread, "contact.import", {"file": str(path)})
+        answer = envelope["result"]
+        assert answer["parsed"] == 1
+        assert [row["phone"] for row in answer["imported"]] == ["+15550009999"]
+        assert answer["rejected"] == [
+            {
+                "line": 3,
+                "value": "9123456789",
+                "name": "Reza Ahmadi",
+                "reason": answer["rejected"][0]["reason"],
+            }
+        ]
+        assert "country code" in answer["rejected"][0]["reason"]
+        assert any("line 3" in w for w in envelope["meta"]["warnings"])
+        sent = [c.phone for r in book.called("ImportContactsRequest") for c in r.contacts]
+        assert sent == ["+15550009999"]
+
+    async def test_a_vcard_with_only_a_local_number_is_rejected(
+        self, live_daemon, client, in_thread, book, tmp_path
+    ):
+        path = tmp_path / "local.vcf"
+        path.write_text(
+            "BEGIN:VCARD\nVERSION:3.0\nN:Ahmadi;Reza;;;\nTEL;TYPE=CELL:0912 345 6789\n"
+            "END:VCARD\nBEGIN:VCARD\nVERSION:4.0\nFN:Carol Cooper\n"
+            "TEL;VALUE=uri;TYPE=cell:tel:+1-555-000-9999\nEND:VCARD\n"
+        )
+        answer = await result(client, in_thread, "contact.import", {"file": str(path)})
+        assert [row["phone"] for row in answer["imported"]] == ["+15550009999"]
+        assert [(r["line"], r["name"]) for r in answer["rejected"]] == [(4, "Reza Ahmadi")]
+
+    async def test_a_file_of_only_local_numbers_is_a_usage_error(
+        self, live_daemon, client, in_thread, book, tmp_path
+    ):
+        path = tmp_path / "local.csv"
+        path.write_text("09123456789,Reza\n")
+        with pytest.raises(Exception) as caught:
+            await result(client, in_thread, "contact.import", {"file": str(path)})
+        error = classify(caught.value)
+        assert error.exit_code == EXIT_USAGE
+        assert "line 1" in error.message
+        assert not book.called("ImportContactsRequest")
+
+    async def test_sync_refuses_to_delete_when_a_row_was_rejected(
+        self, live_daemon, client, in_thread, book, tmp_path
+    ):
+        """A skipped `0...` row may be exactly a contact --delete-missing would delete."""
+        path = tmp_path / "sync.csv"
+        path.write_text("+15550009999,Carol\n15550001111,Alice\n")
+        preview = await result(
+            client, in_thread, "contact.sync", {"file": str(path), "delete_missing": True}
+        )
+        assert [r["value"] for r in preview["rejected"]] == ["15550001111"]
+        with pytest.raises(Exception) as caught:
+            await result(
+                client,
+                in_thread,
+                "contact.sync",
+                {"file": str(path), "delete_missing": True, "apply": True},
+            )
+        assert classify(caught.value).exit_code == EXIT_USAGE
+        assert not book.called("DeleteByPhonesRequest")
+        assert ALICE in book.contacts
 
     async def test_an_empty_file_is_a_usage_error(
         self, live_daemon, client, in_thread, book, tmp_path
@@ -1260,6 +1357,17 @@ class TestResolve:
         assert answer["resolved"] is True
         assert answer["peer"]["id"] == CAROL
         assert CAROL not in book.contacts
+
+    async def test_a_phone_without_a_plus_is_refused_before_any_lookup(
+        self, live_daemon, client, in_thread, book
+    ):
+        """`9123456789` typed for Iran must not be looked up as +91 (India)."""
+        with pytest.raises(Exception) as caught:
+            await result(client, in_thread, "resolve.phone", {"phone": "912 345 6789"})
+        error = classify(caught.value)
+        assert error.exit_code == EXIT_USAGE
+        assert "country code" in error.message
+        assert not book.called("ResolvePhoneRequest")
 
     async def test_an_unoccupied_phone_is_indeterminate_never_not_found(
         self, live_daemon, client, in_thread, book

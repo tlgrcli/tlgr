@@ -20,10 +20,12 @@ __all__ = [
     "PeerKind",
     "PeerRef",
     "PeerRefKind",
+    "PhoneNumberError",
     "Photo",
     "Rights",
     "User",
     "UserRef",
+    "parse_e164",
     "parse_message_link",
     "parse_peer_ref",
     "parse_user_ref",
@@ -38,6 +40,14 @@ _MAX_USER_ID = 0x7FFFFFFFFFFFFFFF
 
 _USERNAME_RE = re.compile(r"^[a-zA-Z0-9_]{4,32}$")
 _PHONE_RE = re.compile(r"^\+?[0-9][0-9 \-()]{4,24}$")
+# What a typed or pasted number may carry besides digits: spaces, dots,
+# brackets, ASCII and Unicode dashes, and the invisible direction marks
+# (LRM, RLM, ZWNJ, isolates) that numbers copied out of right-to-left text pick up.
+_PHONE_SEPARATORS = re.compile(r"[\s.()\-‐-―−​-‏⁦-⁩]")
+_DIGITS = str.maketrans(
+    "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩",
+    "01234567890123456789",
+)
 _INT_RE = re.compile(r"^-?\d+$")
 
 
@@ -305,6 +315,63 @@ def _mark_channel(raw_id: int) -> int:
     return _CHANNEL_MARK - abs(raw_id) if raw_id > 0 else raw_id
 
 
+class PhoneNumberError(PeerRefError):
+    """A typed phone number that is not in international (E.164) form."""
+
+
+def parse_e164(text: str) -> str:
+    """A phone number a person typed, as `+<country code><number>`, or an error.
+
+    Strict on purpose. A number with no `+` has no country code, and adding
+    one by prefixing `+` to the digits picks a country by accident: an
+    Iranian `912 345 6789` typed without its trunk 0 becomes +91 (India), a
+    US `212 555 1234` becomes +212 (Morocco), and the lookup or import then
+    reaches a stranger. So only the international form is accepted: a
+    leading `+`, a country code that does not start with 0, 7 to 15 digits
+    in all. Spaces, dots, dashes and brackets are ignored, and Persian or
+    Arabic-Indic digits count as digits. Local forms (`0912...`, `00 98...`,
+    `8 999...`) are refused with a message saying how to write them.
+
+    Phones the *server* returns come without a `+` and are always
+    international; they do not go through here.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        raise PhoneNumberError("a phone number is required")
+    cleaned = _PHONE_SEPARATORS.sub("", raw.translate(_DIGITS))
+    plus = cleaned.startswith("+")
+    digits = cleaned[1:] if plus else cleaned
+    if not digits.isascii() or not digits.isdigit():
+        raise PhoneNumberError(f"{raw!r} is not a phone number")
+    if not plus:
+        if digits.startswith("00") and len(digits) > 2:
+            raise PhoneNumberError(
+                f"{raw!r} starts with the 00 international prefix; write it with a "
+                f"leading + instead, for example +{digits[2:]}"
+            )
+        if digits.startswith("0"):
+            raise PhoneNumberError(
+                f"{raw!r} is a local number; drop the leading 0 and add the country "
+                "code with a leading +, for example +98 912 345 6789 for Iran"
+            )
+        raise PhoneNumberError(
+            f"{raw!r} has no country code; write it in international form with a "
+            "leading + and the country code, for example +98 912 345 6789 or "
+            "+1 212 555 1234 (local forms such as 8 999 ... are not guessed at)"
+        )
+    if digits.startswith("0"):
+        raise PhoneNumberError(
+            f"{raw!r}: a country code never starts with 0; if this is a local "
+            "number, drop the 0 and put the country code after the +"
+        )
+    if not 7 <= len(digits) <= 15:
+        raise PhoneNumberError(
+            f"{raw!r} has {len(digits)} digits; an international number has 7 to 15, "
+            "country code included"
+        )
+    return "+" + digits
+
+
 def parse_peer_ref(text: str) -> PeerRef:
     """Classify a chat/user reference. Syntax only — nothing is resolved here.
 
@@ -339,10 +406,7 @@ def parse_peer_ref(text: str) -> PeerRef:
         return PeerRef(raw=raw, kind="id", value=value)
 
     if raw.startswith("+") and _PHONE_RE.match(raw):
-        digits = re.sub(r"[^0-9]", "", raw)
-        if not digits:
-            raise PeerRefError(f"{raw!r} is not a valid phone number")
-        return PeerRef(raw=raw, kind="phone", value="+" + digits)
+        return PeerRef(raw=raw, kind="phone", value=parse_e164(raw))
 
     if _USERNAME_RE.match(raw):
         # A bare username is accepted because half the world types it that way.

@@ -114,7 +114,7 @@ Full: `contacts-users.peer-id-conversion`, `dialogs.resolve-peer`
 
 Resolve a phone number to a user without adding a contact.
 
-PHONE_NOT_OCCUPIED exits 13, never 5: no account and a privacy refusal are indistinguishable from here. The server asks for at most one lookup every three seconds, so --offline formats and validates against help.getCountriesList without an RPC.
+PHONE_NOT_OCCUPIED exits 13, never 5: no account and a privacy refusal are indistinguishable from here. The server asks for at most one lookup every three seconds, so --offline formats and validates against help.getCountriesList without an RPC. The number must be international (+ and country code); a local form such as 0912... is refused rather than given a guessed country code.
 
 ```
 tlgr resolve phone <PHONE> [OPTIONS]

@@ -47,7 +47,7 @@ from tlgr.ops import _send
 from tlgr.ops._params import arg, choice, opt
 from tlgr.ops._serialize import entity_to_peer
 from tlgr.ops._spec import OpContext, OperationSpec
-from tlgr.ops.contact import client_of, e164
+from tlgr.ops.contact import client_of, typed_phone
 
 __all__ = [name for name in dir() if name.startswith("SPEC_")]
 
@@ -328,7 +328,7 @@ async def phone(ctx: OpContext, req: PhoneReq) -> ResolvedPhone:
     """
     from telethon.tl.functions import contacts as fn
 
-    number = e164(req.phone)
+    number = typed_phone(req.phone) if (req.phone or "").strip() else ""
     table: list[dict[str, Any]] = []
     if req.countries and not number:
         table = await _country_table(ctx, req.lang)
@@ -389,7 +389,9 @@ SPEC_PHONE = OperationSpec(
         "PHONE_NOT_OCCUPIED exits 13, never 5: no account and a privacy "
         "refusal are indistinguishable from here. The server asks for at "
         "most one lookup every three seconds, so --offline formats and "
-        "validates against help.getCountriesList without an RPC."
+        "validates against help.getCountriesList without an RPC. The number "
+        "must be international (+ and country code); a local form such as "
+        "0912... is refused rather than given a guessed country code."
     ),
     rate_class="resolve",
     min_interval_s=3.0,

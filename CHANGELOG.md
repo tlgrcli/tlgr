@@ -9,6 +9,21 @@ codes documented in `AGENT.md` are the public API.
 
 ### Added
 
+- **People by name: `contact alias set|list|remove`.** Save what the user
+  calls someone (`tlgr contact alias set "Sara" @sara_a`), then use
+  `name:Sara`, or a non-ASCII or multi-word name as is, anywhere a chat or
+  user is accepted, gateway job filters included. Only the exact saved
+  wording resolves (case, Unicode width, ZWNJ, Arabic/Persian ye and kaf,
+  diacritics and spacing are normalized); anything else exits 2 with the new
+  code `PEER_NEEDS_USER`, sends nothing, and lists lookalike aliases and
+  contacts in `error.details.candidates` so the agent can ask the user, save
+  the answer and retry once. Aliases are per account and owner-only;
+  repointing needs `--replace`. A bare ASCII word that is a valid username
+  still means that username; if it is also a saved alias it is refused as
+  ambiguous rather than guessed. See `AGENT.md`, "People by name".
+- **`error.details`:** an optional structured object on errors a caller acts
+  on. Absent unless set, so the existing error shape is unchanged.
+
 - **`tlgr batch`: many operations from one process.** Reads JSONL
   (`{"op": "message.send", "params": {...}, "account": "...", "id": ...}`)
   from stdin or a file, runs the lines in order over the existing transport,

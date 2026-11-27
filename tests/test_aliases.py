@@ -19,6 +19,7 @@ from telethon.tl import types
 
 from tlgr.core.aliases import AliasStore, check_wording, new_record, similar_keys
 from tlgr.core.errors import (
+    EXIT_NOT_FOUND,
     EXIT_USAGE,
     ConfigurationError,
     PeerNeedsUserError,
@@ -305,3 +306,79 @@ class TestThroughTheDaemon:
         """An unsaved name must not become a three-valued 'unknown' that hides the ask."""
         with pytest.raises(PeerNeedsUserError):
             await result(client, in_thread, "user.dialog-status", {"user": "Sara Ahmadi"})
+
+
+class TestOps:
+    async def test_set_then_send_by_name(self, live_daemon, client, in_thread, people):
+        saved = await result(
+            client, in_thread, "contact.alias.set", {"alias": "Sara", "peer": "@sara_a"}
+        )
+        assert (saved["peer_id"], saved["name"], saved["key"]) == (SARA, "Sara Ahmadi", "sara")
+        sent = await result(
+            client, in_thread, "message.send", {"chat": "name:Sara", "text": "on my way"}
+        )
+        assert sent["chat_id"] == SARA
+        assert [m.message for m in people.history(STRANGER)] == []
+
+    async def test_a_persian_alias_sends_through_any_spelling(
+        self, live_daemon, client, in_thread, people
+    ):
+        await result(client, in_thread, "contact.alias.set", {"alias": "مامان", "peer": MOM})
+        sent = await result(client, in_thread, "message.send", {"chat": "‏مامان", "text": "سلام"})
+        assert sent["chat_id"] == MOM
+
+    async def test_repointing_needs_replace(self, live_daemon, client, in_thread, people):
+        await result(client, in_thread, "contact.alias.set", {"alias": "Sara", "peer": SARA})
+        with pytest.raises(Exception) as caught:
+            await result(
+                client, in_thread, "contact.alias.set", {"alias": "sara", "peer": STRANGER}
+            )
+        assert classify(caught.value).exit_code == EXIT_USAGE
+        moved = await result(
+            client,
+            in_thread,
+            "contact.alias.set",
+            {"alias": "sara", "peer": STRANGER, "replace": True},
+        )
+        assert moved["peer_id"] == STRANGER
+        assert moved["replaced"]["peer_id"] == SARA
+
+    async def test_setting_the_same_alias_twice_is_already(
+        self, live_daemon, client, in_thread, people
+    ):
+        await result(client, in_thread, "contact.alias.set", {"alias": "Sara", "peer": SARA})
+        again = await call(client, in_thread, "contact.alias.set", {"alias": "Sara", "peer": SARA})
+        assert again["result"]["already"] is True
+
+    async def test_the_peer_must_be_exact(self, live_daemon, client, in_thread, people):
+        with pytest.raises(Exception) as caught:
+            await result(
+                client, in_thread, "contact.alias.set", {"alias": "boss", "peer": "Sara Ahmadi"}
+            )
+        assert classify(caught.value).exit_code == EXIT_USAGE
+        assert classify(caught.value).field == "peer"
+
+    async def test_an_existing_alias_can_be_the_peer(self, live_daemon, client, in_thread, people):
+        await result(client, in_thread, "contact.alias.set", {"alias": "Sara", "peer": SARA})
+        second = await result(
+            client, in_thread, "contact.alias.set", {"alias": "سارا", "peer": "name:sara"}
+        )
+        assert second["peer_id"] == SARA
+
+    async def test_list_groups_aliases_per_person(self, live_daemon, client, in_thread, people):
+        for alias in ("Sara", "سارا"):
+            await result(client, in_thread, "contact.alias.set", {"alias": alias, "peer": SARA})
+        await result(client, in_thread, "contact.alias.set", {"alias": "مامان", "peer": MOM})
+        rows = await result(client, in_thread, "contact.alias.list")
+        by_peer = {row["peer_id"]: row for row in rows}
+        assert sorted(by_peer[SARA]["aliases"]) == sorted(["Sara", "سارا"])
+        assert by_peer[MOM]["aliases"] == ["مامان"]
+
+    async def test_remove_is_exact(self, live_daemon, client, in_thread, people):
+        await result(client, in_thread, "contact.alias.set", {"alias": "Sara work", "peer": SARA})
+        with pytest.raises(Exception) as caught:
+            await result(client, in_thread, "contact.alias.remove", {"alias": "Sara"})
+        assert classify(caught.value).exit_code == EXIT_NOT_FOUND
+        gone = await result(client, in_thread, "contact.alias.remove", {"alias": "SARA  WORK"})
+        assert (gone["removed"], gone["peer_id"]) == (True, SARA)
+        assert await result(client, in_thread, "contact.alias.list") == []

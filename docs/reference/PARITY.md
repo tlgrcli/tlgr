@@ -7,7 +7,7 @@ Coverage against the Telegram feature catalog, computed from the registry: every
 `covered` is implemented today. `acct%` is covered **plus** waived — an id this build genuinely cannot cover, named in `tlgr/data/parity_waivers.toml` with the reason and the MTProto method that is missing. Ids whose feasibility is `not-applicable` or `prohibited` are excluded from the denominator once and never counted again.
 
 ```
-catalog 2026-09-02 — 680 operations, 953 invocable paths
+catalog 2026-09-02 — 683 operations, 957 invocable paths
 
 domain                        covered    req       %   acct%  ops
 auth_sessions_security             89     89  100.0%  100.0%  45

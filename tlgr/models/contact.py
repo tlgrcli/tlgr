@@ -28,12 +28,15 @@ from tlgr.models.message import Message
 from tlgr.models.peer import Peer, Photo
 
 __all__ = [
+    "AliasedPeer",
     "BlockResult",
     "BlockedPeer",
     "BlockedSet",
     "CloseFriends",
     "Contact",
     "ContactAdded",
+    "ContactAlias",
+    "ContactAliasRemoved",
     "ContactImport",
     "ContactModel",
     "ContactNote",
@@ -167,6 +170,41 @@ class ContactNote(ContactModel):
     user_id: int = 0
     note: str | None = None
     cleared: bool = False
+
+
+class ContactAlias(ContactModel):
+    """A saved contact alias: the wording, its lookup key and the peer it names.
+
+    `replaced` is the peer the alias pointed at before `--replace`, so a
+    repoint is visible in the reply rather than silent.
+    """
+
+    alias: str = ""
+    key: str = ""
+    peer_id: int = 0
+    kind: str = ""
+    name: str | None = None
+    username: str | None = None
+    replaced: dict[str, Any] | None = None
+    already: bool = False
+
+
+class ContactAliasRemoved(ContactModel):
+    alias: str = ""
+    key: str = ""
+    removed: bool = False
+    peer_id: int | None = None
+    name: str | None = None
+
+
+class AliasedPeer(ContactModel):
+    """One person (or chat) and every alias saved for it on this account."""
+
+    peer_id: int = 0
+    kind: str = ""
+    name: str | None = None
+    username: str | None = None
+    aliases: list[str] = []
 
 
 class ImportedPhone(ContactModel):

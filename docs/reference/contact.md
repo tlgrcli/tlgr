@@ -2,11 +2,14 @@
 
 # `tlgr contact`
 
-20 operations. Every one takes the global flags (`--json`, `--plain`, `-a/--account`, `--results-only`, `--select`, `--dry-run`, `--yes`, `--no-input`, `--flood-wait-max`, `-v`) anywhere on the line.
+23 operations. Every one takes the global flags (`--json`, `--plain`, `-a/--account`, `--results-only`, `--select`, `--dry-run`, `--yes`, `--no-input`, `--flood-wait-max`, `-v`) anywhere on the line.
 
 | Command | Summary |
 |---|---|
 | [`contact add`](#tlgr-contact-add) | Add a contact — by user, by phone, or from a contact card in a message |
+| [`contact alias list`](#tlgr-contact-alias-list) | List saved contact aliases, one row per person with all their aliases |
+| [`contact alias remove`](#tlgr-contact-alias-remove) | Forget a saved contact alias (exact wording only) |
+| [`contact alias set`](#tlgr-contact-alias-set) | Remember what the user calls someone, so that wording resolves to them |
 | [`contact birthday list`](#tlgr-contact-birthday-list) | Contacts whose birthday is today or within a day |
 | [`contact blocked list`](#tlgr-contact-blocked-list) | The blocklist, or the separate story blocklist |
 | [`contact blocked set`](#tlgr-contact-blocked-set) | Replace the whole blocklist atomically |
@@ -62,6 +65,71 @@ $ tlgr contact add @alice --first-name Alice --json
 Full: `contact.receive-card`, `contacts-users.contact-add-by-phone`, `contacts-users.contact-add-by-user`, `contacts-users.contact-card-open`, `contacts-users.contact-phone-privacy-exception`, `dialogs.actionbar-add-contact`
 
 </details>
+
+### `contact alias list`
+
+List saved contact aliases, one row per person with all their aliases.
+
+Local state only; nothing is sent to Telegram.
+
+```
+tlgr contact alias list [OPTIONS]
+```
+
+**paginated (`LOCAL` cursor) · idempotent (reports `already`) · returns `Page[AliasedPeer]`**
+
+Pagination is transport-level: `--limit/-n`, `--cursor TOKEN`, `--all` (walked inside the daemon, paced by the account's own rate limiter).
+
+```console
+$ tlgr contact alias list --json
+```
+
+### `contact alias remove`
+
+Forget a saved contact alias (exact wording only).
+
+Local state only. A wording that is not saved exits 5 with lookalikes in the hint.
+
+```
+tlgr contact alias remove <ALIAS> [OPTIONS]
+```
+
+**mutating · returns `ContactAliasRemoved`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `ALIAS` | text | yes | The exact saved wording. |
+
+Also invocable as: `tlgr contact alias delete`
+
+```console
+$ tlgr contact alias remove Sara --json
+```
+
+### `contact alias set`
+
+Remember what the user calls someone, so that wording resolves to them.
+
+Per account, stored next to the peer cache. Only the exact wording resolves (after Unicode, case, ZWNJ and Arabic/Persian letter normalization); anything else is PEER_NEEDS_USER with suggestions. `--replace` is required to repoint.
+
+```
+tlgr contact alias set <ALIAS> <PEER> [OPTIONS]
+```
+
+**mutating · idempotent (reports `already`) · returns `ContactAlias`**
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `ALIAS` | text | yes | The wording the user calls them by, e.g. 'Sara' or 'مامان'. |
+| `PEER` | chat | yes | Who it means: @username, id, +phone, t.me link, or an existing alias. |
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--replace` | flag |  | Repoint an alias that already names someone else. |
+
+```console
+$ tlgr contact alias set Sara @sara_a --json
+```
 
 ### `contact birthday list`
 

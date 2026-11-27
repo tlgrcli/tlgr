@@ -24,7 +24,7 @@ from __future__ import annotations
 import asyncio
 from typing import Annotated, Any
 
-from tlgr.core.errors import EXIT_EMPTY, NotFoundError, UsageError
+from tlgr.core.errors import EXIT_EMPTY, NotFoundError, TlgrError, UsageError, rule_for
 from tlgr.core.pagination import PageKind, build_page
 from tlgr.core.timefmt import fmt_dt, to_unix
 from tlgr.models.admin import (
@@ -576,8 +576,14 @@ async def remove_member(ctx: OpContext, req: MemberRemoveReq) -> list[MemberResu
     Telegram has no kick method. `editBanned(view_messages=True)` followed by
     an empty mask is what every client calls a kick, and the second call is
     the whole difference from `chat member ban`.
+
+    That second call also lifts any ban already in place, so in a channel the
+    member is looked up first: someone already banned is left banned, and
+    someone not in the chat is left alone (`already: true` for both). The
+    ban and unban run shielded from cancellation, and if the unban fails the
+    error says the user is now banned and how to undo it.
     """
-    from telethon.tl.functions import channels as chan_fn
+    from telethon.tl import types
     from telethon.tl.functions import messages as msg_fn
 
     if not req.user:
@@ -585,26 +591,33 @@ async def remove_member(ctx: OpContext, req: MemberRemoveReq) -> list[MemberResu
     peer = await _send.resolve(ctx, req.chat)
     chat_id = _send.peer_id_of(peer)
     handle = _admin.client(ctx)
+    self_id = getattr(handle, "_self_id", None)
+    users = [(ref, await _send.resolve(ctx, ref)) for ref in req.user]
+    for ref, user in users:
+        # Checked for every user before anyone is removed, so a list that
+        # names this account by mistake changes nothing.
+        if isinstance(user, types.InputPeerSelf) or (
+            self_id is not None and abs(_send.peer_id_of(user)) == int(self_id)
+        ):
+            raise UsageError(
+                f"{ref.raw} is this account; to leave the chat run: tlgr chat leave {req.chat.raw}",
+                field="user",
+            )
+
     out: list[MemberResult] = []
-    for ref in req.user:
-        user = await _send.resolve(ctx, ref)
+    for ref, user in users:
+        row = MemberResult(chat_id=chat_id, user_id=abs(_send.peer_id_of(user)), removed=True)
         if _admin.is_channel(peer):
-            channel = _admin.input_channel(peer)
-            await handle(
-                chan_fn.EditBannedRequest(
-                    channel=channel,
-                    participant=user,
-                    banned_rights=_rights.build_banned_rights([]),
-                )
-            )
-            await asyncio.sleep(0)
-            await handle(
-                chan_fn.EditBannedRequest(
-                    channel=channel,
-                    participant=user,
-                    banned_rights=_rights.build_banned_rights(_rights.all_allowed()),
-                )
-            )
+            state = await _channel_presence(ctx, peer, user)
+            if state == "present":
+                try:
+                    await asyncio.shield(_kick(handle, _admin.input_channel(peer), user))
+                except _BanLeftInPlace as exc:
+                    raise _ban_left_error(req, ref, out, exc.__cause__) from exc.__cause__
+            else:
+                row.removed = False
+                row.already = True
+                row.banned = True if state == "banned" else None
         else:
             await handle(
                 msg_fn.DeleteChatUserRequest(
@@ -614,22 +627,87 @@ async def remove_member(ctx: OpContext, req: MemberRemoveReq) -> list[MemberResu
         purged = await _purge_all(ctx, peer, user) if req.purge else None
         if req.messages:
             purged = (purged or 0) + await _purge(ctx, peer, user, req.messages)
-        reported = (
+        row.purged_messages = purged
+        row.reported = (
             await _report_spam(ctx, peer, user, req.messages)
             if (req.report and _admin.is_channel(peer))
             else None
         )
-        out.append(
-            MemberResult(
-                chat_id=chat_id,
-                user_id=abs(_send.peer_id_of(user)),
-                removed=True,
-                purged_messages=purged,
-                reported=reported,
+        out.append(row)
+    ctx.emit(
+        "chat_members_removed",
+        {"chat_id": chat_id, "users": [r.user_id for r in out if r.removed]},
+    )
+    return out
+
+
+async def _channel_presence(ctx: OpContext, peer: Any, user: Any) -> str:
+    """`present`, `banned` or `absent`: whether a kick has anything to do.
+
+    A restricted member who is still in the chat is `present`: the kick
+    removes them, and their restriction goes with the ban that is lifted.
+    """
+    try:
+        found = await _member_of(ctx, peer, user)
+    except NotFoundError:
+        return "absent"
+    participant = getattr(found, "participant", None)
+    kind = type(participant).__name__
+    if kind == "ChannelParticipantLeft":
+        return "absent"
+    if kind == "ChannelParticipantBanned" and getattr(participant, "left", False):
+        rights = getattr(participant, "banned_rights", None)
+        return "banned" if getattr(rights, "view_messages", False) else "absent"
+    return "present"
+
+
+class _BanLeftInPlace(Exception):
+    """The kick's ban went through and the unban after it did not."""
+
+
+async def _kick(handle: Any, channel: Any, user: Any) -> None:
+    """Ban then unban. Run under `asyncio.shield` so a cancel cannot split it."""
+    from telethon.tl.functions import channels as chan_fn
+
+    await handle(
+        chan_fn.EditBannedRequest(
+            channel=channel, participant=user, banned_rights=_rights.build_banned_rights([])
+        )
+    )
+    await asyncio.sleep(0)
+    try:
+        await handle(
+            chan_fn.EditBannedRequest(
+                channel=channel,
+                participant=user,
+                banned_rights=_rights.build_banned_rights(_rights.all_allowed()),
             )
         )
-    ctx.emit("chat_members_removed", {"chat_id": chat_id, "users": [r.user_id for r in out]})
-    return out
+    except Exception as exc:
+        raise _BanLeftInPlace() from exc
+
+
+def _ban_left_error(
+    req: MemberRemoveReq, ref: PeerRef, done: list[MemberResult], cause: BaseException | None
+) -> TlgrError:
+    """The failed unban, under the cause's own code, saying the user is banned."""
+    rule = rule_for(cause) if cause is not None else None
+    wait = getattr(cause, "seconds", None)
+    removed = [str(r.user_id) for r in done if r.removed]
+    before = f" Removed before this one: {', '.join(removed)}." if removed else ""
+    error = TlgrError(
+        f"{ref.raw} was removed, but lifting the ban afterwards failed ({cause}), so they "
+        f"are now BANNED from {req.chat.raw} and cannot rejoin.{before}",
+        code=rule.code if rule else None,
+    )
+    if rule is not None:
+        error.exit_code = rule.exit_code
+        error.http = rule.http
+    after = f" after {wait}s" if isinstance(wait, int) and wait else ""
+    error.hint = f"Run: tlgr chat member unban {req.chat.raw} {ref.raw}{after}"
+    if isinstance(wait, int):
+        error.wait_seconds = wait  # type: ignore[attr-defined]
+    return error
 
 
 SPEC_MEMBER_REMOVE = OperationSpec(
@@ -641,6 +719,11 @@ SPEC_MEMBER_REMOVE = OperationSpec(
     description=(
         "A kick is `editBanned(view_messages)` followed by an empty mask, so "
         "the person may come back. Use `chat member ban` to keep them out. "
+        "In a channel or supergroup the member is looked up first: someone "
+        "already banned stays banned and someone not in the chat is left "
+        "alone (`already: true`). Naming this account is refused (use `chat "
+        "leave`), and if the unban step fails the error says they are now "
+        "banned. "
         "`--purge` drains `messages.affectedHistory` until the server stops "
         "handing back an offset."
     ),

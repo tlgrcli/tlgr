@@ -419,6 +419,13 @@ class StorageCleared(Model):
     kept_files: int = 0
     keep_days: int | None = None
     dry_run: bool = False
+    #: Files that could not be deleted (permissions, races); `failures`
+    #: names the first few.
+    failed_files: int = 0
+    failures: list[str] = []
+    #: Files under the scope whose real path is outside the downloads root
+    #: (reached through a linked directory), left alone.
+    skipped_outside: int = 0
 
 
 class PaidItem(Model):

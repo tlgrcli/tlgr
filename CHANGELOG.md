@@ -133,6 +133,16 @@ codes documented in `AGENT.md` are the public API.
 
 ### Fixed
 
+- **`media storage clear --chat` stays inside the downloads directory.**
+  `--chat /` or `--chat ../..` was joined onto the root and walked, deleting
+  files anywhere the user could write. It now takes one directory name and
+  refuses anything that leads out of the root, symlinks included. It also
+  refuses to run at all when the downloads directory or the tlgr home
+  resolves to `/`, your home directory or one of its parents, or when the
+  downloads directory is not inside the tlgr home; resolves every file right
+  before deleting it and skips any whose real path is outside the root
+  (`skipped_outside`); and reports files it could not delete
+  (`failed_files`, `failures`) instead of silently ignoring them.
 - **An upload failure reports its real error.** The "sending a file..."
   broadcast swallowed errors from the upload it wrapped and failed with a
   GENERIC "generator didn't stop after athrow()" (exit 1) instead.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 import msgspec
 import pytest
@@ -23,8 +24,10 @@ from tlgr.core.errors import (
     AccountRequiredError,
     ErrorRule,
     IndeterminateError,
+    PeerNeedsUserError,
     RateLimitError,
     TlgrError,
+    UsageError,
     classify,
     error_body_dict,
     error_envelope,
@@ -34,6 +37,7 @@ from tlgr.core.errors import (
     rule_for,
     strip_numeric_suffix,
 )
+from tlgr.transport.client import error_from_body
 
 
 class _Inner(msgspec.Struct):
@@ -215,3 +219,22 @@ class TestRendering:
             "code": "TLGR_ERROR",
             "exit_code": EXIT_GENERIC,
         }
+
+
+class TestErrorDetails:
+    def test_details_appear_only_when_set(self):
+        assert "details" not in error_body_dict(classify(UsageError("bad")))
+        body = error_body_dict(classify(PeerNeedsUserError("x", details={"reason": "unknown"})))
+        assert body["details"] == {"reason": "unknown"}
+        assert body["code"] == "PEER_NEEDS_USER"
+        assert body["error"] == "x"  # the v1 key is still there
+
+    def test_details_survive_the_socket(self):
+        body = error_body_dict(
+            classify(PeerNeedsUserError("x", details={"candidates": [1]}, hint="ask"))
+        )
+        rebuilt = error_from_body(json.loads(json.dumps(body)), status_code=400)
+        assert isinstance(rebuilt, PeerNeedsUserError)
+        assert rebuilt.details == {"candidates": [1]}
+        assert rebuilt.exit_code == EXIT_USAGE
+        assert rebuilt.hint == "ask"

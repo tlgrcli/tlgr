@@ -33,6 +33,10 @@ tests that strip `TLGR_*` from a child's environment keep the guard. A child
 that loses the roots variable falls back to the strict default: only
 pytest's temp area and the directories it creates itself.
 
+Bytecode caches are also allowed: a `.pyc` or `.pyc.<pid>` file directly
+in a `__pycache__` directory inside the repository, which pytest's
+assertion rewriter writes and renames into place on a fresh checkout.
+
 Not guarded: opening a file for writing (truncation), deletes through a
 reference captured before installation (for example `from os import
 unlink` at import time), and non-Python child processes.
@@ -44,6 +48,7 @@ import contextlib
 import functools
 import getpass
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -54,6 +59,9 @@ from typing import Any
 
 ENV_ROOTS = "PYTEST_DELETE_GUARD_ROOTS"
 SITE_DIR = Path(__file__).resolve().parent / "_guard_site"
+#: The repository. Bytecode caches inside it may be written (see `_is_bytecode`).
+REPO = Path(__file__).resolve().parent.parent
+_BYTECODE_NAME = re.compile(r"[^/]+\.pyc(\.\d+)?")
 
 __all__ = [
     "ENV_ROOTS",
@@ -126,7 +134,25 @@ def _forget_removed(target: Path) -> None:
             _publish()
 
 
+def _is_bytecode(target: Path) -> bool:
+    """A `.pyc` (or pytest's `.pyc.<pid>` staging file) in a `__pycache__`
+    directory inside the repository.
+
+    pytest's assertion rewriter writes the cache for every test module as
+    `<name>.pyc.<pid>` and `os.replace`s it into place, so a fresh checkout
+    (every CI run) needs this. Nothing else matches: not another file in
+    `__pycache__`, not a `__pycache__` outside the repository.
+    """
+    return (
+        target.parent.name == "__pycache__"
+        and _BYTECODE_NAME.fullmatch(target.name) is not None
+        and target.is_relative_to(REPO)
+    )
+
+
 def _allowed(target: Path) -> bool:
+    if _is_bytecode(target):
+        return True
     current = str(target)
     with _lock:
         while True:

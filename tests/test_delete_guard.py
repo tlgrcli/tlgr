@@ -159,6 +159,32 @@ def test_a_removed_temp_dir_is_no_longer_allowed() -> None:
         delete_guard.original("rmdir")(scratch)
 
 
+def test_pytests_bytecode_cache_pattern_is_allowed() -> None:
+    """The assertion rewriter writes `<name>.pyc.<pid>`, then replaces."""
+    cache = Path(__file__).resolve().parent / "__pycache__"
+    cache.mkdir(exist_ok=True)
+    final = cache / f"tlgr_guard_probe_{uuid.uuid4().hex}.cpython-0.pyc"
+    staging = Path(f"{final}.{os.getpid()}")
+    staging.write_bytes(b"x")
+    with delete_guard.expect_refusals() as seen:
+        os.replace(staging, final)
+        final.unlink()
+    assert seen == []
+    assert not final.exists()
+
+
+def test_only_bytecode_in_the_repos_pycache_is_allowed(victim: Path) -> None:
+    repo_cache = Path(__file__).resolve().parent / "__pycache__"
+    outside_cache = victim.parent / "__pycache__"
+    cases = [
+        repo_cache / "notes.txt",  # not bytecode
+        repo_cache / "x.pyc.bak",  # not pytest's staging name
+        outside_cache / "x.pyc",  # bytecode, but outside the repository
+    ]
+    for case in cases:
+        _refused(lambda case=case: os.unlink(case))  # none of them exist
+
+
 def test_pytests_cache_dir_pattern_is_allowed(tmp_path: Path) -> None:
     """mkdtemp, rename into place, then rmtree the old name: what pytest does."""
     with delete_guard.expect_refusals() as seen:

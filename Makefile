@@ -5,7 +5,7 @@ STRICT := tlgr/models tlgr/ops tlgr/registry.py tlgr/schema.py tlgr/version.py \
           tlgr/core/errors.py tlgr/core/timefmt.py tlgr/core/pagination.py \
           tlgr/core/eventtypes.py tlgr/core/tl.py tlgr/core/process.py \
           tlgr/core/signing.py \
-          tlgr/core/config.py tlgr/core/paths.py tlgr/core/peers.py \
+          tlgr/core/config.py tlgr/core/paths.py tlgr/core/peers.py tlgr/core/aliases.py \
           tlgr/core/logging.py tlgr/core/identity.py tlgr/core/media.py \
           tlgr/transport \
           tlgr/daemon/session.py tlgr/daemon/sessions.py tlgr/daemon/events.py \

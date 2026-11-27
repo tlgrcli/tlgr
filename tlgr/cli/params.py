@@ -41,7 +41,8 @@ __all__ = [
 
 
 class PeerParam(click.ParamType):
-    """`@username`, an id, `+phone`, `me`/`saved`, or a t.me/tg:// link."""
+    """`@username`, an id, `+phone`, `me`/`saved`, a t.me/tg:// link, or a saved
+    contact alias (`name:Sara`, or a non-ASCII or multi-word name)."""
 
     name = "peer"
 

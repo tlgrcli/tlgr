@@ -530,6 +530,7 @@ def _source_for(kind: str) -> str:
         "self": "self",
         "saved": "self",
         "link": "link",
+        "name": "alias",
     }.get(kind, kind)
 
 

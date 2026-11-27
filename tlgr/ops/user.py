@@ -27,7 +27,7 @@ from __future__ import annotations
 import contextlib
 from typing import Annotated, Any
 
-from tlgr.core.errors import NotFoundError, UsageError
+from tlgr.core.errors import NotFoundError, PeerNeedsUserError, UsageError
 from tlgr.core.pagination import PageKind, build_page, decode_cursor
 from tlgr.core.timefmt import fmt_dt, to_unix
 from tlgr.models.base import Request
@@ -579,6 +579,9 @@ async def dialog_status(ctx: OpContext, req: DialogStatusReq) -> DialogStatus:
     peer: Any = None
     try:
         peer = await _send.resolve(ctx, req.user)
+    except PeerNeedsUserError:
+        # An unsaved name is a question for the user, not an unknown dialog.
+        raise
     except Exception as exc:
         # NOT evidence of absence — a cold cache or an unknown handle.
         out.reason = f"entity not resolvable directly: {exc}"

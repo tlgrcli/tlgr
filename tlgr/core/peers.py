@@ -25,6 +25,10 @@ before it cannot answer:
    access hash, and Telethon gives up. Remembering `(chat_id, msg_id)` lets
    the resolver build `InputPeerUserFromMessage` by hand, which is what makes
    `chat posters` → `user get` work for a stranger.
+9. a contact alias (`kind="name"`): an exact lookup in the account's alias
+   store, then the stored id through step 7. Anything short of an exact
+   saved wording is PEER_NEEDS_USER with suggestions, never a guess
+   (`core/aliases.py`).
 
 The failure modes are deliberately two, not one. A peer the strategies
 *exhausted* is `NOT_FOUND` (exit 5). A peer whose search was truncated,
@@ -43,9 +47,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from tlgr.core.aliases import AliasStore, ambiguous_bare_word, contact_candidates, needs_user
 from tlgr.core.errors import IndeterminateError, NotFoundError, UsageError
 from tlgr.core.paths import write_private
-from tlgr.models.peer import PeerRef, parse_peer_ref
+from tlgr.models.peer import PeerRef, is_bare_username, normalize_name, parse_peer_ref
 
 log = logging.getLogger("tlgr.core.peers")
 
@@ -154,6 +159,9 @@ class PeerResolver:
     dialog_scan_max: int = 5000
     #: Set by the daemon so a resolve is paced like the expensive call it is.
     limiter: Any = None
+    #: The account's saved contact aliases. Per account for the same reason
+    #: the cache is: an id and hash minted for A mean nothing to B.
+    aliases: AliasStore = field(default_factory=lambda: AliasStore(None))
 
     async def resolve(
         self,
@@ -182,7 +190,17 @@ class PeerResolver:
             if found is not None:
                 return await self._by_id(found[0], allow_network=allow_network)
 
+        if kind == "name":
+            return await self._by_alias(parsed, allow_network=allow_network)
+
         if kind == "username":
+            if is_bare_username(parsed):
+                # `sara` has always meant @sara, and still does, unless the
+                # user also saved "sara" as a contact: then either reading
+                # could be the wrong person, so neither is chosen.
+                record = self.aliases.get_quietly(normalize_name(parsed.raw))
+                if record is not None:
+                    raise ambiguous_bare_word(parsed, record, account=self.account)
             return await self._by_username(
                 str(parsed.value), allow_network=allow_network, want=want
             )
@@ -282,6 +300,62 @@ class PeerResolver:
         if not allow_network:
             raise IndeterminateError(f"{peer_id} is not cached and network was not allowed")
         return await self._scan_dialogs(peer_id)
+
+    async def _by_alias(self, ref: PeerRef, *, allow_network: bool) -> Any:
+        """A saved alias, exact key only; a miss is PEER_NEEDS_USER (§6.6 step 9)."""
+        key = str(ref.value)
+        record = self.aliases.get(key)
+        if record is None:
+            candidates = self.aliases.suggest(key)
+            contacts, checked = await self._contact_candidates(key, allow_network=allow_network)
+            raise needs_user(
+                ref,
+                account=self.account,
+                reason="unknown",
+                candidates=candidates + contacts,
+                contacts_checked=checked,
+            )
+        built = self._build(
+            CachedPeer(
+                peer_id=record.peer_id,
+                kind=record.kind,
+                access_hash=record.access_hash,
+                username=record.username,
+            )
+        )
+        if built is not None:
+            return built
+        try:
+            return await self._by_id(record.peer_id, allow_network=allow_network)
+        except NotFoundError as exc:
+            # Exhausted, not merely unestablished: the saved peer is gone or
+            # unreachable. INDETERMINATE passes through untouched.
+            raise needs_user(
+                ref, account=self.account, reason="stale", candidates=[], stored=record
+            ) from exc
+
+    async def _contact_candidates(
+        self, key: str, *, allow_network: bool
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """Contacts whose name resembles *key*: suggestions only, never a match.
+
+        One `contacts.getContacts`, on the failure path only. Any error just
+        means no contact suggestions; the answer is PEER_NEEDS_USER either way.
+        """
+        if not allow_network or self.client is None:
+            return [], False
+        from telethon.tl.functions.contacts import GetContactsRequest
+
+        try:
+            await self._pace("read")
+            result = await self.client(GetContactsRequest(hash=0))
+        except Exception as exc:
+            if _is_transport(exc):
+                raise
+            log.debug("contact suggestions for %r failed: %s", key, exc)
+            return [], False
+        users = list(getattr(result, "users", None) or [])
+        return contact_candidates(key, users), True
 
     async def _scan_dialogs(self, peer_id: int) -> Any:
         """The last resort, and the only thing that licenses a negative answer.

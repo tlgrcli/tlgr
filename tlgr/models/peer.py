@@ -10,11 +10,13 @@ connected account.
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Any, Literal
 
 from tlgr.models.base import Model
 
 __all__ = [
+    "NAME_PREFIX",
     "Chat",
     "Peer",
     "PeerKind",
@@ -24,13 +26,15 @@ __all__ = [
     "Rights",
     "User",
     "UserRef",
+    "is_bare_username",
+    "normalize_name",
     "parse_message_link",
     "parse_peer_ref",
     "parse_user_ref",
 ]
 
 PeerKind = Literal["user", "bot", "saved", "group", "supergroup", "channel", "unknown"]
-PeerRefKind = Literal["id", "username", "phone", "link", "invite", "self", "saved"]
+PeerRefKind = Literal["id", "username", "phone", "link", "invite", "self", "saved", "name"]
 
 # Telegram's own marking scheme, reproduced here so models/ stays Telethon-free.
 _CHANNEL_MARK = -1000000000000
@@ -39,6 +43,40 @@ _MAX_USER_ID = 0x7FFFFFFFFFFFFFFF
 _USERNAME_RE = re.compile(r"^[a-zA-Z0-9_]{4,32}$")
 _PHONE_RE = re.compile(r"^\+?[0-9][0-9 \-()]{4,24}$")
 _INT_RE = re.compile(r"^-?\d+$")
+
+#: Forces a reference to be read as a saved contact alias. Needed for a single
+#: ASCII word such as `sara`, which is a username without it (DECISIONS,
+#: 2026-11-27). Shell-safe, unlike a leading `~`, which zsh expands.
+NAME_PREFIX = "name:"
+
+#: Invisible characters a Persian keyboard or a copy/paste inserts: ZWNJ, ZWJ,
+#: the two direction marks and a stray BOM. None of them changes the name.
+_INVISIBLE = "\u200c\u200d\u200e\u200f\ufeff"
+#: Arabic letter forms a Persian name is often typed with, to the Persian ones.
+_ARABIC_TO_PERSIAN = {"\u064a": "\u06cc", "\u0649": "\u06cc", "\u0643": "\u06a9"}
+#: Harakat, superscript alef, Quranic marks, and tatweel (U+0640).
+_ARABIC_MARKS = re.compile(
+    "[\u0640\u064b-\u065f\u0670\u06d6-\u06dc\u06df-\u06e4\u06e7\u06e8\u06ea-\u06ed]"
+)
+_NAME_TABLE = str.maketrans({**dict.fromkeys(_INVISIBLE, ""), **_ARABIC_TO_PERSIAN})
+
+
+def normalize_name(text: str) -> str:
+    """The lookup key for a contact alias: equal keys are the same wording.
+
+    Unicode NFKC, casefold, ZWNJ/ZWJ and direction marks removed, Arabic ye
+    and kaf mapped to the Persian letters, Arabic diacritics and tatweel
+    dropped, whitespace collapsed. Deliberately no stemming and no fuzzy
+    folding: two keys that differ by a letter are two different people until
+    the user says otherwise.
+    """
+    folded = unicodedata.normalize("NFKC", text or "").casefold()
+    folded = _ARABIC_MARKS.sub("", folded.translate(_NAME_TABLE))
+    return " ".join(folded.split())
+
+
+def _is_name_text(key: str) -> bool:
+    return any(ch.isalnum() for ch in key)
 
 
 class PeerRefError(ValueError):
@@ -310,7 +348,9 @@ def parse_peer_ref(text: str) -> PeerRef:
 
     Accepts `@username`, a marked or raw id (including the `-100…` channel
     form, and negative ids that need a `--` separator on the command line),
-    `+phone`, `me`/`saved`, and t.me / tg:// links and invites.
+    `+phone`, `me`/`saved`, and t.me / tg:// links and invites. Anything else
+    with a letter in it is a contact alias (`kind="name"`, `value` the
+    normalized key); `name:<text>` forces that reading.
     """
     raw = text.strip()
     if not raw:
@@ -348,7 +388,36 @@ def parse_peer_ref(text: str) -> PeerRef:
         # A bare username is accepted because half the world types it that way.
         return PeerRef(raw=raw, kind="username", value=raw.lower())
 
-    raise PeerRefError(f"{raw!r} is not a chat, user, id, phone or link")
+    return _parse_name(raw)
+
+
+def _parse_name(raw: str) -> PeerRef:
+    """Free text that is no other kind of reference: a saved contact alias.
+
+    Only reached once every handle form has failed, so a bare ASCII word that
+    is a valid username stays a username; `name:` forces this branch. Text
+    that is clearly a malformed handle (`@x`, `+abc`, a URL) is still a parse
+    error rather than a name nobody could have saved.
+    """
+    explicit = raw[: len(NAME_PREFIX)].lower() == NAME_PREFIX
+    text = raw[len(NAME_PREFIX) :] if explicit else raw
+    if not explicit and (raw.startswith(("@", "+")) or "://" in raw):
+        raise PeerRefError(f"{raw!r} is not a chat, user, id, phone or link")
+    key = normalize_name(text)
+    if not _is_name_text(key):
+        if explicit:
+            raise PeerRefError(f"{raw!r} names no contact alias")
+        raise PeerRefError(f"{raw!r} is not a chat, user, id, phone, link or contact alias")
+    return PeerRef(raw=raw, kind="name", value=key)
+
+
+def is_bare_username(ref: PeerRef) -> bool:
+    """True when *ref* is a username typed without `@` or a link.
+
+    The one spelling that could also be meant as a contact alias, which is
+    why the resolver checks it against the alias store before resolving it.
+    """
+    return ref.kind == "username" and bool(_USERNAME_RE.match(ref.raw.strip()))
 
 
 def parse_user_ref(text: str) -> PeerRef:

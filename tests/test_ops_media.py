@@ -16,6 +16,7 @@ from typing import Any
 import pytest
 
 from tlgr.core.errors import (
+    EXIT_CONFIG,
     EXIT_NOT_FOUND,
     EXIT_PERMISSION,
     EXIT_USAGE,
@@ -814,6 +815,183 @@ class TestStorage:
         assert cleared.freed_bytes == 10
         assert (root / "b.mp4").exists()
         _ = asyncio
+
+    @pytest.mark.parametrize("chat", ["/", "..", "../..", "a/../..", ""])
+    async def test_chat_cannot_name_anything_outside_the_root(self, tlgr_home, tmp_path, chat):
+        """`--chat /` used to walk and unlink from the filesystem root."""
+        from tlgr.ops.media import StorageClearReq, storage_clear
+
+        (tlgr_home / "downloads").mkdir(parents=True)
+        bystander = tlgr_home / "keep.jpg"
+        bystander.write_bytes(b"x")
+        with pytest.raises(Exception) as excinfo:
+            await storage_clear(_LocalCtx(), StorageClearReq(chat=chat or " "))
+        assert _error(excinfo).exit_code == EXIT_USAGE
+        assert bystander.exists()
+
+    async def test_chat_cannot_follow_a_symlink_out_of_the_root(self, tlgr_home, tmp_path):
+        from tlgr.ops.media import StorageClearReq, storage_clear
+
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "a.jpg").write_bytes(b"x")
+        (tlgr_home / "downloads").mkdir(parents=True)
+        (tlgr_home / "downloads" / "777").symlink_to(outside, target_is_directory=True)
+        with pytest.raises(Exception) as excinfo:
+            await storage_clear(_LocalCtx(), StorageClearReq(chat="777"))
+        assert _error(excinfo).exit_code == EXIT_USAGE
+        assert (outside / "a.jpg").exists()
+
+    async def test_one_chat_is_cleared_and_the_others_kept(self, tlgr_home):
+        from tlgr.ops.media import StorageClearReq, storage_clear
+
+        root = tlgr_home / "downloads"
+        (root / "777").mkdir(parents=True)
+        (root / "888").mkdir()
+        (root / "777" / "a.jpg").write_bytes(b"x")
+        (root / "888" / "b.jpg").write_bytes(b"y")
+        cleared = await storage_clear(_LocalCtx(), StorageClearReq(chat="777"))
+        assert cleared.deleted_files == 1
+        assert (root / "888" / "b.jpg").exists()
+
+
+class TestStorageClearNeverLeavesTheRoot:
+    """Defence in depth: each check holds even if the one before it regresses.
+
+    Everything these tests could delete lives in the test's own temp dirs,
+    and the conftest delete guard refuses anything else.
+    """
+
+    @pytest.mark.parametrize(
+        "case", ["root is /", "root is $HOME", "root is a parent of $HOME", "home is $HOME"]
+    )
+    def test_a_dangerous_root_or_home_is_refused_before_any_walk(self, case, tmp_path):
+        from tlgr.core.errors import ConfigurationError
+        from tlgr.ops.media import _checked_storage_root
+
+        home = Path.home()
+        root, tlgr_home = {
+            "root is /": (Path("/"), Path("/")),
+            "root is $HOME": (home, home.parent),
+            "root is a parent of $HOME": (home.parent, home.parent.parent),
+            "home is $HOME": (home / "downloads", home),
+        }[case]
+        with pytest.raises(ConfigurationError):
+            _checked_storage_root(root, tlgr_home)
+
+    @pytest.mark.parametrize("case", ["root is the home", "root is outside the home"])
+    def test_a_root_not_strictly_inside_the_home_is_refused(self, case, tmp_path):
+        from tlgr.core.errors import ConfigurationError
+        from tlgr.ops.media import _checked_storage_root
+
+        tlgr_home = tmp_path / "h"
+        tlgr_home.mkdir()
+        root = tlgr_home if case == "root is the home" else tmp_path / "elsewhere"
+        with pytest.raises(ConfigurationError):
+            _checked_storage_root(root, tlgr_home)
+
+    async def test_a_tlgr_home_at_home_refuses_and_deletes_nothing(self, tlgr_home, monkeypatch):
+        """`TLGR_HOME=~` would make `~/downloads` (your Downloads) the root."""
+        from tlgr.ops.media import StorageClearReq, storage_clear
+
+        monkeypatch.setenv("HOME", str(tlgr_home))
+        (tlgr_home / "downloads").mkdir(parents=True)
+        keep = tlgr_home / "downloads" / "a.jpg"
+        keep.write_bytes(b"x")
+        with pytest.raises(Exception) as excinfo:
+            await storage_clear(_LocalCtx(), StorageClearReq())
+        assert _error(excinfo).exit_code == EXIT_CONFIG
+        assert keep.exists()
+
+    async def test_a_file_whose_real_path_is_outside_the_root_is_skipped(
+        self, tlgr_home, tmp_path, monkeypatch
+    ):
+        """Reached through a linked directory, as a walk that follows links would."""
+        from tlgr.ops.media import StorageClearReq, storage_clear
+
+        root = tlgr_home / "downloads"
+        (root / "777").mkdir(parents=True)
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "a.jpg").write_bytes(b"x")
+        (root / "777" / "linked").symlink_to(outside, target_is_directory=True)
+        (root / "777" / "b.jpg").write_bytes(b"y")
+        reached = [root / "777" / "linked" / "a.jpg", root / "777" / "b.jpg"]
+        monkeypatch.setattr(Path, "rglob", lambda self, pattern: iter(reached))
+
+        cleared = await storage_clear(_LocalCtx(), StorageClearReq())
+
+        assert (outside / "a.jpg").exists()
+        assert not (root / "777" / "b.jpg").exists()
+        assert cleared.skipped_outside == 1
+        assert cleared.deleted_files == 1
+
+    async def test_a_failed_unlink_is_counted_and_named(self, tlgr_home):
+        from tlgr.ops.media import StorageClearReq, storage_clear
+
+        locked = tlgr_home / "downloads" / "777"
+        locked.mkdir(parents=True)
+        stuck = locked / "a.jpg"
+        stuck.write_bytes(b"x")
+        locked.chmod(0o500)
+        try:
+            cleared = await storage_clear(_LocalCtx(), StorageClearReq())
+        finally:
+            locked.chmod(0o700)
+        assert cleared.deleted_files == 0
+        assert cleared.failed_files == 1
+        assert len(cleared.failures) == 1
+        assert str(stuck.resolve()) in cleared.failures[0]
+        assert stuck.exists()
+
+
+class TestTheHomeIsNeverUploaded:
+    """A session file or token under the tlgr home never leaves the machine."""
+
+    async def test_uploading_a_session_file_is_refused(
+        self, live_daemon, client, in_thread, peers, tlgr_home
+    ):
+        session = tlgr_home / "accounts" / "work" / "session.session"
+        session.parent.mkdir(parents=True, exist_ok=True)
+        session.write_bytes(b"auth key")
+        with pytest.raises(Exception) as excinfo:
+            await result(
+                client, in_thread, "media.upload", {"chat": "@alice", "path": [str(session)]}
+            )
+        assert _error(excinfo).exit_code == EXIT_PERMISSION
+        assert not peers.called("UploadMediaRequest")
+        assert not peers.called("SaveFilePartRequest")
+
+    async def test_a_symlink_to_the_token_is_refused(
+        self, live_daemon, client, in_thread, peers, tlgr_home, tmp_path
+    ):
+        (tlgr_home / "ipc.token").write_text("secret")
+        link = tmp_path / "cat.jpg"
+        link.symlink_to(tlgr_home / "ipc.token")
+        with pytest.raises(Exception) as excinfo:
+            await result(client, in_thread, "media.upload", {"chat": "@alice", "path": [str(link)]})
+        assert _error(excinfo).exit_code == EXIT_PERMISSION
+        assert not peers.called("SaveFilePartRequest")
+
+    async def test_a_caption_file_in_the_home_is_refused(
+        self, live_daemon, client, in_thread, peers, tlgr_home, tmp_path
+    ):
+        (tlgr_home / "ipc.token").write_text("secret")
+        photo = tmp_path / "cat.jpg"
+        photo.write_bytes(b"\xff\xd8" + b"x" * 64)
+        with pytest.raises(Exception) as excinfo:
+            await result(
+                client,
+                in_thread,
+                "media.upload",
+                {
+                    "chat": "@alice",
+                    "path": [str(photo)],
+                    "caption_file": str(tlgr_home / "ipc.token"),
+                },
+            )
+        assert _error(excinfo).exit_code == EXIT_PERMISSION
+        assert not peers.called("SendMediaRequest")
 
 
 class _LocalCtx:

@@ -992,6 +992,8 @@ SPEC_LINK = OperationSpec(
     example={"url": "https://t.me/alice", "kind": "chat"},
     example_args="user link @alice --profile",
     covers=("contacts-users.contact-token-export", "contacts-users.user-link-build"),
+    # `--token` mints a contact token, so the op is outside `*:read`.
+    tags=frozenset({"bearer-credential"}),
 )
 
 

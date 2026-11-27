@@ -89,6 +89,29 @@ codes documented in `AGENT.md` are the public API.
 
 ### Changed
 
+- **A `[policy]` typo stops the daemon instead of failing open.** Every
+  `allow` / `deny` entry is checked against the operation registry (ids,
+  aliases, groups, `x.*` globs and `*:<class>`), and an unknown key in
+  `[policy]` is an error. Either one stops the daemon from starting, fails
+  `tlgr daemon reload` (the running policy stays), and is reported by
+  `tlgr config validate`, with a suggestion: `deny = ["mesage.delete"]` used
+  to deny nothing. Other sections stay lenient about unknown keys.
+- **`*:read` no longer includes credentials.** Operations that print or mint
+  something granting access (`account export`, `auth code list`,
+  `auth autologin-url get`, `user link`, `bot token export`,
+  `account password temp`, `webhook get`) are tagged `bearer-credential` and
+  form the new `*:credential` class. Allow them by name, group,
+  `*:credential` or `*`. A registry lint keeps new ones tagged.
+- **`--enable-commands` understands class entries.** The CLI check now uses
+  the daemon's matcher, so `--enable-commands '*:read'` allows reads instead
+  of blocking everything.
+- **Files under the tlgr home are never uploaded or sent as text.** Uploads
+  and every flag that reads a file as message content (`--caption-file`,
+  `--vcard`, `--areas`, call and bot payload files, ...) refuse a path inside
+  the tlgr home, symlinks resolved, with exit 6; `downloads/` is exempt.
+- **Human and `--plain` output strip terminal escape sequences** (C0/C1
+  controls, ESC and OSC sequences with their payloads, bidi overrides) from
+  text other people wrote. `--json` is unchanged.
 - **Every job action now runs through the op layer and is paced.** `forward`
   and `reply` used to call Telethon directly from the bus handler; they now
   run as `message.forward`, `message.send` and `media.upload` operations, so
@@ -110,6 +133,19 @@ codes documented in `AGENT.md` are the public API.
 
 ### Fixed
 
+- **`media storage clear --chat` stays inside the downloads directory.**
+  `--chat /` or `--chat ../..` was joined onto the root and walked, deleting
+  files anywhere the user could write. It now takes one directory name and
+  refuses anything that leads out of the root, symlinks included. It also
+  refuses to run at all when the downloads directory or the tlgr home
+  resolves to `/`, your home directory or one of its parents, or when the
+  downloads directory is not inside the tlgr home; resolves every file right
+  before deleting it and skips any whose real path is outside the root
+  (`skipped_outside`); and reports files it could not delete
+  (`failed_files`, `failures`) instead of silently ignoring them.
+- **An upload failure reports its real error.** The "sending a file..."
+  broadcast swallowed errors from the upload it wrapped and failed with a
+  GENERIC "generator didn't stop after athrow()" (exit 1) instead.
 - **`tlgr daemon restart` completes, and the stopped daemon exits.** With a
   `tlgr watch` (or any `events.watch` stream) attached, a stop drained for
   the config's `drain_seconds` (30s) instead of the `--grace` the client

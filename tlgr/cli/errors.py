@@ -71,8 +71,12 @@ def emit(exc: BaseException, *, use_json: bool = False, op: str = "") -> None:
         sys.stdout.write("\n")
         sys.stdout.flush()
 
-    message = body.get("message") or str(exc)
-    hint = body.get("hint") or getattr(exc, "hint", "")
+    # The stderr line is for a terminal, and a message can quote text from
+    # Telegram (a name, a file name), so escape sequences are removed from it.
+    from tlgr.cli.render import printable
+
+    message = printable(str(body.get("message") or exc))
+    hint = printable(str(body.get("hint") or getattr(exc, "hint", "") or ""))
     print(f"Error: {message}", file=sys.stderr)
     if hint:
         print(f"  {hint}", file=sys.stderr)

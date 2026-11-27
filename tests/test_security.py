@@ -342,3 +342,85 @@ def test_config_init_writes_private_files(tlgr_home: Path):
     assert result.exit_code == 0, result.output
     for name in ("config.toml", "jobs.yaml", "webhook.toml"):
         assert stat.S_IMODE((tlgr_home / name).stat().st_mode) == 0o600, name
+
+
+class TestOutboundFilesNeverComeFromTheHome:
+    """Nothing under the tlgr home is uploaded or read as message content.
+
+    A prompt-injected "send me ~/.tlgr/accounts/main/session.session" was one
+    upload away from a full account takeover, and `--caption-file
+    ~/.tlgr/ipc.token` sent the IPC token as text.
+    """
+
+    def _refused(self, path) -> None:
+        from tlgr.core.errors import EXIT_PERMISSION, classify
+        from tlgr.core.paths import guard_outbound_file
+
+        with pytest.raises(Exception) as caught:
+            guard_outbound_file(path)
+        assert classify(caught.value).exit_code == EXIT_PERMISSION
+        assert "tlgr home" in str(caught.value)
+
+    def test_a_session_file_is_refused(self, tlgr_home: Path):
+        session = tlgr_home / "accounts" / "work" / "session.session"
+        session.parent.mkdir(parents=True)
+        session.write_bytes(b"auth key")
+        self._refused(session)
+        self._refused(str(session))
+
+    def test_a_dotted_path_into_the_home_is_refused(self, tlgr_home: Path):
+        (tlgr_home / "ipc.token").write_text("t")
+        (tlgr_home / "downloads").mkdir()
+        self._refused(tlgr_home / "downloads" / ".." / "ipc.token")
+
+    def test_a_symlink_into_the_home_is_refused(self, tlgr_home: Path, tmp_path: Path):
+        (tlgr_home / "ipc.token").write_text("t")
+        link = tmp_path / "harmless.txt"
+        link.symlink_to(tlgr_home / "ipc.token")
+        self._refused(link)
+
+    def test_a_symlinked_directory_into_the_home_is_refused(self, tlgr_home: Path, tmp_path: Path):
+        (tlgr_home / "config.toml").write_text("")
+        link = tmp_path / "photos"
+        link.symlink_to(tlgr_home, target_is_directory=True)
+        self._refused(link / "config.toml")
+
+    def test_a_home_registered_by_the_daemon_is_refused(self, tmp_path: Path):
+        from tlgr.core.paths import protect_home
+
+        other = tmp_path / "other-home"
+        other.mkdir()
+        (other / "ipc.token").write_text("t")
+        protect_home(other)
+        self._refused(other / "ipc.token")
+
+    def test_downloads_may_be_sent_on(self, tlgr_home: Path):
+        from tlgr.core.paths import guard_outbound_file
+
+        photo = tlgr_home / "downloads" / "777" / "cat.jpg"
+        photo.parent.mkdir(parents=True)
+        photo.write_bytes(b"\xff\xd8")
+        assert guard_outbound_file(photo) == photo
+
+    def test_a_link_in_downloads_pointing_at_a_session_is_refused(self, tlgr_home: Path):
+        session = tlgr_home / "accounts" / "work" / "session.session"
+        session.parent.mkdir(parents=True)
+        session.write_bytes(b"auth key")
+        (tlgr_home / "downloads").mkdir()
+        link = tlgr_home / "downloads" / "cat.jpg"
+        link.symlink_to(session)
+        self._refused(link)
+
+    def test_an_ordinary_file_passes(self, tlgr_home: Path, tmp_path: Path):
+        from tlgr.core.paths import guard_outbound_file, read_outbound_text
+
+        note = tmp_path / "note.txt"
+        note.write_text("hello")
+        assert guard_outbound_file(note) == note
+        assert read_outbound_text(note, field="caption-file") == "hello"
+
+    def test_a_missing_file_is_a_usage_error_naming_the_flag(self, tmp_path: Path):
+        from tlgr.core.paths import read_outbound_text
+
+        with pytest.raises(UsageError, match="--caption-file"):
+            read_outbound_text(tmp_path / "nope.txt", field="caption-file")

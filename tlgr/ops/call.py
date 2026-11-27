@@ -848,9 +848,14 @@ async def signal(ctx: OpContext, req: SignalReq) -> Any:
     payload: bytes | None = None
     if req.file:
         import sys
-        from pathlib import Path
 
-        payload = sys.stdin.buffer.read() if req.file == "-" else Path(req.file).read_bytes()
+        from tlgr.core.paths import read_outbound_bytes
+
+        payload = (
+            sys.stdin.buffer.read()
+            if req.file == "-"
+            else read_outbound_bytes(req.file, field="file")
+        )
     elif req.data:
         payload = _calls.unb64(req.data, field="data")
 
@@ -1088,21 +1093,15 @@ class InviteReq(Request):
 
 
 def _read_bytes(path: str, *, field: str) -> bytes:
-    from pathlib import Path
+    from tlgr.core.paths import read_outbound_bytes
 
-    try:
-        return Path(path).read_bytes()
-    except OSError as exc:
-        raise UsageError(f"--{field}: {exc.strerror or exc}", field=field) from exc
+    return read_outbound_bytes(path, field=field)
 
 
 def _read_text(path: str, *, field: str) -> str:
-    from pathlib import Path
+    from tlgr.core.paths import read_outbound_text
 
-    try:
-        return Path(path).read_text(encoding="utf-8")
-    except OSError as exc:
-        raise UsageError(f"--{field}: {exc.strerror or exc}", field=field) from exc
+    return read_outbound_text(path, field=field)
 
 
 def _public_key(value: str) -> int:

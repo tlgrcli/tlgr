@@ -52,7 +52,8 @@ class _Section(msgspec.Struct, forbid_unknown_fields=False):
 
     Unknown keys are tolerated rather than fatal: a config written by a newer
     tlgr must not stop an older one from starting, and `tlgr config validate`
-    is where unknown keys are reported.
+    is where unknown keys are reported. `[policy]` is the exception (see
+    `PolicyConfig`).
     """
 
 
@@ -141,7 +142,16 @@ class SecurityConfig(_Section):
     warn_insecure_webhook: bool = True
 
 
-class PolicyConfig(_Section):
+class PolicyConfig(_Section, forbid_unknown_fields=True):
+    """The operation allowlist the daemon enforces.
+
+    The one strict section: a misspelled key here (`denny = [...]`) would be
+    a deny list that silently denies nothing, so an unknown key is a
+    CONFIG_ERROR and the daemon refuses to start rather than run with a
+    policy the operator did not write. The entries themselves are checked
+    against the registry by `tlgr.policy.Policy.from_config`.
+    """
+
     allow: list[str] = msgspec.field(default_factory=lambda: ["*"])
     deny: list[str] = []
 

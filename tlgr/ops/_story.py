@@ -24,7 +24,6 @@ Telethon is imported inside functions, never at module scope (§2.2).
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 from tlgr.core.errors import UsageError
@@ -493,10 +492,9 @@ def areas_from_json(path_or_text: str) -> list[MediaArea]:
 
     text = path_or_text.strip()
     if not text.startswith("["):
-        try:
-            text = Path(text).expanduser().read_text(encoding="utf-8")
-        except OSError as exc:
-            raise UsageError(f"--areas: {exc.strerror or exc}", field="areas") from exc
+        from tlgr.core.paths import read_outbound_text
+
+        text = read_outbound_text(text, field="areas")
     try:
         return msgspec.json.decode(text.encode(), type=list[MediaArea])
     except (msgspec.DecodeError, msgspec.ValidationError, json.JSONDecodeError) as exc:

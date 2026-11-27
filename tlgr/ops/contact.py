@@ -367,11 +367,9 @@ def _read_file(source: str, field: str) -> str:
             "write the phonebook to a file and pass its path",
             field=field,
         )
-    path = Path(source).expanduser()
-    try:
-        return path.read_text(encoding="utf-8", errors="replace")
-    except OSError as exc:
-        raise UsageError(f"{source}: {exc.strerror or exc}", field=field) from exc
+    from tlgr.core.paths import read_outbound_text
+
+    return read_outbound_text(source, field=field, errors="replace")
 
 
 def parse_phonebook(text: str) -> list[ImportedPhone]:

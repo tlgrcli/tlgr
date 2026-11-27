@@ -1034,11 +1034,15 @@ async def config_validate(ctx: OpContext, req: ConfigValidateReq) -> ValidationR
     if req.file in (None, "config"):
         checked.append("config.toml")
         try:
-            load_app_config(paths.base)
+            app = load_app_config(paths.base)
         except Exception as exc:
             errors.append(ValidationIssue(file="config.toml", message=str(exc)))
+        else:
+            errors.extend(_validate_policy(app.policy.allow, app.policy.deny))
         for section, block in _raw().items():
-            if not isinstance(block, dict):
+            # `[policy]` is decoded strictly, so its unknown keys are already
+            # errors above rather than warnings here.
+            if not isinstance(block, dict) or section == "policy":
                 continue
             for field in block:
                 if not any(pair == (section, field) for pair in _FIELDS.values()):
@@ -1073,6 +1077,22 @@ async def config_validate(ctx: OpContext, req: ConfigValidateReq) -> ValidationR
     return ValidationReport(
         ok=not errors, valid=not errors, files=checked, errors=errors, warnings=warnings
     )
+
+
+def _validate_policy(allow: list[str], deny: list[str]) -> list[ValidationIssue]:
+    """Every `[policy]` entry that matches no operation, as the daemon sees it.
+
+    The daemon refuses to start on these, so they are errors, not warnings:
+    a misspelled deny entry denies nothing.
+    """
+    from tlgr.policy import Policy
+
+    return [
+        ValidationIssue(
+            file="config.toml", key=f"policy.{problem.split(':', 1)[0]}", message=problem
+        )
+        for problem in Policy(allow=list(allow), deny=list(deny)).problems()
+    ]
 
 
 def _validate_jobs(base: Any) -> list[ValidationIssue]:

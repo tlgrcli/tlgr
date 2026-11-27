@@ -41,7 +41,7 @@ from tlgr.core.errors import (
     error_body_dict,
     http_status_for,
 )
-from tlgr.core.paths import TlgrPaths, write_private
+from tlgr.core.paths import TlgrPaths, protect_home, write_private
 from tlgr.daemon import dispatch as dispatch_module
 from tlgr.daemon.events import EventBus
 from tlgr.daemon.files import TransferSlots
@@ -98,6 +98,9 @@ class Daemon:
     ) -> None:
         self.paths = TlgrPaths(base)
         self.base = self.paths.base
+        # Uploads and `--caption-file`-style reads refuse anything under this
+        # home, even when it is not `$TLGR_HOME` (`guard_outbound_file`).
+        protect_home(self.paths.base)
         self.config = config or load_app_config(self.paths.base)
         self.accounts = AccountManager(self.paths.base)
         self.policy = Policy.from_config(self.config.policy.allow, self.config.policy.deny)
@@ -1062,12 +1065,15 @@ async def _reload(daemon: Daemon, what: list[str]) -> dict[str, Any]:
     requires_restart: list[str] = []
     if "config" in what:
         fresh = await asyncio.to_thread(load_app_config, daemon.base)
+        # Validated before anything is swapped: a policy entry that matches no
+        # operation fails the whole reload and leaves the running config.
+        policy = Policy.from_config(fresh.policy.allow, fresh.policy.deny)
         if fresh.network != daemon.config.network:
             requires_restart.append("network")
         if fresh.identity != daemon.config.identity:
             requires_restart.append("identity")
         daemon.config = fresh
-        daemon.policy = Policy.from_config(fresh.policy.allow, fresh.policy.deny)
+        daemon.policy = policy
         daemon.idle_timeout = effective_idle_timeout(
             fresh.daemon.idle_timeout,
             webhook_enabled=daemon.webhook_config.enabled,

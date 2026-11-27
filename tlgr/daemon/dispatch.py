@@ -101,12 +101,15 @@ class DaemonContext:
         The file pipeline lives in `daemon/files.py` and `ops/` may not import
         `daemon/` (§2.2), so the daemon hands it over the same way it hands
         over the resolver and the limiter: as a service on the context.
-        """
-        from pathlib import Path
 
+        Every upload passes through here, so this is where a file under the
+        tlgr home (a session, `ipc.token`) is refused (`guard_outbound_file`).
+        """
+        from tlgr.core.paths import guard_outbound_file
         from tlgr.daemon.files import UploadPlan, upload
 
-        return await upload(self.client, UploadPlan(source=Path(path), **kwargs))
+        source = guard_outbound_file(path)
+        return await upload(self.client, UploadPlan(source=source, **kwargs))
 
     async def download_file(
         self,

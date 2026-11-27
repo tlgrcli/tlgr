@@ -31,6 +31,7 @@ from typing import Annotated, Any, Literal
 
 from tlgr.core.errors import (
     EXIT_EMPTY,
+    ConfigurationError,
     NotFoundError,
     NotSupportedError,
     PermissionError_,
@@ -2075,7 +2076,9 @@ def _caption_for(req: UploadReq, index: int) -> tuple[str, list[Any]]:
     """The caption for item *index*, parsed once."""
     raw = ""
     if req.caption_file:
-        raw = Path(os.path.expanduser(req.caption_file)).read_text(encoding="utf-8")
+        from tlgr.core.paths import read_outbound_text
+
+        raw = read_outbound_text(req.caption_file, field="caption-file")
     elif req.caption:
         raw = (
             req.caption[index] if index < len(req.caption) else req.caption[0] if index == 0 else ""
@@ -2165,16 +2168,27 @@ def _action_for(req: UploadReq, sources: list[Path]) -> str:
 
 @contextlib.asynccontextmanager
 async def _typing(ctx: OpContext, peer: Any, action: str | None) -> Any:
-    """Broadcast `sending a photo…` for the duration of the upload."""
+    """Broadcast `sending a photo…` for the duration of the upload.
+
+    Only a failure of the broadcast itself is ignored. An error from the
+    upload inside the block propagates: catching it here and yielding again
+    turned every upload failure into "generator didn't stop after athrow()",
+    a GENERIC exit 1 in place of the real error and its exit code.
+    """
     if action is None:
         yield
         return
-    client = _client(ctx)
     try:
-        async with client.action(peer, action):
-            yield
+        broadcast = _client(ctx).action(peer, action)
+        await broadcast.__aenter__()
     except Exception:
         yield
+        return
+    try:
+        yield
+    finally:
+        with contextlib.suppress(Exception):
+            await broadcast.__aexit__(None, None, None)
 
 
 async def _upload_only(
@@ -4443,34 +4457,120 @@ class StorageClearReq(Request):
     ] = None
 
 
+def _chat_scope(root: Path, chat: str) -> Path:
+    """The one per-chat directory `--chat` names, never anything outside *root*.
+
+    `--chat` is joined onto the downloads root, so `/`, `../..` or a
+    directory symlinked out of the root would otherwise turn "clear this
+    chat's cache" into a recursive delete somewhere else.
+    """
+    name = chat.strip()
+    if not name or name in (".", "..") or "/" in name or "\\" in name or "\0" in name:
+        raise UsageError(
+            f"--chat {chat!r} is not a chat directory name; see `media storage get --by-chat`",
+            field="chat",
+        )
+    scope = root / name
+    if scope.is_symlink() or (
+        scope.exists() and not scope.resolve().is_relative_to(root.resolve())
+    ):
+        raise UsageError(f"--chat {chat!r} leads outside the downloads directory", field="chat")
+    return scope
+
+
+#: How many unlink failures `storage clear` names in its result; the rest are
+#: only counted.
+_MAX_REPORTED_FAILURES = 20
+
+
+def _checked_storage_root(root: Path, home: Path) -> Path:
+    """The resolved downloads root, or a refusal when it is not safe to clear.
+
+    `storage clear` deletes every matching file under the root, so the root
+    itself is checked before anything is walked, independently of how it was
+    computed. It must sit strictly inside the tlgr home, and neither the
+    root nor the home may be the filesystem root, the user's home directory
+    or an ancestor of it. `TLGR_HOME=~` would otherwise make the downloads
+    root `~/downloads`, which on a case-insensitive volume is the user's own
+    Downloads folder.
+    """
+    root_r = root.resolve()
+    home_r = home.resolve()
+    user_home = Path.home().resolve()
+    filesystem_root = Path(root_r.anchor)
+    for candidate, label in ((root_r, "downloads directory"), (home_r, "tlgr home")):
+        if candidate in (filesystem_root, user_home) or user_home.is_relative_to(candidate):
+            raise ConfigurationError(
+                f"refusing to clear storage: the {label} resolves to {candidate}, which is the "
+                "filesystem root, your home directory or one of its parents"
+            )
+    if root_r == home_r or not root_r.is_relative_to(home_r):
+        raise ConfigurationError(
+            f"refusing to clear storage: the downloads directory {root_r} is not inside the "
+            f"tlgr home {home_r}"
+        )
+    return root_r
+
+
 async def storage_clear(ctx: OpContext, req: StorageClearReq) -> StorageCleared:
     """Delete cached downloads, and only inside tlgr's own root.
 
-    Anything outside the configured downloads directory is out of scope by
-    construction: the walk starts there and never follows a link out of it.
+    Three independent checks keep the delete inside the downloads root: the
+    root is refused when it is not strictly inside the tlgr home (or is `/`,
+    `$HOME` or a parent of it), the `--chat` scope is refused when it leads
+    outside the root, and every file is resolved again right before it is
+    unlinked and skipped unless it is still inside the root. A failed unlink
+    is counted and reported, never silently ignored.
     """
+    from tlgr.core.paths import TlgrPaths
+
     root = _storage_root(ctx)
     cleared = StorageCleared(keep_days=req.keep_days)
     if not root.exists():
         return cleared
+    root_r = _checked_storage_root(root, TlgrPaths().base)
     cutoff = time.time() - req.older_than if req.older_than else None
     wanted = set(req.type)
-    scope = root / req.chat if req.chat else root
+    scope = _chat_scope(root, req.chat) if req.chat else root
+    if not scope.exists():
+        return cleared
+    if not scope.resolve().is_relative_to(root_r):
+        raise UsageError(f"--chat {req.chat!r} leads outside the downloads directory", field="chat")
+
+    def failed(path: Path, exc: OSError) -> None:
+        cleared.failed_files += 1
+        if len(cleared.failures) < _MAX_REPORTED_FAILURES:
+            cleared.failures.append(f"{path}: {exc.strerror or exc}")
 
     for path in scope.rglob("*"):
         if not path.is_file() or path.is_symlink():
             continue
-        if cutoff is not None and path.stat().st_atime > cutoff:
+        try:
+            target = path.resolve(strict=True)
+        except OSError as exc:
+            failed(path, exc)
+            continue
+        if target == root_r or not target.is_relative_to(root_r):
+            cleared.skipped_outside += 1
+            continue
+        try:
+            info = target.stat()
+        except OSError as exc:
+            failed(target, exc)
+            continue
+        if cutoff is not None and info.st_atime > cutoff:
             cleared.kept_files += 1
             continue
-        if wanted and _kind_of_file(path) not in wanted:
+        if wanted and _kind_of_file(target) not in wanted:
             cleared.kept_files += 1
             continue
-        size = path.stat().st_size
-        with contextlib.suppress(OSError):
-            path.unlink()
-            cleared.deleted_files += 1
-            cleared.freed_bytes += size
+        try:
+            target.unlink()
+        except OSError as exc:
+            failed(target, exc)
+            continue
+        cleared.deleted_files += 1
+        cleared.freed_bytes += info.st_size
     return cleared
 
 

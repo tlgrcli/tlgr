@@ -1,6 +1,6 @@
 # Developer entry points. Everything runs inside the project venv.
 PY ?= .venv/bin/python
-STRICT := tlgr/models tlgr/ops tlgr/registry.py tlgr/schema.py tlgr/version.py \
+STRICT := tlgr/models tlgr/ops tlgr/registry.py tlgr/policy.py tlgr/schema.py tlgr/version.py \
           tlgr/parity.py tlgr/client.py \
           tlgr/core/errors.py tlgr/core/timefmt.py tlgr/core/pagination.py \
           tlgr/core/eventtypes.py tlgr/core/tl.py tlgr/core/process.py \

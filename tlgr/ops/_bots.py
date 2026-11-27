@@ -26,8 +26,6 @@ from __future__ import annotations
 import base64
 import binascii
 import json
-import os
-from pathlib import Path
 from typing import Any
 
 from tlgr.core.errors import AuthenticationError, NotSupportedError, UsageError
@@ -212,11 +210,9 @@ def load_json(value: str | None, *, field: str) -> Any:
 
 
 def _read(path: str, *, field: str) -> str:
-    handle = Path(os.path.expanduser(path))
-    try:
-        return handle.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise UsageError(f"--{field}: {exc.strerror or exc}", field=field) from exc
+    from tlgr.core.paths import read_outbound_text
+
+    return read_outbound_text(path, field=field)
 
 
 def data_json(value: str | None, *, field: str) -> Any:
@@ -246,10 +242,9 @@ def payload_bytes(value: str | None, *, field: str) -> bytes | None:
     if text.startswith("b64:"):
         return _unb64(text[4:], field=field)
     if text.startswith("@"):
-        try:
-            return Path(os.path.expanduser(text[1:])).read_bytes()
-        except OSError as exc:
-            raise UsageError(f"--{field}: {exc.strerror or exc}", field=field) from exc
+        from tlgr.core.paths import read_outbound_bytes
+
+        return read_outbound_bytes(text[1:], field=field)
     stripped = text.strip()
     if stripped and len(stripped) % 2 == 0 and all(c in "0123456789abcdefABCDEF" for c in stripped):
         return _unhex(stripped, field=field)

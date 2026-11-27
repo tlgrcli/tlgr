@@ -17,12 +17,58 @@ import sys
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from fake_telethon import World, fake_client_factory
+# First, before any test module is collected: no test may delete, rename or
+# move anything outside the run's own temp dirs. See tests/delete_guard.py
+# for why this exists and what it covers.
+import delete_guard
+
+delete_guard.install()
+
+from fake_telethon import World, fake_client_factory  # noqa: E402
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Allow the two places pytest itself deletes and renames in.
+
+    `--basetemp`, when given, is cleared by pytest at start. The cache dir
+    (`.pytest_cache`) is created by renaming a temp dir into place, so a
+    fresh checkout or CI runner would otherwise trip the guard; it is only
+    allowed when it resolves strictly inside the repository.
+    """
+    basetemp = getattr(config.option, "basetemp", None)
+    if basetemp:
+        delete_guard.allow(Path(basetemp))
+    try:
+        configured = str(config.getini("cache_dir"))
+    except ValueError:  # the cache plugin is disabled (`-p no:cacheprovider`)
+        return
+    repo = Path(config.rootpath).resolve()
+    cache_dir = (repo / os.path.expanduser(configured)).resolve()
+    if cache_dir != repo and cache_dir.is_relative_to(repo):
+        delete_guard.allow(cache_dir)
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """A refused delete fails the run, even if the test that made it passed.
+
+    The refusal is an exception that `suppress(OSError)` cannot hide, but a
+    bare `except Exception` could; the record cannot be caught.
+    """
+    if delete_guard.refusals:
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED
+
+
+def pytest_terminal_summary(terminalreporter: Any) -> None:
+    if delete_guard.refusals:
+        terminalreporter.section("deletes refused by tests/delete_guard.py", red=True)
+        for line in delete_guard.refusals:
+            terminalreporter.write_line(line)
 
 
 @pytest.fixture(autouse=True)

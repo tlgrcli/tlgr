@@ -327,3 +327,34 @@ class TestSessionManager:
             assert results["broken"].startswith("error:")
         finally:
             await manager.stop_all()
+
+
+class TestReconnect:
+    """tlgrcli/tlgr#60: catch-up after reconnect, and who owns the backoff."""
+
+    async def test_telethons_automatic_reconnect_triggers_a_catch_up(self, tlgr_home, world):
+        """The hook must sit where `MTProtoSender` calls it, not on the client."""
+        from types import SimpleNamespace
+
+        def factory(path, options):
+            client = FakeTelegramClient(world, session=path)
+            client._sender = SimpleNamespace(_auto_reconnect_callback=None)
+            return client
+
+        session = AccountSession(
+            "work",
+            session_path=tlgr_home / "session",
+            lock_path=tlgr_home / "session.lock",
+            options=ClientOptions(api_id=1, api_hash="x"),
+            client_factory=factory,
+        )
+        await session.start()
+        try:
+            await _wait_for(lambda: session.state == SessionState.ONLINE)
+            before = world.catch_ups
+            # What `MTProtoSender._reconnect` does after it reconnects.
+            await session.client._sender._auto_reconnect_callback()
+            assert world.catch_ups == before + 1
+            assert session.reconnects == 1
+        finally:
+            await session.stop()

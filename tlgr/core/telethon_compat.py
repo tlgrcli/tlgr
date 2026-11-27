@@ -110,19 +110,36 @@ def install_reconnect_hook(client: Any, callback: Callable[[], Any]) -> bool:
 
     Telethon's `_handle_auto_reconnect` re-runs `get_me()` and nothing else, so
     an account that dropped for ten minutes comes back with a stale `pts` and
-    silently misses everything that happened (checklist 1/2). Wrapping it is
-    the only hook there is; when it is gone the supervisor's own reconnect path
-    still calls `catch_up()`, so this is an optimisation, not a requirement.
+    silently misses everything that happened (checklist 1/2).
+
+    The callback Telethon actually runs is the one `MTProtoSender` was given
+    in `TelegramClient.__init__`: it keeps the bound method as
+    `_auto_reconnect_callback` and never reads the client attribute again. So
+    replacing `client._handle_auto_reconnect` alone (what this did until
+    tlgrcli/tlgr#60) installed a wrapper nothing called, and missed updates
+    waited for Telethon's 15 minute no-updates timer. The wrapper goes on the
+    sender; the client attribute is updated too so both agree.
+
+    When the sender attribute is gone the supervisor's own reconnect path
+    still calls `catch_up()`, so this degrades rather than fails.
     """
-    original = getattr(client, "_handle_auto_reconnect", None)
-    if not callable(original):
-        _warn_once("_handle_auto_reconnect")
+    sender = getattr(client, "_sender", None)
+    if sender is None or not hasattr(sender, "_auto_reconnect_callback"):
+        _warn_once("MTProtoSender._auto_reconnect_callback")
         return False
+    original = getattr(sender, "_auto_reconnect_callback", None)
+    if original is None:
+        original = getattr(client, "_handle_auto_reconnect", None)
 
     async def wrapper() -> Any:
-        result = original()
-        if hasattr(result, "__await__"):
-            result = await result
+        result = None
+        if callable(original):
+            try:
+                result = original()
+                if hasattr(result, "__await__"):
+                    result = await result
+            except Exception as exc:  # pragma: no cover - Telethon logs its own
+                log.debug("telethon reconnect handler failed: %s", exc)
         try:
             outcome = callback()
             if hasattr(outcome, "__await__"):
@@ -131,7 +148,9 @@ def install_reconnect_hook(client: Any, callback: Callable[[], Any]) -> bool:
             log.debug("reconnect hook failed: %s", exc)
         return result
 
-    client._handle_auto_reconnect = wrapper
+    sender._auto_reconnect_callback = wrapper
+    with contextlib.suppress(AttributeError):
+        client._handle_auto_reconnect = wrapper
     return True
 
 

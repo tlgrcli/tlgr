@@ -54,3 +54,47 @@ class TestTooLongHook:
 
         assert seen == []
         assert type(plain._message_box) is MessageBox
+
+
+def _real_client(session: object = None):
+    """A real, never-connected `TelegramClient`. Nothing here touches the network."""
+    from telethon import TelegramClient
+    from telethon.sessions import MemorySession
+
+    return TelegramClient(session if session is not None else MemorySession(), 1, "x")
+
+
+class TestReconnectHook:
+    """tlgrcli/tlgr#60: the hook must reach the callback the sender actually runs."""
+
+    async def test_the_senders_reconnect_callback_reaches_tlgr(self):
+        client = _real_client()
+        calls: list[str] = []
+
+        async def on_reconnect() -> None:
+            calls.append("reconnected")
+
+        assert compat.install_reconnect_hook(client, on_reconnect)
+        # `MTProtoSender._reconnect` runs exactly this after a successful
+        # reconnect. Telethon's own handler inside it calls `get_me()`, which
+        # fails here (never connected) and is logged by Telethon itself.
+        await client._sender._auto_reconnect_callback()
+        assert calls == ["reconnected"]
+
+    async def test_telethons_own_handler_still_runs_first(self, monkeypatch):
+        client = _real_client()
+        order: list[str] = []
+
+        async def telethon_handler() -> None:
+            order.append("telethon")
+
+        monkeypatch.setattr(client._sender, "_auto_reconnect_callback", telethon_handler)
+        compat.install_reconnect_hook(client, lambda: order.append("tlgr"))
+        await client._sender._auto_reconnect_callback()
+        assert order == ["telethon", "tlgr"]
+
+    def test_a_client_without_a_sender_degrades(self):
+        class Bare:
+            pass
+
+        assert compat.install_reconnect_hook(Bare(), lambda: None) is False

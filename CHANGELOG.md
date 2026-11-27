@@ -9,6 +9,11 @@ codes documented in `AGENT.md` are the public API.
 
 ### Added
 
+- **`[daemon] catch_up_interval`: a periodic catch-up.** Off by default
+  (`0`). When set, each online account asks for missed updates (one
+  `getDifference`) every that many seconds, which bounds how late an update
+  missed on a flaky network can reach `watch`, webhooks and jobs. Values
+  below 30 are raised to 30.
 - **`tlgr batch`: many operations from one process.** Reads JSONL
   (`{"op": "message.send", "params": {...}, "account": "...", "id": ...}`)
   from stdin or a file, runs the lines in order over the existing transport,
@@ -110,6 +115,21 @@ codes documented in `AGENT.md` are the public API.
 
 ### Fixed
 
+- **Updates missed during a connection drop arrive right after the
+  reconnect.** The catch-up hook wrapped `client._handle_auto_reconnect`, but
+  Telethon's sender keeps the method it was given at construction, so the
+  hook never ran and missed messages waited up to 15 minutes for Telethon's
+  no-updates timer. It now wraps the callback the sender calls. The client
+  was also built with `connection_retries=None`, which Telethon reads as
+  retry forever once a second: the supervisor's backoff never ran, a drop
+  never showed as `degraded`, and a daemon started without network stayed
+  in `starting`. Telethon now retries once and then hands the outage to the
+  supervisor, which tears down the dead connection before reconnecting and
+  catches up. Stopping an account that never connected no longer overwrites
+  the session's saved update state with zeros (which made the next start
+  skip everything missed while down). The full dialog sweep now runs in the
+  background once the account is online, instead of holding a large account
+  in `starting` for minutes after every restart.
 - **`tlgr daemon restart` completes, and the stopped daemon exits.** With a
   `tlgr watch` (or any `events.watch` stream) attached, a stop drained for
   the config's `drain_seconds` (30s) instead of the `--grace` the client

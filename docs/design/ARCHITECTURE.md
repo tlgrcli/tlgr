@@ -1363,7 +1363,8 @@ TelegramClient(
     sequential_updates=True,            # ordered dispatch into the bus
     raise_last_call_error=True,         # real RPC errors, not ValueError('unsuccessful 5 times')
     entity_cache_limit=int(cfg.limits.entity_cache),        # default 20_000
-    connection_retries=None,            # our supervisor owns backoff            (checklist 3)
+    connection_retries=1,               # one quick retry, then the              (checklist 3)
+                                        # supervisor owns backoff; None = forever
     retry_delay=1, request_retries=cfg.limits.request_retries,
     auto_reconnect=True, timeout=cfg.network.connect_timeout,
     flood_sleep_threshold=cfg.flood.sleep_threshold,
@@ -1390,10 +1391,11 @@ while not stopping:
         await client.connect()
         if not await client.is_user_authorized(): -> needs_login; return
         me = await client.get_me()
-        await warm_entity_cache()          # one iter_dialogs pass: seeds access hashes AND
-                                           # channel pts, without which catch_up skips channels
         await client.catch_up()            # checklist 1 & 2
         state = online; backoff.reset()
+        spawn(warm_entity_cache())         # one iter_dialogs pass in the background, once per
+                                           # session: seeds access hashes and pts for channels
+                                           # the update state has never seen
         await client.disconnected          # resolves on drop or fatal error
     except Exception as e:
         cls = classify_auth(e)             # core/errors.py
@@ -1404,7 +1406,8 @@ while not stopping:
 
 Additional triggers for `catch_up()`:
 
-* after **every** successful reconnect (Telethon's `_handle_auto_reconnect` only calls `get_me()`) — implemented by wrapping the client's reconnect callback in `core/telethon_compat.py`;
+* after **every** successful reconnect (Telethon's `_handle_auto_reconnect` only calls `get_me()`): implemented by wrapping the callback the client's `MTProtoSender` holds (`_auto_reconnect_callback`, captured at construction) in `core/telethon_compat.py`. When Telethon's own retries run out, `disconnected` resolves and the supervisor reconnects and catches up itself;
+* every `[daemon] catch_up_interval` seconds while online, when set (off by default, floor 30 s);
 * on a **wall-clock jump** > 60 s (laptop sleep): a 30 s ticker comparing `time.time()` deltas to `time.monotonic()` deltas;
 * on a `DifferenceTooLong` / `ChannelDifferenceTooLong` observation (below);
 * every 15 min of complete silence, as a belt-and-braces backstop, and after `getDifference` failures with 2→64 s backoff (checklist 10);
@@ -1762,6 +1765,7 @@ event_buffer = 4096               # per-account ring buffer
 event_workers = 8                 # bounded pool; per-chat order preserved
 resync_depth = 50                 # messages re-read per dialog after *TooLong
 state_save_interval = 60
+catch_up_interval = 0             # seconds between forced catch-ups; 0 = off, floor 30
 log_level = "info"
 
 [identity]                        # honest initConnection strings; stable across restarts

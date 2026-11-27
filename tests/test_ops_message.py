@@ -26,6 +26,8 @@ from tlgr.core.errors import (
 )
 
 ALICE = 4242
+BOB = 4343
+BASIC = 320
 CHANNEL = 5150
 CHANNEL_ID = -1000000000000 - CHANNEL
 
@@ -347,6 +349,80 @@ class TestEditDeleteForward:
         )
         assert deleted["ids"] == [102, 103]
         assert history.find(ALICE, 102) is None
+
+    async def test_delete_refuses_an_id_from_another_private_chat(
+        self, live_daemon, client, in_thread, history
+    ):
+        """DMs share one id counter: 201 "in @alice" would delete Bob's message."""
+        from fake_telethon import make_user
+
+        history.add_user(make_user(BOB, username="bobby"))
+        history.add_message(BOB, "bob's message", message_id=201)
+        with pytest.raises(Exception) as caught:
+            await result(
+                client, in_thread, "message.delete", {"chat": "@alice", "msg_id": ["102", "201"]}
+            )
+        error = classify(caught.value)
+        assert error.exit_code == EXIT_NOT_FOUND
+        assert "201" in error.message and "102" not in error.message
+        assert history.find(BOB, 201) is not None
+        assert history.find(ALICE, 102) is not None
+        assert not history.called("delete_messages")
+
+    async def test_delete_in_a_basic_group_checks_ids_too(
+        self, live_daemon, client, in_thread, history
+    ):
+        from datetime import datetime, timezone
+
+        from telethon.tl import types
+
+        history.chats[BASIC] = types.Chat(
+            id=BASIC,
+            title="Old crew",
+            photo=types.ChatPhotoEmpty(),
+            participants_count=3,
+            date=datetime.now(timezone.utc),
+            version=1,
+        )
+        history.add_message(-BASIC, "group message", message_id=301)
+        with pytest.raises(Exception) as caught:
+            await result(
+                client, in_thread, "message.delete", {"chat": str(-BASIC), "msg_id": ["104"]}
+            )
+        assert classify(caught.value).exit_code == EXIT_NOT_FOUND
+        assert history.find(ALICE, 104) is not None
+        deleted = await result(
+            client, in_thread, "message.delete", {"chat": str(-BASIC), "msg_id": ["301"]}
+        )
+        assert deleted["ids"] == [301]
+        assert history.find(-BASIC, 301) is None
+
+    async def test_a_range_skips_ids_that_belong_to_other_chats(
+        self, live_daemon, client, in_thread, history
+    ):
+        from fake_telethon import make_user
+
+        # 104 is Bob's: the account-wide counter interleaves the two DMs.
+        history.add_user(make_user(BOB, username="bobby"))
+        history.messages[ALICE] = [m for m in history.history(ALICE) if m.id != 104]
+        history.add_message(BOB, "bob's message", message_id=104)
+        envelope = await call(
+            client, in_thread, "message.delete", {"chat": "@alice", "msg_id": ["102-105"]}
+        )
+        assert envelope["result"]["ids"] == [102, 103, 105]
+        assert envelope["result"]["skipped"] == [104]
+        assert any("skipped" in w for w in envelope["meta"]["warnings"])
+        assert history.find(BOB, 104) is not None
+        assert history.find(ALICE, 103) is None
+
+    async def test_a_channel_delete_is_not_checked(self, live_daemon, client, in_thread, history):
+        """Channels number their own messages; the peer is honoured there."""
+        history.add_message(CHANNEL_ID, "post", message_id=7)
+        await result(
+            client, in_thread, "message.delete", {"chat": str(CHANNEL_ID), "msg_id": ["7", "8"]}
+        )
+        assert history.find(CHANNEL_ID, 7) is None
+        assert history.called("delete_messages")[0]["ids"] == [7, 8]
 
     async def test_delete_needs_ids_or_a_sender(self, live_daemon, client, in_thread, history):
         with pytest.raises(Exception) as caught:

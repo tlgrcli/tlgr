@@ -89,7 +89,7 @@ Composing a rich body needs layer 229 and is refused with NOT_SUPPORTED.
 
 Delete messages for me or for everyone.
 
-In a channel or supergroup a delete is always for everyone — `channels.deleteMessages` has no revoke flag — so --for-me is only meaningful in private chats and basic groups.
+In a channel or supergroup a delete is always for everyone (`channels.deleteMessages` has no revoke flag), so --for-me is only meaningful in private chats and basic groups. There, Telegram deletes by bare id across the whole account, so each id is first checked to be a message of CHAT: a typed id that is not is refused and nothing is deleted; ids from a range that are not are skipped and listed in `skipped`.
 
 ```
 tlgr message delete <CHAT> [MSG_ID]... [OPTIONS]

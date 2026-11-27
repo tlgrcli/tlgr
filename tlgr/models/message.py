@@ -253,6 +253,9 @@ class DeleteResult(Model):
     #: reported as affected across every round trip.
     affected: int | None = None
     scheduled: bool = False
+    #: Ids from a range that are not messages of this chat (in a private chat
+    #: or basic group they belong to other chats), so they were not deleted.
+    skipped: list[int] = []
 
 
 class EditResult(Model):

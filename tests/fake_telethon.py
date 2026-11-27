@@ -1294,6 +1294,9 @@ class World:
             action=action,
         )
         self.call_log.append(message)
+        # A call is a service message in the DM too, which is what lets
+        # `call log delete` check the id belongs to that chat.
+        self.history(chat_id).append(message)
         return message
 
     # -- the administration world ------------------------------------------
@@ -4846,9 +4849,19 @@ class FakeTelegramClient:
     async def delete_messages(self, entity: Any, message_ids: Any, revoke: bool = True) -> Any:
         chat_id = self._chat_id(entity)
         wanted = {int(i) for i in ([message_ids] if isinstance(message_ids, int) else message_ids)}
-        history = self.world.history(chat_id)
-        removed = [m for m in history if m.id in wanted]
-        self.world.messages[chat_id] = [m for m in history if m.id not in wanted]
+        # Like Telegram: a channel numbers its own messages and
+        # `channels.deleteMessages` honours it, but for any other peer
+        # Telethon sends `messages.deleteMessages(id=[...])` with no peer, and
+        # the ids are account-wide: whatever chat holds them loses them.
+        if chat_id <= -1000000000000:
+            scope = [chat_id]
+        else:
+            scope = [c for c in self.world.messages if c > -1000000000000]
+        removed = []
+        for chat in scope:
+            history = self.world.history(chat)
+            removed.extend(m for m in history if m.id in wanted)
+            self.world.messages[chat] = [m for m in history if m.id not in wanted]
         self.world.calls.append(
             ("delete_messages", {"chat_id": chat_id, "ids": sorted(wanted), "revoke": revoke})
         )

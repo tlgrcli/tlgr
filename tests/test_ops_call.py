@@ -418,6 +418,22 @@ class TestCallLog:
         assert deleted == {"deleted": 1, "revoked": True}
         assert log.called("delete_messages")[0]["ids"] == [501]
 
+    async def test_a_row_naming_another_chats_message_is_refused(
+        self, live_daemon, client, in_thread, log
+    ):
+        """`messages.deleteMessages` takes bare ids: 777 would go wherever it lives."""
+        from fake_telethon import make_user
+
+        log.add_user(make_user(4343, username="bobby"))
+        log.add_message(4343, "not a call", message_id=777)
+        error = await failure(
+            client, in_thread, "call.log.delete", {"id": [f"{ALICE}:501", f"{ALICE}:777"]}
+        )
+        assert error.exit_code == EXIT_NOT_FOUND
+        assert "777" in error.message
+        assert log.find(4343, 777) is not None
+        assert not log.called("delete_messages")
+
     async def test_a_row_without_a_chat_is_a_usage_error(self, live_daemon, client, in_thread, log):
         error = await failure(client, in_thread, "call.log.delete", {"id": ["501"]})
         assert error.exit_code == EXIT_USAGE

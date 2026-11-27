@@ -28,3 +28,6 @@ class ErrorBody(Model):
     account: str | None = None
     request_id: str | None = None
     reason: str | None = None
+    #: Structured data for a caller that acts on the error, for example the
+    #: alias candidates of PEER_NEEDS_USER. Absent unless the error has some.
+    details: dict[str, Any] | None = None

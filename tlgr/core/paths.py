@@ -257,6 +257,10 @@ class TlgrPaths:
     def peers_db(self, alias: str) -> Path:
         return self.account_dir(alias) / "peers.json"
 
+    def aliases(self, alias: str) -> Path:
+        """Saved contact aliases (`contact alias set`), next to the peer cache."""
+        return self.account_dir(alias) / "aliases.json"
+
     def flood(self, alias: str) -> Path:
         return self.account_dir(alias) / "flood.json"
 

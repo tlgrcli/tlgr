@@ -36,9 +36,15 @@ The daemon starts itself on first use. If `whoami` reports no account, go to
    message never goes out from the wrong identity.
 4. **Secrets never go in argv.** Use `--password-env`, `--api-hash-env`,
    `--token-env` and friends, or their `-stdin` and `-file` forms.
-5. **Chats are `@username` or a numeric id.** Display names and phone numbers
-   are not accepted. Put negative ids after `--`:
-   `tlgr message list --json --limit 5 -- -100123456`.
+5. **Chats are `@username`, a numeric id, `+phone`, a t.me link, or a saved
+   alias.** Put negative ids after `--`:
+   `tlgr message list --json --limit 5 -- -100123456`. For a person the user
+   names ("reply to Sara"), pass `name:Sara` (or the non-ASCII name as is);
+   never pick a `contact search` row yourself. A bare `sara` is the public
+   @sara, possibly a stranger. An unsaved name exits 2 with
+   `PEER_NEEDS_USER` and sends nothing: ask the user who they mean (the
+   `error.details.candidates` are suggestions only), save the answer with
+   `tlgr contact alias set "Sara" @their_username --json`, and retry once.
 6. **Preview before destructive calls** with `--dry-run`, and confirm with the
    user before deleting, leaving, blocking or sending to someone new.
 7. **Respect rate limits.** Exit 7 carries `wait_seconds`; wait that long
@@ -123,7 +129,7 @@ a guard rail, not a security boundary.
 | Code | Meaning | What to do |
 |---|---|---|
 | 0 | success | `meta.already: true` means it was already done |
-| 2 | bad arguments | fix the call; check `tlgr schema <command> --json` |
+| 2 | bad arguments | fix the call; check `tlgr schema <command> --json`. `PEER_NEEDS_USER`: ask the user who the name means, `contact alias set`, retry once |
 | 3 | empty | nothing matched |
 | 4 | auth needed | log in again |
 | 5 | not found | wrong chat or id |

@@ -67,6 +67,13 @@ EXIT_CODE_MAP: dict[str, dict[str, Any]] = {
     },
     "ACCOUNT_NOT_FOUND": {"code": EXIT_NOT_FOUND, "description": "Account alias is not registered"},
     "ACCOUNT_REQUIRED": {"code": EXIT_USAGE, "description": "No account given and none inferable"},
+    "PEER_NEEDS_USER": {
+        "code": EXIT_USAGE,
+        "description": (
+            "A name is not a saved contact alias: nothing was sent; ask the user, "
+            "save the answer with `contact alias set`, retry once"
+        ),
+    },
     "PERMISSION_DENIED": {"code": EXIT_PERMISSION, "description": "Permission denied"},
     "RATE_LIMITED": {"code": EXIT_RATE_LIMITED, "description": "Rate limited (retry later)"},
     "RETRYABLE": {"code": EXIT_RETRYABLE, "description": "Transient/retryable error"},
@@ -109,13 +116,20 @@ EXIT_CODE_MAP: dict[str, dict[str, Any]] = {
 
 
 class TlgrError(Exception):
-    """Base error for all tlgr errors."""
+    """Base error for all tlgr errors.
+
+    `details` is an optional JSON object for a caller that acts on the error
+    rather than reads it (the candidates of PEER_NEEDS_USER, for one). It is
+    emitted as `error.details` only when set, so the error shape every
+    existing consumer parses is unchanged.
+    """
 
     code: str = "TLGR_ERROR"
     exit_code: int = EXIT_GENERIC
     hint: str = ""
     http: int = 500
     retryable: bool = False
+    details: dict[str, Any] | None = None
 
     def __init__(self, message: str, code: str | None = None):
         super().__init__(message)
@@ -131,6 +145,33 @@ class UsageError(TlgrError):
     def __init__(self, message: str, code: str | None = None, field: str | None = None):
         super().__init__(message, code)
         self.field = field
+
+
+class PeerNeedsUserError(UsageError):
+    """A name that is not a saved contact alias, so nothing was done.
+
+    Raised instead of guessing. A display-name match, a lookalike alias or a
+    public username that happens to spell the name are all *suggestions* in
+    `details.candidates`, never a recipient: the agent asks the user, saves
+    the answer with `contact alias set` and retries once. Exit 2, because
+    retrying the same call cannot succeed and the reference is what needs
+    fixing.
+    """
+
+    code = "PEER_NEEDS_USER"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        details: dict[str, Any] | None = None,
+        hint: str = "",
+        field: str | None = None,
+    ):
+        super().__init__(message, field=field)
+        self.details = details
+        if hint:
+            self.hint = hint
 
 
 class AuthenticationError(TlgrError):
@@ -572,7 +613,7 @@ def classify(exc: BaseException, *, account: str | None = None, request_id: str 
             if not body.hint:
                 body.hint = f"Retry after {seconds}s, or raise --flood-wait-max."
 
-    if rule.code == "USAGE":
+    if rule.code in ("USAGE", "PEER_NEEDS_USER"):
         field = getattr(exc, "field", None)
         if not field:
             m = _FIELD_RE.search(str(exc))
@@ -592,6 +633,10 @@ def classify(exc: BaseException, *, account: str | None = None, request_id: str 
     reason = getattr(exc, "reason", None)
     if isinstance(reason, str) and reason:
         body.reason = reason
+
+    details = getattr(exc, "details", None)
+    if isinstance(details, dict) and details:
+        body.details = details
 
     return body
 

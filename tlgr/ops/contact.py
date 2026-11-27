@@ -37,11 +37,14 @@ from tlgr.core.paths import write_private
 from tlgr.core.timefmt import fmt_dt, parse_dt, to_unix
 from tlgr.models.base import Request
 from tlgr.models.contact import (
+    AliasedPeer,
     BlockedPeer,
     BlockedSet,
     CloseFriends,
     Contact,
     ContactAdded,
+    ContactAlias,
+    ContactAliasRemoved,
     ContactImport,
     ContactNote,
     ContactRemoved,
@@ -1029,6 +1032,270 @@ SPEC_NOTE_SET = OperationSpec(
         "contacts-users.contact-note-delete",
         "contacts-users.contact-note-set",
     ),
+)
+
+
+# ---------------------------------------------------------------------------
+# contact alias set / list / remove
+# ---------------------------------------------------------------------------
+
+
+def _alias_store(ctx: OpContext) -> Any:
+    from tlgr.core.aliases import AliasStore
+
+    paths = getattr(ctx, "paths", None)
+    if paths is None or not ctx.account:  # pragma: no cover - the daemon supplies both
+        raise UsageError("contact aliases need an account")
+    return AliasStore(Path(paths.aliases(ctx.account)))
+
+
+def _alias_row(record: Any, *, already: bool = False) -> ContactAlias:
+    return ContactAlias(
+        alias=record.alias,
+        key=record.key,
+        peer_id=record.peer_id,
+        kind=record.kind,
+        name=record.name or None,
+        username=record.username or None,
+        already=already,
+    )
+
+
+class AliasSetReq(Request):
+    alias: Annotated[
+        str,
+        arg(0, metavar="ALIAS", help="The wording the user calls them by, e.g. 'Sara' or 'مامان'."),
+    ]
+    peer: Annotated[
+        PeerRef,
+        arg(
+            1,
+            metavar="PEER",
+            kind="peer",
+            help="Who it means: @username, id, +phone, t.me link, or an existing alias.",
+        ),
+    ]
+    replace: Annotated[
+        bool, opt("--replace", help="Repoint an alias that already names someone else.")
+    ] = False
+
+
+async def alias_set(ctx: OpContext, req: AliasSetReq) -> ContactAlias:
+    """Save a wording for a peer on this account, so `name:<wording>` resolves.
+
+    The peer must be exact, never a display name: the point of an alias is
+    that the user chose who it means. Repointing an alias at someone else
+    needs `--replace`, and the reply carries the old peer in `replaced`.
+    """
+    from telethon import utils
+    from telethon.tl import types
+
+    from tlgr.core.aliases import check_wording, new_record
+    from tlgr.models.peer import is_bare_username, parse_peer_ref
+
+    wording, key = check_wording(req.alias)
+    store = _alias_store(ctx)
+    if req.peer.kind == "name" and store.get(str(req.peer.value)) is None:
+        raise UsageError(
+            f"{req.peer.raw!r} is not a saved alias; PEER must be an @username, numeric id, "
+            "+phone, t.me link or an existing alias",
+            field="peer",
+        )
+    if req.peer.kind in ("self", "saved"):
+        raise UsageError("'me' and 'saved' already resolve without an alias", field="peer")
+
+    target = await _send.resolve(ctx, req.peer)
+    if isinstance(target, types.InputPeerSelf):
+        raise UsageError("that is this account itself; 'me' already names it", field="peer")
+    peer_id = _send.peer_id_of(target)
+    if not peer_id:
+        raise UsageError(f"{req.peer.raw!r} did not resolve to a chat or user", field="peer")
+
+    # The peer cache's vocabulary, so the resolver can rebuild the InputPeer
+    # from the stored hash without a lookup.
+    kind = "user"
+    if isinstance(target, types.InputPeerChannel):
+        kind = "channel"
+    elif isinstance(target, types.InputPeerChat):
+        kind = "group"
+    name, username = "", ""
+    with contextlib.suppress(Exception):
+        entity = await client_of(ctx).get_entity(target)
+        name = entity_to_peer(entity).title or ""
+        username = str(getattr(entity, "username", "") or "")
+        if type(entity).__name__ == "Channel" and getattr(entity, "megagroup", False):
+            kind = "supergroup"
+    record = new_record(
+        wording,
+        peer_id=int(utils.get_peer_id(target)),
+        kind=kind,
+        access_hash=int(getattr(target, "access_hash", 0) or 0),
+        username=username,
+        name=name,
+    )
+
+    existing = store.get(key)
+    if existing is not None and existing.peer_id == record.peer_id and existing.alias == wording:
+        mark_already(ctx)
+        return _alias_row(existing, already=True)
+    if existing is not None and existing.peer_id != record.peer_id and not req.replace:
+        raise UsageError(
+            f"the alias {existing.alias!r} already names {existing.name or existing.peer_id} "
+            f"({existing.peer_id}); pass --replace to point it at {name or peer_id} instead",
+            field="replace",
+        )
+    previous = store.put(record)
+    with contextlib.suppress(ValueError):
+        if is_bare_username(parse_peer_ref(wording)):
+            ctx.warn(
+                f"{wording!r} is also a valid username: address this contact as "
+                f"name:{wording}. A bare {wording!r} is now refused as ambiguous rather "
+                f"than resolved as the public @{wording.lower()}."
+            )
+    row = _alias_row(record)
+    if previous is not None and previous.peer_id != record.peer_id:
+        row.replaced = {"peer_id": previous.peer_id, "name": previous.name or None}
+    return row
+
+
+SPEC_ALIAS_SET = OperationSpec(
+    id="contact.alias.set",
+    request=AliasSetReq,
+    response=ContactAlias,
+    impl=alias_set,
+    summary="Remember what the user calls someone, so that wording resolves to them",
+    description=(
+        "Per account, stored next to the peer cache. Only the exact wording resolves "
+        "(after Unicode, case, ZWNJ and Arabic/Persian letter normalization); anything "
+        "else is PEER_NEEDS_USER with suggestions. `--replace` is required to repoint."
+    ),
+    mutating=True,
+    idempotent=True,
+    columns=("alias", "peer_id", "name", "username"),
+    headers=("Alias", "Peer", "Name", "Username"),
+    example={
+        "alias": "Sara",
+        "key": "sara",
+        "peer_id": 777123,
+        "kind": "user",
+        "name": "Sara Ahmadi",
+        "username": "sara_a",
+        "replaced": None,
+        "already": False,
+    },
+    example_args="contact alias set Sara @sara_a",
+    tags=frozenset({"infrastructure"}),
+)
+
+
+class AliasListReq(Request):
+    pass
+
+
+async def alias_list(ctx: OpContext, req: AliasListReq) -> Page[AliasedPeer]:
+    """Every saved alias on this account, one row per person."""
+    limit, state = _window(ctx, "contact.alias.list", PageKind.LOCAL, default=200)
+    grouped: dict[int, AliasedPeer] = {}
+    for record in _alias_store(ctx).load().values():
+        row = grouped.get(record.peer_id)
+        if row is None:
+            row = grouped[record.peer_id] = AliasedPeer(
+                peer_id=record.peer_id,
+                kind=record.kind,
+                name=record.name or None,
+                username=record.username or None,
+            )
+        row.aliases.append(record.alias)
+    rows = sorted(grouped.values(), key=lambda r: ((r.name or "").casefold(), r.peer_id))
+    for row in rows:
+        row.aliases.sort(key=str.casefold)
+    return _slice(rows, ctx, "contact.alias.list", int(state.get("offset", 0)), limit)
+
+
+SPEC_ALIAS_LIST = OperationSpec(
+    id="contact.alias.list",
+    request=AliasListReq,
+    response=Page[AliasedPeer],
+    impl=alias_list,
+    summary="List saved contact aliases, one row per person with all their aliases",
+    description="Local state only; nothing is sent to Telegram.",
+    paginated=PageKind.LOCAL,
+    needs_client=False,
+    rate_class="local",
+    idempotent=True,
+    columns=("name", "peer_id", "aliases"),
+    headers=("Name", "Peer", "Aliases"),
+    example={
+        "items": [
+            {
+                "peer_id": 777123,
+                "kind": "user",
+                "name": "Sara Ahmadi",
+                "username": "sara_a",
+                "aliases": ["Sara", "سارا"],
+            }
+        ],
+        "has_more": False,
+    },
+    example_args="contact alias list",
+    tags=frozenset({"infrastructure"}),
+)
+
+
+class AliasRemoveReq(Request):
+    alias: Annotated[str, arg(0, metavar="ALIAS", help="The exact saved wording.")]
+
+
+async def alias_remove(ctx: OpContext, req: AliasRemoveReq) -> ContactAliasRemoved:
+    """Forget one alias. Exact (normalized) wording only, never a lookalike."""
+    from tlgr.core.aliases import alias_wording, similar_keys
+    from tlgr.models.peer import normalize_name
+
+    wording = alias_wording(req.alias)
+    key = normalize_name(wording)
+    store = _alias_store(ctx)
+    removed = store.remove(key) if key else None
+    if removed is None:
+        records = store.load()
+        near = [records[k].alias for k in similar_keys(key, records)[:5]]
+        error = NotFoundError(f"no saved alias {wording!r} on account {ctx.account!r}")
+        error.hint = (
+            f"Did you mean one of: {', '.join(near)}? Removal needs the exact wording."
+            if near
+            else "Run: tlgr contact alias list"
+        )
+        error.details = {"reference": wording, "key": key, "suggestions": near}
+        raise error
+    return ContactAliasRemoved(
+        alias=removed.alias,
+        key=key,
+        removed=True,
+        peer_id=removed.peer_id,
+        name=removed.name or None,
+    )
+
+
+SPEC_ALIAS_REMOVE = OperationSpec(
+    id="contact.alias.remove",
+    request=AliasRemoveReq,
+    response=ContactAliasRemoved,
+    impl=alias_remove,
+    summary="Forget a saved contact alias (exact wording only)",
+    description="Local state only. A wording that is not saved exits 5 with lookalikes in the hint.",
+    aliases=("contact.alias.delete",),
+    mutating=True,
+    needs_client=False,
+    rate_class="local",
+    columns=("alias", "removed", "peer_id", "name"),
+    example={
+        "alias": "Sara",
+        "key": "sara",
+        "removed": True,
+        "peer_id": 777123,
+        "name": "Sara Ahmadi",
+    },
+    example_args="contact alias remove Sara",
+    tags=frozenset({"infrastructure"}),
 )
 
 

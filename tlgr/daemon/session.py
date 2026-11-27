@@ -490,6 +490,7 @@ class AccountSession:
         is meaningless to another, and handing it over produces
         `PEER_ID_INVALID` for a peer that plainly exists (§6.6).
         """
+        from tlgr.core.aliases import ALIAS_FILE, AliasStore
         from tlgr.core.peers import PeerCache, PeerResolver
 
         if self._resolver is None or self._resolver.client is not self.client:
@@ -498,6 +499,9 @@ class AccountSession:
                 account=self.alias,
                 cache=PeerCache(self.peers_path),
                 dialog_scan_max=self.dialog_scan_max,
+                aliases=AliasStore(
+                    self.peers_path.with_name(ALIAS_FILE) if self.peers_path else None
+                ),
             )
         return self._resolver
 

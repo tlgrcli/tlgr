@@ -1422,3 +1422,50 @@ rather than a base class because `jobs/` must not import `daemon/`.
 cases — a GIF carries Video and Animated, a video sticker carries Video and
 Sticker — and that moved onto the function that now decides them.
 
+## 2026-11-27: people by name resolve only through a saved alias, spelled `name:` or non-ASCII
+
+Agents are told "reply to Sara", and the only ways to turn a name into a peer
+without the user were guesses: the top `contact search` row, a contact whose
+first name matches, or the public `@sara`, which is what `message send sara`
+has always resolved to. A wrong guess is a message to the wrong person. So a
+name resolves only through a contact alias the user saved for that exact
+wording on that account (`contact alias set`); anything else is
+`PEER_NEEDS_USER` (exit 2), sends nothing, and carries the lookalikes as
+suggestions in a new optional `error.details` object.
+
+**Syntax.** A new `PeerRef` kind, `name`, takes whatever no other form
+claims: non-ASCII text (`مامان`), several words (`Sara Ahmadi`), and ASCII
+that is not a valid username (`ali`, `mom.work`). All of these were parse
+errors before, so no working call changes meaning. A single ASCII word that
+*is* a valid username form keeps meaning the username, because scripts rely
+on `message send alice`; the explicit prefix `name:sara` reaches the alias
+instead. `name:` rather than `~sara` because zsh expands a leading `~` as a
+named directory and fails the command before tlgr sees it; rather than
+`alias:` because "alias" already means an account alias everywhere else in
+tlgr. A malformed handle (`@ab`, `+abc`, a non-Telegram URL) stays a parse
+error rather than a name nobody could have saved.
+
+**The one overlap.** A bare word that is both a valid username and a saved
+alias (`sara`) is refused as ambiguous, with both unambiguous spellings in the
+hint, instead of picking either. This can only trigger after the user saved
+such an alias, so it breaks nothing that worked; and it closes the exact
+wrong-person case the issue describes. The check tolerates an unreadable
+alias file, so a broken file cannot stop every bare-username send.
+
+**Matching.** Exact match on a normalized key: NFKC, casefold, ZWNJ/ZWJ and
+direction marks removed, Arabic ye/kaf mapped to Persian, Arabic diacritics
+and tatweel dropped, whitespace collapsed. No stemming and no fuzzy
+resolution: telegram-mcp's inflection heuristics are tuned for Russian, and a
+one-letter difference is as often a different person as a different case
+ending. Near aliases and the account's contact names (one
+`contacts.getContacts`, on the failure path only) become suggestions; even a
+unique exact display-name match is a suggestion, because the user may mean
+someone else with the same name.
+
+**Scope.** Per account, in `accounts/<alias>/aliases.json` next to the peer
+cache, owner-only and written atomically under an advisory lock. telegram-mcp
+keeps one global file and resolves an alias saved on account A for account B,
+where the stored id and hash mean nothing. The alias target must be exact (an
+id, @username, phone, link or an existing alias) and repointing needs
+`--replace`. Gateway job filters resolve an alias once at start or reload, as
+they do a username.

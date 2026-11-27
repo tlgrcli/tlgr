@@ -91,6 +91,7 @@ def _code_classes() -> dict[str, type[TlgrError]]:
 
     return {
         "USAGE": errors.UsageError,
+        "PEER_NEEDS_USER": errors.PeerNeedsUserError,
         "ACCOUNT_REQUIRED": errors.AccountRequiredError,
         "AUTH_ERROR": errors.AuthenticationError,
         "AUTH_PASSWORD_REQUIRED": errors.AuthPasswordRequiredError,
@@ -145,7 +146,7 @@ def error_from_body(body: dict[str, Any], *, status_code: int = 500) -> TlgrErro
         error.hint = str(body["hint"])
     if body.get("retryable"):
         error.retryable = True
-    for extra in ("field", "wait_seconds", "rpc", "account", "request_id", "reason"):
+    for extra in ("field", "wait_seconds", "rpc", "account", "request_id", "reason", "details"):
         if body.get(extra) is not None:
             setattr(error, extra, body[extra])
     return error
